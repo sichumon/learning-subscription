@@ -1,0 +1,110 @@
+Guided Exercise: Diagnosing Cluster Logging Problems
+In this exercise you will monitor the health of the cluster logging system and identify a problematic application.
+
+Outcomes
+
+You should be able to:
+
+Verify the health of the cluster logging system using Prometheus.
+
+Identify and stop an application that is overwhelming the log collector.
+
+Before starting this exercise, you must set up cluster logging by completing the the section called “Guided Exercise: Deploying Cluster Logging”.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise. The command creates a logging-diagnose project and a noisy deployment that outputs multiple log messages per second.
+
+[student@workstation ~]$ lab logging-diagnose start
+Procedure 10.4. Instructions
+
+First, observe the steady state logging metrics collected by Prometheus.
+
+Navigate to https://console-openshift-console.apps.ocp4.example.com in Firefox.
+
+Click Monitoring → Dashboards, and then select the Kubernetes / Compute Resources / Namespace (Pods) dashboard and the openshift-logging namespace. Review the data, paying particular attention to the CPU Usage and Memory Usage charts.
+
+Click Monitoring → Metrics, and then enter the expression max_over_time(fluentd_output_status_buffer_queue_length[1m]) and click Run Queries. Review the chart that displays the maximum number of logs per minute in the collector buffer.
+
+The current deployment has only one replica and generates logs at a reasonable rate (every 100ms). Increase the number of replicas to add load.
+
+From the workstation machine, log in to OpenShift as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+You have access to 58 projects, the list has been suppressed. You can list all projects with 'oc projects'
+
+Using project "default".
+Edit the deployment to specify ten replicas and a container --delay argument of 1ms.
+
+[student@workstation ~]$ oc project logging-diagnose
+Now using project "logging-diagnose" on server "https://api.ocp4.example.com:6443".
+[student@workstation ~]$ oc edit deployment/noisy
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+...output omitted...
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 10
+  revisionHistoryLimit: 10
+...output omitted...
+    spec:
+      containers:
+      - args:
+        - --delay
+        - 1ms
+        image: quay.io/redhattraining/logger:v0.5
+...output omitted...
+Review logging metrics in the monitoring dashboard for changes. The log load is still small and might not be immediately noticeable.
+
+Click Monitoring → Dashboards, and then review the Kubernetes / Compute Resources / Namespace (Pods) dashboard for the openshift-logging namespace.
+
+Click Monitoring → Metrics, enter the expression max_over_time(fluentd_output_status_buffer_queue_length[1m]), and then click Run Queries. Review the chart that displays the maximum number of logs per minute in the collector’s buffer.
+
+Scale noisy deployment to 50 replicas.
+
+[student@workstation ~]$ oc scale deployment/noisy --replicas 50
+deployment.apps/noisy scaled
+Review the logging metrics in the monitoring dashboard. The monitoring stack takes time to reflect updates in metrics.
+
+Click Monitoring → Dashboards, and then review the Kubernetes / Compute Resources / Namespace (Pods) dashboard for the openshift-logging namespace. Notice the increase in CPU usage.
+
+Click Monitoring → Metrics, enter the expression max_over_time(fluentd_output_status_buffer_queue_length[1m]), and then click Run Queries. Review the chart that displays the maximum number of logs per minute in the collector buffer. Notice the increasing queue length.
+
+Review the log collector alerts. The monitoring stack takes time to reflect updates in alerts.
+
+Click Monitoring → Alerting, and then review the alerts in Pending and Firing states.
+
+Click Select all filters, and then type fluentd in the Filter Alerts by name…​ text field.
+
+Review the list of preconfigured alerts related to Fluentd.
+
+Type elastic in the Filter Alerts by name…​ text field, and then review the list of alerts related to Elasticsearch.
+
+Query Elasticsearch to discover the namespace containing the application responsible for the problem.
+
+Click the Application Launcher, and then select Monitoring → Logging in the OpenShift web console. If prompted to log in, click Log in with OpenShift.
+
+Select the app index pattern. Click the arrow preceding a log result to display the table of fields and values, and then click the Toggle column in table icon for the kubernetes.namespace_name field.
+
+Click the kubernetes.namespace_name in the Selected Fields list, and then click Visualize. Review the chart that displays the number of logs per namespace generated in the last 15 minutes.
+
+Click Discover to return to the log query screen, and then click New. Select the app index pattern.
+
+Create a filter on the kubernetes.namespace_name field. Select the is operator and a value of logging-diagnose. Click Save to view the filtered results.
+
+Click add next to the message and kubernetes.container_name fields to list the log messages and container name in the table.
+
+Scale the noisy deployment to one replica.
+
+[student@workstation ~]$ oc scale deployment/noisy --replicas 1
+deployment.apps/noisy scaled
+The log collector will continue to process the log buffer. After a few minutes, the CPU usage will return to baseline levels and logs will be fully available in the Kibana UI.
+
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab logging-diagnose finish
+This concludes the section.

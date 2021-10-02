@@ -1,0 +1,12 @@
+Summary
+In this chapter, you learned that:
+
+The OpenShift web console provides a GUI for visualizing and managing OpenShift resources.
+
+Some resources feature a specialized page that makes creating and editing resources more convenient than writing YAML by hand, such as the Edit Key/Value Secret editor, which automatically handles Base64 encoding and decoding.
+
+You can install partner and community operators from the embedded OperatorHub page.
+
+Cluster-wide metrics such as CPU, memory, and storage usage are displayed on the Dashboards page.
+
+Project Details pages display metrics specific to the project, such as the top ten memory consumers by pod and the current resource quota usage.

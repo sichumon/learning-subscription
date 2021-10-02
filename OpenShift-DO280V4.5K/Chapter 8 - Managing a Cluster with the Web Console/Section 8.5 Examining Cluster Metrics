@@ -1,0 +1,40 @@
+Examining Cluster Metrics
+Objectives
+After completing this section, you should be able to examine performance and health metrics for cluster nodes and applications.
+
+Viewing Cluster Metrics
+The OpenShift web console incorporates useful graphs to visualize cluster and resource analytics. Cluster administrators and users with either the view cluster role or the cluster-monitoring-view cluster role can access the Home → Overview page. The Overview page displays a collection of cluster-wide metrics, provides a high-level view of the overall health of the cluster.
+
+The overview includes:
+
+Current cluster capacity based on CPU, memory, storage, and network usage.
+
+A time-series graph of total CPU, memory, and disk utilization.
+
+The ability to display the top consumers of CPU, memory, and storage.
+
+
+For any of the resources listed in the Cluster Utilization section, administrators can click the link for current resource usage. The link displays a window with a breakdown of top consumers for that resource. Top consumers can be sorted by project, by pod, or by node. The list of top consumers can be useful for identifying problematic pods or nodes. For example, a pod with an unexpected memory leak may appear on the top of the list.
+
+Viewing Project Metrics
+The Project Details page displays metrics that provide an overview of the resources used within the scope of a specific project. The Utilization section displays usage information about resources such as CPU and memory along with the ability to display the top consumers for each resource.
+
+
+All metrics are pulled from Prometheus. Click any graph to navigate to the Metrics page. View the executed query, and inspect the data further.
+
+If a resource quota is created for the project, the current project request and limits appear on the Project Details page.
+
+Viewing Resource Metrics
+When troubleshooting, it is often useful to view metrics at a smaller granularity than the entire cluster or whole project. The Pod Details page displays time-series graphs of the CPU, memory, and file system usage for a specific pod.
+
+A sudden change in these critical metrics, such as a CPU spike caused by high load, will be visible on this page.
+
+
+Figure 8.19: Time-series graphs showing various metrics for a pod.
+Performing Prometheus Queries in the Web Console
+The Prometheus UI is a feature-rich tool for visualizing metrics and configuring alerts. The OpenShift web console provides an interface for executing Prometheus queries directly from the web console.
+
+To perform a query, navigate to Monitoring → Metrics, enter a Prometheus Query Language expression in the text field, and click Run Queries. The results of the query display as a time-series graph.
+
+
+Figure 8.20: Using a Prometheus query to display a time-series graph.

@@ -1,0 +1,186 @@
+
+Guided Exercise: Configuring OpenShift Resources Using a Declarative GitOps Workflow
+In this exercise you will configure HTPasswd authentication from resource files in a declarative way.
+
+Outcomes
+
+You should be able to:
+
+Configure an HTPasswd Identity Provider (IdP) from YAML files.
+
+Configure an HTPasswd secret using Kustomize files.
+
+Compare HTPasswd resources from an OpenShift cluster with local YAML files ignoring status and default attributes.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+YAML files with incomplete HTPasswd Identity Provider (IdP) resources.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and downloads all sample files required by this exercise.
+
+[student@workstation ~]$ lab gitops-resources start
+If you are locked out of the cluster in the middle of this exercise because you made mistakes changing the authentication settings, then running the lab gitops-resources start command again restores the initial authentication settings of your classroom.
+
+Procedure 4.2. Instructions
+
+Complete the Kustomize folder for configuring an HTPasswd IdP.
+
+Enter the ~/DO380/labs/gitops-resources folder and verify that it contains two folders.
+
+Make all your changes to the config folder. The orig folder provides a pristine copy of the initial classroom settings for your reference.
+
+[student@workstation ~]$ cd ~/DO380/labs/gitops-resources
+[student@workstation gitop-resources]$ ls
+config  orig
+Inspect the resource files inside the ~/DO380/labs/gitops-resources/config folder. The following files are ready to use and require no changes:
+
+oauth.yaml: configures the OpenShift Authentication Operator with an HTPasswd IdP.
+
+htpasswd-secret-data: defines HTPasswd users and passwords. Besides the initial admin and developer users, this file adds the kustom user with password redhat123.
+
+Create a Kustomize configuration file named kustomization.yaml inside the ~/DO380/labs/gitops-resources/config folder.
+
+NOTE
+If you are unsure about the indentation spaces for each line when you make edits to YAML files, then refer to the solution files in the ~/DO380/labs/gitops-resources/orig folder.
+
+List the oauth.yaml resource file and add a generator for an HTPasswd secret named htpasswd-secret, as referenced by the oauth.yaml file. Add the namespace attribute so that the secret lands in the openshift-config namespace as required by the HTPasswd IdP. Set the disableNameSuffixHash generator option to true.
+
+resources:
+- oauth.yaml
+secretGenerator:
+- name: htpasswd-secret
+  namespace: openshift-config
+  files:
+  - htpasswd=htpasswd-secret-data
+generatorOptions:
+  disableNameSuffixHash: true
+Validate that your Kustomize configuration inside the config folder generates an OAuth resource and also a secret resource.
+
+[student@workstation gitops-resources]$ oc kustomize config
+apiVersion: v1
+...output omitted...
+kind: Secret
+metadata:
+  name: htpasswd-secret
+  namespace: openshift-config
+type: Opaque
+---
+apiVersion: config.openshift.io/v1
+kind: OAuth
+...output omitted...
+spec:
+  identityProviders:
+  - htpasswd:
+      fileData:
+        name: htpasswd-secret
+...output omitted...
+As a cluster administrator, apply your configuration files to the cluster and validate that you can log in as the kustom user.
+
+Log in on OpenShift as the admin user.
+
+[student@workstation gitops-resources]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Apply all resources from the ~/DO380/labs/gitops-resources/config folder using Kustomize. If you get warnings similar to the ones in the following sample outputs, then you can safely ignore them.
+
+[student@workstation gitops-resources]$ oc apply -k config
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+secret/htpasswd-secret configured
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+oauth.config.openshift.io/cluster configured
+Wait until a new set of OAuth pods are ready and running. Also wait until all terminating pods from the previous deployment are gone.
+
+[student@workstation gitops-resources]$ oc get pod -n openshift-authentication
+NAME                               READY   STATUS        RESTARTS   AGE
+oauth-openshift-55fb849579-9mz99   1/1     Running       0          4m54s
+oauth-openshift-55fb849579-r2mhn   1/1     Running       0          4m46s
+Log in to OpenShift as the kustom user to confirm that your new authentication settings are applied.
+
+[student@workstation gitops-resources]$ oc login -u kustom -p redhat123
+Login successful.
+...output omitted...
+As a cluster administrator, delete the kustom user without changing your Kustomize folder.
+
+Log in to OpenShift as the admin user.
+
+[student@workstation gitops-resources]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Extract the HTPasswd secret data to a temporary file.
+
+[student@workstation gitops-resources]$ oc extract secret/htpasswd-secret \
+> -n openshift-config --confirm --to /tmp/
+/tmp/htpasswd
+Remove the kustom user from the temporary file.
+
+[student@workstation gitops-resources]$ htpasswd -D /tmp/htpasswd kustom
+Deleting password for user kustom
+Replace the HTPasswd secret data with the contents of the temporary file.
+
+[student@workstation gitops-resources]$ oc set data secret/htpasswd-secret \
+> -n openshift-config --from-file htpasswd=/tmp/htpasswd
+secret/htpasswd-secret data updated
+Wait until a new set of OAuth pods are ready and running. Also wait until all terminating pods from the previous deployment are gone.
+
+[student@workstation gitops-resources]$ oc get pod -n openshift-authentication
+NAME                               READY   STATUS        RESTARTS   AGE
+oauth-openshift-856784b8c8-2566b   1/1     Running       0          82s
+oauth-openshift-856784b8c8-6bzsb   1/1     Running       0          90s
+Log in to OpenShift as kustom to confirm that the HTPasswd secret was updated.
+
+[student@workstation gitops-resources]$ oc login -u kustom -p redhat123
+Login failed (401 Unauthorized)
+Compare HTPasswd IdP and secret resources with YAML files on disk using the diff and the oc diff commands.
+
+Export the OAuth configuration resource and the HTPasswd secret to temporary files.
+
+[student@workstation gitops-resources]$ oc extract secret/htpasswd-secret \
+> -n openshift-config --confirm --to /tmp/
+/tmp/htpasswd
+[student@workstation gitops-resources]$ oc get oauth cluster \
+> -o yaml > /tmp/oauth-config.yaml
+Compare the temporary files with the files on your ~/DO380/labs/gitops-resources/config folder using the diff command.
+
+Verify that in addition to changes to the HTPasswd data, it also reports a number of other differences, even though you made no changes to the OAuth configuration.
+
+[student@workstation gitops-resources]$ diff /tmp/htpasswd \
+> config/htpasswd-secret-data
+2a3
+...output omitted...
+[student@workstation gitops-resources]$ diff /tmp/oauth-config.yaml \
+> config/oauth.yaml
+5,6d4
+...output omitted...
+Compare the live OAuth configuration resource and the HTPasswd secret with the files on your Kustomize folder using the oc diff command.
+
+Verify that only differences related to the HTPasswd secret data are displayed.
+
+[student@workstation gitops-resources]$ oc diff -k config
+...output omitted...
+@@ -1,6 +1,6 @@
+ apiVersion: v1
+ data:
+-  htpasswd: YWRt..Lwo=
++  htpasswd: YWRt..MAo=
+ kind: Secret
+ metadata:
+   annotations:
+exit status 1
+Restore the default authorization settings for your classroom using the files from the ~/DO380/labs/gitops-resources/orig folder, and then change to your home folder.
+
+[student@workstation gitops-resources]$ oc apply -k orig
+secret/htpasswd-secret configured
+oauth.config.openshift.io/cluster unchanged
+[student@workstation gitops-resources]$ cd ~
+[student@workstation ~]$
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab gitops-resources finish
+This concludes the section.

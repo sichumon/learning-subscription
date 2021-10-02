@@ -1,0 +1,387 @@
+
+Lab: Troubleshoot an OpenShift Cluster and Applications
+In this review, you will allow developers to access a cluster and troubleshoot application deployments.
+
+Outcomes
+
+You should be able to:
+
+Create a new project.
+
+Perform a smoke test of the OpenShift cluster by creating an application using the source-to-image process.
+
+Create applications using either deployment or deploymentconfig resources.
+
+Use the HTPasswd identity provider for managing users.
+
+Create and manage groups.
+
+Manage RBAC and SCC for users and groups.
+
+Manage secrets for databases and applications.
+
+Troubleshoot common problems.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command:
+
+Ensures that the cluster API is reachable.
+
+Removes existing users and groups.
+
+Removes existing identity providers.
+
+Removes the cluster-admin cluster role binding from the admin user.
+
+Ensures that authenticated users can create new projects.
+
+[student@workstation ~]$ lab review-troubleshoot start
+Instructions
+
+Complete the following tasks:
+
+As the kubeadmin user, create the review-troubleshoot project. The password for the kubeadmin user is located in the /usr/local/etc/ocp4.config file on the RHT_OCP4_KUBEADM_PASSWD line. Perform all subsequent tasks in the review-troubleshoot project.
+
+Source the classroom configuration file that is accessible at /usr/local/etc/ocp4.config, and log in as the kubeadmin user.
+
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u kubeadmin -p ${RHT_OCP4_KUBEADM_PASSWD} \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Create the review-troubleshoot project.
+
+[student@workstation ~]$ oc new-project review-troubleshoot
+Now using project "review-troubleshoot" on server
+"https://api.ocp4.example.com:6443".
+...output omitted...
+Perform a smoke test of the cluster to verify basic cluster functionality. Use a deployment configuration to create an application named hello-world-nginx. The application source code is located in the hello-world-nginx subdirectory of the https://github.com/RedHatTraining/DO280-apps repository.
+
+Create a route for the application using any available hostname in the apps.ocp4.example.com subdomain, and then verify that the application responds to external requests.
+
+Use the oc new-app command to create the hello-world-nginx deployment configuration. Make sure to use the --as-deployment-config option to create the application using a deployment configuration.
+
+[student@workstation ~]$ oc new-app --name hello-world-nginx \
+>    --as-deployment-config \
+>    https://github.com/RedHatTraining/DO280-apps \
+>    --context-dir hello-world-nginx
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "ubi8" created
+    imagestream.image.openshift.io "hello-world-nginx" created
+    buildconfig.build.openshift.io "hello-world-nginx" created
+    deploymentconfig.apps.openshift.io "hello-world-nginx" created
+    service "hello-world-nginx" created
+--> Success
+...output omitted...
+Create a route to the application by exposing the hello-world-nginx service.
+
+[student@workstation ~]$ oc expose service hello-world-nginx \
+>    --hostname hello-world.apps.ocp4.example.com
+route.route.openshift.io/hello-world-nginx exposed
+Wait until the application pod is running.
+
+[student@workstation ~]$ oc get pods
+NAME                         READY   STATUS      RESTARTS   AGE
+hello-world-nginx-1-build    0/1     Completed   0          2m59s
+hello-world-nginx-1-deploy   0/1     Completed   0          108s
+hello-world-nginx-1-m2lzr    1/1     Running     0          100s
+Verify access to the application.
+
+[student@workstation ~]$ curl -s http://hello-world.apps.ocp4.example.com \
+>    | grep Hello
+    <h1>Hello, world from nginx!</h1>
+Configure the cluster to use an HTPasswd identity provider. The name of the identity provider is cluster-users. The identity provider reads htpasswd credentials stored in the compreview-users secret.
+
+Ensure that four user accounts exist: admin, leader, developer, and qa-engineer. All user accounts must use review as the password.
+
+Add the cluster-admin role to the admin user.
+
+Create a temporary htpasswd authentication file at /tmp/cluster-users.
+
+[student@workstation ~]$ touch /tmp/cluster-users
+Populate the /tmp/cluster-users file with the required user and password values.
+
+[student@workstation ~]$ for user in admin leader developer qa-engineer
+>    do
+>    htpasswd -B -b /tmp/cluster-users ${user} review
+>    done
+Adding password for user admin
+Adding password for user leader
+Adding password for user developer
+Adding password for user qa-engineer
+Create a compreview-users secret from the /tmp/cluster-users file.
+
+[student@workstation ~]$ oc create secret generic compreview-users \
+>    --from-file htpasswd=/tmp/cluster-users -n openshift-config
+secret/compreview-users created
+Export the existing OAuth resource to a YAML file.
+
+[student@workstation ~]$ oc get oauth cluster -o yaml > /tmp/oauth.yaml
+Edit the /tmp/oauth.yaml file to add the HTPasswd identity provider definition to the identityProviders list. Set the identity provider name to cluster-users, and set the fileData name to compreview-users.
+
+After making these modifications, the file reads as follows:
+
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+...output omitted...
+  name: cluster
+...output omitted...
+spec:
+  identityProviders:
+  - name: cluster-users
+    mappingMethod: claim
+    type: HTPasswd
+    htpasswd:
+      fileData:
+        name: compreview-users
+NOTE
+The name, mappingMethod, type, and htpasswd keys all use the same indentation.
+
+Replace the existing OAuth resource with the resource definition in the modified file:
+
+[student@workstation ~]$ oc replace -f /tmp/oauth.yaml
+oauth.config.openshift.io/cluster replaced
+Assign the admin user the cluster-admin role.
+
+[student@workstation ~]$ oc adm policy add-cluster-role-to-user \
+>    cluster-admin admin
+Warning: User 'admin' not found
+clusterrole.rbac.authorization.k8s.io/cluster-admin added: "admin"
+IMPORTANT
+You can safely ignore the warning about the admin user not being found. The user/admin resource does not exist in your OpenShift cluster until after the admin user logs in for the first time.
+
+As the admin user, create three user groups: leaders, developers, and qa.
+
+Assign the leader user to the leaders group, the developer user to the developers group, and the qa-engineer user to the qa group.
+
+Assign roles to each group:
+
+Assign the self-provisioner role to the leaders group, which allows members to create projects. For this role to be effective, you must also remove the ability of any authenticated user to create new projects.
+
+Assign the edit role to the developers group for the review-troubleshoot project only, which allows members to create and delete project resources.
+
+Assign the view role to the qa group for the review-troubleshoot project only, which provides members with read access to project resources.
+
+Log in as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p review
+Login successful.
+...output omitted...
+Create the three user groups.
+
+[student@workstation ~]$ for group in leaders developers qa
+> do
+> oc adm groups new ${group}
+> done
+group.user.openshift.io/leaders created
+group.user.openshift.io/developers created
+group.user.openshift.io/qa created
+Add each user to the appropriate group.
+
+[student@workstation ~]$ oc adm groups add-users leaders leader
+group.user.openshift.io/leaders added: "leader"
+[student@workstation ~]$ oc adm groups add-users developers developer
+group.user.openshift.io/developers added: "developer"
+[student@workstation ~]$ oc adm groups add-users qa qa-engineer
+group.user.openshift.io/qa added: "qa-engineer"
+Allow members of the leaders group to create new projects:
+
+[student@workstation ~]$ oc adm policy add-cluster-role-to-group \
+>    self-provisioner leaders
+clusterrole.rbac.authorization.k8s.io/self-provisioner added: "leaders"
+Remove the self-provisioner cluster role from the system:authenticated:oauth group.
+
+[student@workstation ~]$ oc adm policy remove-cluster-role-from-group \
+>    self-provisioner system:authenticated:oauth
+Warning: Your changes may get lost whenever a master is restarted, unless you prevent reconciliation of this rolebinding using the following command: oc annotate clusterrolebinding.rbac self-provisioners 'rbac.authorization.kubernetes.io/autoupdate=false' --overwrite
+clusterrole.rbac.authorization.k8s.io/self-provisioner removed: "system:authenticated:oauth"
+Allow members of the developers group to create and delete resources in the review-troubleshoot project:
+
+[student@workstation ~]$ oc policy add-role-to-group edit developers
+clusterrole.rbac.authorization.k8s.io/edit added: "developers"
+Allow members of the qa group to view project resources:
+
+[student@workstation ~]$ oc policy add-role-to-group view qa
+clusterrole.rbac.authorization.k8s.io/view added: "qa"
+As the developer user, use a deployment to create an application named mysql in the review-troubleshoot project. Use the container image available at registry.access.redhat.com/rhscl/mysql-57-rhel7:5.7. This application provides a shared database service for other project applications.
+
+Create a generic secret named mysql using password as the key and r3dh4t123 as the value.
+
+Set the MYSQL_ROOT_PASSWORD environment variable to the value of the password key in the mysql secret.
+
+Configure the mysql database application to mount a persistent volume claim (PVC) to the /var/lib/mysql/data directory within the pod. The PVC must be 2 GB in size and must only request the ReadWriteOnce access mode.
+
+Log in to the cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p review
+Login successful.
+...output omitted...
+Create a new application to deploy a mysql database server. Use the oc new-app command to create a deployment.
+
+[student@workstation ~]$ oc new-app --name mysql \
+>   --docker-image registry.access.redhat.com/rhscl/mysql-57-rhel7:5.7
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "mysql" created
+    deployment.apps "mysql" created
+    service "mysql" created
+--> Success
+...output omitted...
+Create a generic secret for the MySQL database named mysql using a key of password and a value of r3dh4t123.
+
+[student@workstation ~]$ oc create secret generic mysql \
+>   --from-literal password=r3dh4t123
+secret/mysql created
+Use the mysql secret to initialize environment variables for the mysql deployment.
+
+[student@workstation ~]$ oc set env deployment mysql \
+>    --prefix MYSQL_ROOT_ --from secret/mysql
+deployment.apps/mysql updated
+Use the oc set volumes command to configure persistent storage for the mysql deployment. The command automatically creates a persistent volume claim with the specified size and access mode. Mounting the volume to the /var/lib/mysql/data directory provides access to stored data, even if one database pod is deleted and another database pod is created.
+
+[student@workstation ~]$ oc set volumes deployment/mysql --name mysql-storage \
+>   --add --type pvc --claim-size 2Gi --claim-mode rwo \
+>   --mount-path /var/lib/mysql/data
+deployment.apps/mysql volume updated
+Verify that the mysql pod successfully redeploys after configuring the deployment to use a secret and a volume. You may need to run the oc get pods command multiple times until the mysql pod displays both 1/1 and Running.
+
+[student@workstation ~]$ oc get pods -l deployment=mysql
+NAME                    READY   STATUS    RESTARTS   AGE
+mysql-bbb6b5fbb-dmq9x   1/1     Running   0          63s
+Verify that a persistent volume claim exists with the correct size and access mode.
+
+[student@workstation ~]$ oc get pvc
+NAME        STATUS   ...   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+pvc-ks52v   Bound    ...   2G         RWO            nfs-storage    2m33s
+Verify that the running mysql pod mounts a volume to the /var/lib/mysql/data directory.
+
+[student@workstation ~]$ oc exec mysql-bbb6b5fbb-dmq9x -- df -h \
+>   | grep /var/lib/mysql/data
+192.168.50.254:/exports/review-troubleshoot-pvc-ks52v-pvc-0d6a63bd-286e-44ec-b29c-ffbb34928b86   40G  859M   40G   3% /var/lib/mysql/data
+As the developer user, use a deployment to create an application named wordpress. Create the application in the review-troubleshoot project. Use the image available at quay.io/redhattraining/wordpress:5.3.0. This image is a copy of the container image availabe at docker.io/library/wordpress:5.3.0.
+
+Configure the WORDPRESS_DB_HOST environment variable to have a value of mysql. The application uses this variable to connect the mysql database service provided by the mysql application.
+
+Configure the WORDPRESS_DB_NAME environment variable to have a value of wordpress. The application uses this variable to identify the name of the database. If the database does not exist on the database server, then the application attempts to create a new database with this name.
+
+Set the WORDPRESS_DB_USER environment variable to have a value of root. Set the WORDPRESS_DB_PASSWORD environment variable to the value of the password key in the mysql secret. The value of the WORDPRESS_DB_PASSWORD environment variable must be the same as the mysql root user password.
+
+The wordpress application also requires the anyuid security context constraint. Create a service account named wordpress-sa, and then assign the anyuid security context constraint to it. Configure the wordpress deployment to use the wordpress-sa service account.
+
+Create a route for the application using any available hostname in the apps.ocp4.example.com subdomain. If you correctly deploy the application, then an installation wizard displays when you access the application from a browser.
+
+Deploy a wordpress application as a deployment.
+
+[student@workstation ~]$ oc new-app --name wordpress \
+>    --docker-image quay.io/redhattraining/wordpress:5.3.0 \
+>    -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_USER=root \
+>    -e WORDPRESS_DB_NAME=wordpress
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "wordpress" created
+    deployment.apps "wordpress" created
+    service "wordpress" created
+--> Success
+...output omitted...
+Add the WORDPRESS_DB_PASSWORD environment variable to the wordpress deployment. Use the value of the password key in the mysql secret as the value for the variable.
+
+[student@workstation ~]$ oc set env deployment/wordpress \
+>   --prefix WORDPRESS_DB_ --from secret/mysql
+deployment.apps/wordpress updated
+Create the wordpress-sa service account.
+
+[student@workstation ~]$ oc create serviceaccount wordpress-sa
+serviceaccount/wordpress-sa created
+Log in to the cluster as the admin user and grant anyuid privileges to the wordpress-sa service account.
+
+[student@workstation ~]$ oc login -u admin -p review
+Login successful.
+...output omitted...
+[student@workstation ~]$ oc adm policy add-scc-to-user anyuid -z wordpress-sa
+clusterrole.rbac.authorization.k8s.io/system:openshift:scc:anyuid added: "wordpress-sa"
+Switch back to the developer user to perform the remaining steps. Log in to the cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p review
+Login successful.
+...output omitted...
+Configure the wordpress deployment to use the wordpress-sa service account.
+
+[student@workstation ~]$ oc set serviceaccount deployment/wordpress \
+>    wordpress-sa
+deployment.apps/wordpress serviceaccount updated
+Create a route for the wordpress application.
+
+[student@workstation ~]$ oc expose service wordpress \
+>   --hostname wordpress.apps.ocp4.example.com
+route.route.openshift.io/wordpress exposed
+Use a web browser to verify access to the URL http://wordpress.apps.ocp4.example.com. When you correctly deploy the application, a setup wizard displays in the browser.
+
+
+As the developer user, deploy the famous-quotes application in the review-troubleshoot project using the ~/DO280/labs/review-troubleshoot/deploy_famous-quotes.sh script. This script creates the defaultdb database and the resources defined in the ~/DO280/labs/review-troubleshoot/famous-quotes.yaml file.
+
+The application pods do not initially deploy after you execute the script. The famous-quotes deployment configuration specifies a node selector, and there are no cluster nodes with a matching node label.
+
+Remove the node selector from the deployment configuration, which enables OpenShift to schedule application pods on any available node.
+
+Create a route for the famous-quotes application using any available hostname in the apps.ocp4.example.com subdomain, and then verify that the application responds to external requests.
+
+Run the ~/DO280/labs/review-troubleshoot/deploy_famous-quotes.sh script.
+
+[student@workstation ~]$ ~/DO280/labs/review-troubleshoot/deploy_famous-quotes.sh
+Creating famous-quotes database
+Deploying famous-quotes application
+deploymentconfig.apps.openshift.io/famous-quotes created
+service/famous-quotes created
+Verify that the famous-quotes application pod is not scheduled for deployment.
+
+[student@workstation ~]$ oc get pods
+NAME                     READY    STATUS    RESTARTS     AGE
+famous-quotes-1-deploy   0/1      Pending   0            41s
+...output omitted...
+See if any project events provide information about the problem.
+
+[student@workstation ~]$ oc get events --sort-by='{.lastTimestamp}'
+...output omitted...
+34s   Warning   FailedScheduling      pod/famous-quotes-1-deploy    0/3 nodes are available: 3 node(s) didn't match node selector.
+...output omitted...
+Save the famous-quotes deployment configuration resource to a file.
+
+[student@workstation ~]$ oc get dc/famous-quotes -o yaml > /tmp/famous-dc.yaml
+Use an editor to remove the node selector from the /tmp/famous-dc.yaml file. Search for the nodeSelector line in the file. Delete the following two lines from the /tmp/famous-dc.yaml file.
+
+      nodeSelector:
+        env: quotes
+Replace the famous-quotes deployment configuration with the modified file.
+
+[student@workstation ~]$ oc replace -f /tmp/famous-dc.yaml
+deploymentconfig.apps.openshift.io/famous-quotes replaced
+Wait a few moments and then run the oc get pods command to ensure that the famous-quotes application is now running.
+
+[student@workstation ~]$ oc get pods -l app=famous-quotes
+NAME                    READY   STATUS    RESTARTS   AGE
+famous-quotes-2-gmz2j   1/1     Running   0          53s
+Create a route for the famous-quotes application.
+
+[student@workstation ~]$ oc expose service famous-quotes \
+>   --hostname quotes.apps.ocp4.example.com
+route.route.openshift.io/famous-quotes exposed
+Verify that the famous-quotes application responds to requests sent to the http://quotes.apps.ocp4.example.com URL.
+
+[student@workstation ~]$ curl -s http://quotes.apps.ocp4.example.com \
+>   | grep Quote
+        <title>Quotes</title>
+        <h1>Quote List</h1>
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab review-troubleshoot grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise.
+
+[student@workstation ~]$ lab review-troubleshoot finish
+This concludes the comprehensive review.

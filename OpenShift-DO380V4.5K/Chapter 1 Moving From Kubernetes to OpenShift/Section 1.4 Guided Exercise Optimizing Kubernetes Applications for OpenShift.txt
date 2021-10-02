@@ -1,0 +1,180 @@
+Guided Exercise: Optimizing Kubernetes Applications for OpenShift
+In this exercise, you will enhance a Kubernetes deployment to use OpenShift image streams.
+
+Outcomes
+
+You should be able to annotate a Kubernetes deployment to automatically perform a rollout when an image is updated.
+
+To perform this exercise, ensure you have a personal, free Quay.io account. If you need to register with Quay.io, see the instructions in the the section called “Creating a Quay Account” section of Appendix A.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise. This command provides a basic Kubernetes namespace, deployment, service, and ingress.
+
+[student@workstation ~]$ lab k8s-optimize start
+Procedure 1.2. Instructions
+
+Switch to the k8s-optimize project and verify that the resources are deployed.
+
+Use the oc login command to log in as the administrator.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Switch to the k8s-optimize project.
+
+[student@workstation ~]$ oc project k8s-optimize
+Now using project "k8s-optimize" on server "https://api.ocp4.example.com:6443".
+Verify that the provided resources are deployed.
+
+[student@workstation ~]$ oc get deployment,pod,service,ingress
+NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/hello   2/2     2            2           28s
+
+NAME                         READY   STATUS    RESTARTS   AGE
+pod/hello-67cc4b8f87-77xln   1/1     Running   0          27s
+pod/hello-67cc4b8f87-pqs64   1/1     Running   0          27s
+
+NAME            TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+service/hello   ClusterIP   172.30.19.75   <none>        8080/TCP   28s
+
+NAME                       CLASS    HOSTS         ADDRESS   PORTS   AGE
+ingress.extensions/hello   <none>   hello...com             80      28s
+Identify the container image specified by the deployment.
+
+[student@workstation ~]$ oc get deployment/hello -o json | \
+> jq '.spec.template.spec.containers[0].image'
+"quay.io/redhattraining/versioned-hello:v1.0"
+NOTE
+Alternatively, use a jsonpath expression.
+
+[student@workstation ~]$ oc get deployment/hello \
+> -o jsonpath='{.spec.template.spec.containers[].image}{"\n"}'
+quay.io/redhattraining/versioned-hello:v1.0
+Run the provided watch script to observe changes in cluster resources and poll the example server.
+
+[student@workstation ~]$ ~/DO380/labs/k8s-optimize/watch.sh
+Every 2.0s: oc get dep...  workstation.lab.example.com: Thu Jul  2 15:42:37 2020
+
+NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/hello   2/2     2            2           115s
+
+NAME                         READY   STATUS    RESTARTS   AGE
+pod/hello-7b6d8fbf49-bdqkt   1/1     Running   0          115s
+pod/hello-7b6d8fbf49-svj9v   1/1     Running   0          115s
+
+"quay.io/redhattraining/versioned-hello:v1.0"
+
+Hi!
+Leave the current terminal running. Open a new terminal to execute the rest of the steps in the exercise.
+
+Using the skopeo command, copy the versioned-hello:v1.0 image from the RedHatTraining Quay.io repository to an image tagged latest in a public personal repository.
+
+Log in to quay.io.
+
+[student@workstation ~]$ podman login quay.io
+Username: your_account
+Password:
+Login Succeeded!
+Use the skopeo copy SOURCE DESTINATION command to copy the container image to a repository in your account.
+
+[student@workstation ~]$ skopeo copy \
+> docker://quay.io/redhattraining/versioned-hello:v1.0 \
+> docker://quay.io/your_account/versioned-hello:latest
+Getting image source signatures
+...output omitted...
+Writing manifest to image destination
+Storing signatures
+NOTE
+If the skopeo copy commands fails, retry it. There have been cases of intermittent authentication issues copying to personal repositories.
+
+Navigate to the new repository page on quay.io. Change the Repository Visibility setting to public.
+
+IMPORTANT
+Refer to the the section called “Repositories Visibility” section of Appendix A to read details about how to change repository visibility.
+
+Import the image from the remote repository into your OpenShift cluster, and then enable periodically scheduled imports.
+
+[student@workstation ~]$ oc import-image \
+> quay.io/your_account/versioned-hello:latest --confirm --scheduled
+imagestream.image.openshift.io/versioned-hello imported
+...output omitted...
+Observe the change in the terminal window running the watch command. The istag lists the versioned-hello image. Notice that the image stream tag refers to an immutable image digest sha.
+
+...output omitted...
+NAME                  IMAGE REPOSITORY                   TAGS     UPDATED
+.../versioned-hello   .../k8s-optimize/versioned-hello   latest   8 minutes ago
+
+NAME                         IMAGE REFERENCE
+.../versioned-hello:latest   quay.io/your_account/versioned-hello@sha256:66...5e
+...output omitted...
+Annotate the deployment with the image stream trigger.
+
+[student@workstation ~]$ oc set triggers deployment/hello \
+> --from-image versioned-hello:latest -c hello
+deployment.apps/hello triggers updated
+
+[student@workstation ~]$ oc get deployment/hello -o json | \
+> jq '.metadata.annotations'
+{
+  "deployment.kubernetes.io/revision": "2",
+  "image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"versioned-hello:latest\"},\"fieldPath\":\"spec.template.spec.containers[?(@.name==\\\"hello\\\")].image\"}]"
+}
+Observe the change in the terminal window running the watch command. The image used in the deployment is now the same as the image stream.
+
+...output omitted...
+NAME                         READY   STATUS    RESTARTS   AGE
+pod/hello-77c8b88f4f-qczp2   1/1     Running   0          25s
+pod/hello-77c8b88f4f-r9zqx   1/1     Running   0          28s
+...output omitted...
+"quay.io/your_account/versioned-hello@sha256:66e0a9c7341e5...acf3ecb5a105e"
+...output omitted...
+Copy versioned-hello:v1.1 from the RedHatTraining Quay.io repository to the image tagged latest in your repository.
+
+[student@workstation ~]$ skopeo copy \
+> docker://quay.io/redhattraining/versioned-hello:v1.1 \
+> docker://quay.io/your_account/versioned-hello:latest
+Getting image source signatures
+...output omitted...
+Writing manifest to image destination
+Storing signatures
+Import manually the image.
+
+The deployment will update and roll out new pods with the v1.1 container image when the new image is imported. The default scheduled update imports every fifteen minutes.
+
+To manually import the image:
+
+[student@workstation ~]$ oc import-image \
+> quay.io/your_account/versioned-hello:latest
+imagestream.image.openshift.io/versioned-hello imported
+...output omitted...
+The curl command from the watch terminal displays a message ending with v1.1 when the deployment has completed successfully
+
+...output omitted...
+NAME                         READY   STATUS    RESTARTS   AGE
+pod/hello-85fc4486f7-7j9b7   1/1     Running   0          19s
+pod/hello-85fc4486f7-dtvh4   1/1     Running   0          16s
+
+NAME                  IMAGE REPOSITORY                   TAGS     UPDATED
+.../versioned-hello   .../k8s-optimize/versioned-hello   latest   19 seconds ago
+
+...  IMAGE REFERENCE                                       UPDATED
+...  quay.io/your_account/versioned-hello@sha256:83...b4   19 seconds ago
+
+"quay.io/your_account/versioned-hello@sha256:834d5eb861cf5...88e7c0a08fcb4"
+Hi! v1.1
+Confirm that the deployment.kubernetes.io/revision is now three.
+
+[student@workstation ~]$ oc get deployment/hello -o json | \
+> jq '.metadata.annotations'
+{
+  "deployment.kubernetes.io/revision": "3",
+...output omitted...
+}
+Terminate the watch script in the other terminal using Ctrl+C.
+
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab k8s-optimize finish
+This concludes the section.

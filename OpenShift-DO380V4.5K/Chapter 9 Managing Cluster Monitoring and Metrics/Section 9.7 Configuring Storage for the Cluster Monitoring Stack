@@ -1,0 +1,107 @@
+Configuring Storage for the Cluster Monitoring Stack
+Objectives
+After completing this section, you should be able to configure Prometheus and Alertmanager to use persistent storage.
+
+Configuring the Cluster Monitoring Operator
+After installing the cluster monitoring stack, you can configure persistent storage for preventing monitoring data loss. This way, you will keep record of the cluster status in the past, and will be able to investigate and correlate current and past issues within the cluster.
+
+You can configure the cluster monitoring operator by creating a configuration map named cluster-monitoring-config in the openshift-monitoring namespace. This configuration map does not exist by default. Within the config.yaml entry of the data section, specify components and their configurations.
+
+The following cluster monitoring operator components are configurable:
+
+alertmanagerMain
+
+auth
+
+ingress
+
+kubeStateMetrics
+
+nodeExporter
+
+prometheusK8s
+
+prometheusOperator
+
+For example, use the prometheusK8s component to configure persistent storage for Prometheus, and the alertmanagerMain component to configure persistent storage for Alertmanager.
+
+The basic skeleton for the cluster-monitoring-config configuration map follows:
+
+apiVersion: 1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+   <component>:
+      <component-configuration-options>
+Configuring Prometheus Persistent Storage
+Add persistent storage for Prometheus if you want stored metrics to survive recreation or redeployment of the Prometheus pods. By default, Prometheus stores 15 days worth of metrics using ephemeral storage.
+
+Table 9.1. Prometheus Database storage requirements based on number of nodes/pods in the cluster
+
+Number of Nodes	Number of Pods	Prometheus storage growth per day	Prometheus storage growth per 15 days	RAM Space (per scale size)	Network (per tsdb chunk)
+50	1800	6.3 GB	94 GB	6 GB	16 MB
+100	3600	13 GB	195 GB	10 GB	26 MB
+150	5400	19 GB	283 GB	12 GB	36 MB
+200	7200	25 GB	375 GB	14 GB	46 MB
+
+The following configuration map attaches 40 GB of persistent storage to Prometheus using the existing gp2 storage class. The configuration specifies that data is retained for 15 days.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    prometheusK8s:
+      retention: 15d
+      volumeClaimTemplate:
+        metadata:
+          name: prometheus-local-pv
+        spec:
+          storageClassName: gp2
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 40Gi
+Assuming a file name of persistent-storage-prometheus.yaml, use the oc apply command to either create or update the configuration map:
+
+[user@demo ~]$ oc apply -f persistent-storage-prometheus.yaml
+configmap/cluster-monitoring-config created
+After applying the configuration map, OpenShift redeploys the Prometheus pods as a stateful set and reloads the configuration for Prometheus.
+
+Run the oc get pvc command to retrieve the list of persistent volumes claims in the openshift-monitoring namespace.
+
+[user@demo ~]$ oc get pvc
+NAME                                ...  CAPACITY  ACCESS MODES  STORAGECLASS
+prometheus-k8s-db-prometheus-k8s-0  ...  40Gi      RWO           gp2
+prometheus-k8s-db-prometheus-k8s-1  ...  40Gi      RWO           gp2
+Configuring Alert Manager Persistent Storage
+By default, alertmanager-main pods running in the openshift-monitoring namespace use ephemeral storage. Configure Alertmanager to use persistent storage so that alerts are not lost if the alertmanager-main pods are recreated or redeployed.
+
+The following example configures Alertmanager to attach a 20 GB persistent volume using the existing gp2 storage class for the cluster.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    alertmanagerMain:
+      volumeClaimTemplate:
+        metadata:
+          name: alertmanager-local-pv
+        spec:
+          storageClassName: gp2
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 20Gi
+Assuming a file name of persistent-storage-alertmanager.yaml, apply the configuration using the following command:
+
+[user@demo]$ oc apply -f persistent-storage-alertmanager.yaml
+configmap/cluster-monitoring-config configured

@@ -1,0 +1,292 @@
+Guided Exercise: Troubleshooting an OpenShift Build
+In this exercise, you will troubleshoot an OpenShift build and deployment process.
+
+Outcomes
+
+You should be able to identify and solve the problems raised during the build and deployment process of a Node.js application.
+
+A running OpenShift cluster.
+
+Retrieve the lab files and verify that Docker and the OpenShift cluster are running by running the following command.
+
+[student@workstation ~]$ lab troubleshoot-s2i start
+Load the configuration of your classroom environment. Run the following command to load the environment variables created in the first guided exercise:
+
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+Enter your local clone of the DO180-apps Git repository and checkout the master branch of the course's repository to ensure you start this exercise from a known good state:
+
+[student@workstation ~]$ cd ~/DO180-apps
+[student@workstation DO180-apps]$ git checkout master
+...output omitted...
+Create a new branch to save any changes you make during this exercise:
+
+[student@workstation DO180-apps]$ git checkout -b troubleshoot-s2i
+Switched to a new branch 'troubleshoot-s2i'
+[student@workstation DO180-apps]$ git push -u origin troubleshoot-s2i
+...output omitted...
+* [new branch]      troubleshoot-s2i -> s2i
+Branch 'troubleshoot-s2i' set up to track remote branch 'troubleshoot-s2i' from 'origin'.
+Log in to OpenShift using the configured user, password and Master API URL.
+
+[student@workstation DO180-apps]$ oc login -u "${RHT_OCP4_DEV_USER}" \
+> -p "${RHT_OCP4_DEV_PASSWORD}"
+Login successful.
+...output omitted...
+Create a new project named youruser-nodejs.
+
+[student@workstation DO180-apps]$ oc new-project ${RHT_OCP4_DEV_USER}-nodejs
+Now using project "youruser-nodejs" on server "https://api.cluster.lab.example.com"
+...output omitted...
+Build a new Node.js application using the Hello World image located at https://github.com/yourgituser/DO180-apps/ in the nodejs-helloworld directory.
+
+Run the oc new-app command to create the Node.js application. The command is provided in the ~/DO180/labs/troubleshoot-s2i/command.txt file.
+
+[student@workstation DO180-apps]$ oc new-app --as-deployment-config \
+> --context-dir=nodejs-helloworld \
+> https://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps#troubleshoot-s2i \
+> -i nodejs:12 --name nodejs-hello --build-env \
+> npm_config_registry=http://${RHT_OCP4_NEXUS_SERVER}/repository/npm-proxy
+--> Found image a2b5ec2 ...output omitted...
+
+    Node.js 12
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "nodejs-hello" created
+    buildconfig.build.openshift.io "nodejs-hello" created
+    deploymentconfig.apps.openshift.io "nodejs-hello" created
+    service "nodejs-hello" created
+--> Success
+    Build scheduled, use 'oc logs -f bc/nodejs-hello' to track its progress.
+    Application is not exposed. You can expose services to the outside world by executing one or more of the commands below:
+     'oc expose svc/nodejs-hello'
+    Run 'oc status' to view your app.
+The -i indicates the builder image to use, nodejs:12 in this case.
+
+The --context-dir option defines which folder inside the project contains the source code of the application to build.
+
+The --build-env option defines an environment variable to the builder pod. In this case, it provides the npm_config_registry environment variable to the builder pod, so it can reach the NPM registry.
+
+IMPORTANT
+In the previous command, there must be no spaces between registry= and the URL of the Nexus server.
+
+Wait until the application finishes building by monitoring the progress with the oc get pods -w command. The pod transitions from a status of running to Error:
+
+[student@workstation DO180-apps]$ oc get pods -w
+NAME                   READY   STATUS    RESTARTS   AGE
+nodejs-hello-1-build   1/1     Running   0          15s
+nodejs-hello-1-build   0/1     Error     0          73s
+^C
+The build process fails, and therefore no application is running. Build failures are usually consequences of syntax errors in the source code or missing dependencies. The next step investigates the specific causes for this failure.
+
+Evaluate the errors raised during the build process.
+
+The build is triggered by the build configuration (bc) created by OpenShift when the S2I process starts. By default, the OpenShift S2I process creates a build configuration named as the name given: nodejs-hello, which is responsible for triggering the build process.
+
+Run the oc command with the logs subcommand in a terminal window to review the output of the build process:
+
+[student@workstation DO180-apps]$ oc logs bc/nodejs-hello
+  Cloning "https://github.com/yourgituser/DO180-apps" ...
+  Commit: f7cd8963ef353d9173c3a21dcccf402f3616840b ( Initial commit...
+...output omitted...
+STEP 8: RUN /usr/libexec/s2i/assemble
+---> Installing application source ...
+---> Installing all dependencies
+npm ERR! code ETARGET
+npm ERR! notarget No matching version found for express@~4.14.2.
+npm ERR! notarget In most cases you or one of your dependencies are requesting
+npm ERR! notarget a package version that doesn't exist.
+npm ERR! notarget
+npm ERR! notarget It was specified as a dependency of 'src'
+npm ERR! notarget
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /opt/app-root/src/.npm/_logs/2019-10-25T12_37_56_853Z-debug.log
+subprocess exited with status 1
+...output omitted...
+The log shows an error occurred during the build process. This output indicates that there is no compatible version for the express dependency. But the reason is that the format used by the express dependency is not valid.
+
+Update the build process for the project.
+
+The developer uses a nonstandard version of the Express framework that is available locally on each developer's workstation. Due to the company's standards, the version must be downloaded from the Node.js official registry and, from the developer's input, it is compatible with the 4.14.x version.
+
+Fix the package.json file.
+
+Use your preferred editor to open the ~/DO180-apps/nodejs-helloworld/package.json file. Review the dependencies versions provided by the developers. It uses an incorrect version of the Express dependency, which is incompatible with the supported version provided by the company (~4.14.2). Update the dependency version as follows.
+
+{
+  "name": "nodejs-helloworld",
+ ...output omitted...
+  "dependencies": {
+    "express": "4.14.x"
+  }
+}
+NOTE
+Notice the x in the version. It indicates that the highest version should be used, but the version must begin with 4.14..
+
+Commit and push the changes made to the project.
+
+From the terminal window, run the following command to commit and push the changes:
+
+[student@workstation DO180-apps]$ git commit -am "Fixed Express release"
+...output omitted...
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[student@workstation DO180-apps]$ git push
+...output omitted...
+To https://github.com/yourgituser/DO180-apps
+   ef6557d..73a82cd  troubleshoot-s2i -> troubleshoot-s2i
+Relaunch the S2I process.
+
+To restart the build step, execute the following command:
+
+[student@workstation DO180-apps]$ oc start-build bc/nodejs-hello
+build.build.openshift.io/nodejs-hello-2 started
+The build step is restarted, and a new build pod is created. Check the log by running the oc logs command.
+
+[student@workstation DO180-apps]$ oc logs -f bc/nodejs-hello
+Cloning "https://github.com/yougituser/DO180-apps" ...
+Commit:	ea2125c1bf4681dd9b79ddf920d8d8be38cfcf3b (Fixed Express release)
+...output omitted...
+Pushing image ...image-registry.svc:5000/nodejs/nodejs-hello:latest...
+...output omitted...
+Push successful
+The build is successful, however, this does not indicate that the application is started.
+
+Evaluate the status of the current build process. Run the oc get pods command to check the status of the Node.js application.
+
+[student@workstation DO180-apps]$ oc get pods
+According to the following output, the second build completed, but the application is in error state.
+
+NAME                    READY   STATUS             RESTARTS   AGE
+nodejs-hello-1-build    0/1     Error              0          7m11s
+nodejs-hello-1-deploy   1/1     Running            0          53s
+nodejs-hello-1-nksdq    0/1     CrashLoopBackOff   3          51s
+nodejs-hello-2-build    0/1     Completed          0          88s
+The name of the application pod (nodejs-hello-1-rpx1d) is generated randomly, and may differ from yours.
+
+Review the logs generated by the application pod.
+
+[student@workstation DO180-apps]$ oc logs dc/nodejs-hello
+...output omitted...
+npm info using npm@6.14.5
+npm info using node@v12.18.2
+npm ERR! missing script: start
+...output omitted...
+NOTE
+The oc logs dc/nodejs-hello command dumps the logs from the deployment pod. In the case of a successful deployment, that command dumps the logs from the application pod, as previously shown.
+
+If the deployment logs do not display the error, then check the logs of the application pod by running the oc logs POD command replacing POD with the name of the pod that has a stuatus of CrashLoopBackOff.
+
+The application fails to start because the start script declaration is missing.
+
+Fix the problem by updating the application code.
+
+Update the package.json file to define a startup command.
+
+The previous output indicates that the ~/DO180-apps/nodejs-helloworld/package.json file is missing the start attribute in the scripts field. The start attribute defines a command to run when the application starts. It invokes the node binary, which runs the app.js application.
+
+To fix the problem, add to the package.json file the following attribute. Do not forget the comma after the bracket.
+
+...
+  "description": "Hello World!",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "author": "Red Hat Training",
+...
+Commit and push the changes made to the project:
+
+[student@workstation DO180-apps]$ git commit -am "Added start up script"
+...output omitted...
+1 file changed, 3 insertions(+)
+[student@workstation DO180-apps]$ git push
+...output omitted...
+To https://github.com/yourgituser/DO180-apps
+   73a82cd..a5a0411  troubleshoot-s2i -> troubleshoot-s2i
+Continue the deploy step from the S2I process.
+
+Restart the build step.
+
+[student@workstation DO180-apps]$ oc start-build bc/nodejs-hello
+build.build.openshift.io/nodejs-hello-3 started
+Evaluate the status of the current build process. Run the command to retrieve the status of the Node.js application. Wait for the latest build to finish.
+
+[student@workstation DO180-apps]$ oc get pods -w
+NAME                        READY   STATUS             RESTARTS   AGE
+nodejs-hello-1-build   0/1     Error              0          66m
+nodejs-hello-1-mtxsh   0/1     CrashLoopBackOff   9          23m
+nodejs-hello-2-build   0/1     Completed          0          28m
+nodejs-hello-3-build   1/1     Running            0          2m3s
+nodejs-hello-2-deploy   0/1   Pending   0     0s
+nodejs-hello-2-deploy   0/1   Pending   0     0s
+nodejs-hello-2-deploy   0/1   ContainerCreating   0     0s
+nodejs-hello-3-build 0/1 Completed 0 3m9s
+nodejs-hello-2-deploy   1/1   Running   0     4s
+nodejs-hello-2-8tsl4   0/1   Pending   0     0s
+nodejs-hello-2-8tsl4   0/1   Pending   0     1s
+nodejs-hello-2-8tsl4   0/1   ContainerCreating   0     1s
+nodejs-hello-2-8tsl4 1/1 Running 0 50s
+nodejs-hello-1-mtxsh   0/1   Terminating   9     25m
+nodejs-hello-1-mtxsh   0/1   Terminating   9     25m
+nodejs-hello-2-deploy 0/1 Completed 0 61s
+nodejs-hello-2-deploy   0/1   Terminating   0     61s
+nodejs-hello-2-deploy   0/1   Terminating   0     61s
+nodejs-hello-1-mtxsh   0/1   Terminating   9     25m
+nodejs-hello-1-mtxsh   0/1   Terminating   9     25m
+According to the output, the build is successful, and the application is able to start with no errors. The output also provides insight into how the deployment pod (nodejs-hello-2-deploy) was created, and that it completed successfully and terminated. As the new application pod is available (nodejs-hello-2-8tsl4), the old one (nodejs-hello-1-mtxsh) is rolled out.
+
+Review the logs generated by the nodejs-hello application pod.
+
+[student@workstation DO180-apps]$ oc logs dc/nodejs-hello
+Environment:
+	DEV_MODE=false
+	NODE_ENV=production
+	DEBUG_PORT=5858
+Launching via npm...
+npm info it worked if it ends with ok
+npm info using npm@6.14.5
+npm info using node@v12.18.2
+npm info lifecycle nodejs-helloworld@1.0.0~prestart: nodejs-helloworld@1.0.0
+npm info lifecycle nodejs-helloworld@1.0.0~start: nodejs-helloworld@1.0.0
+
+> nodejs-helloworld@1.0.0 start /opt/app-root/src
+> node app.js
+
+Example app listening on port 8080!
+The application is now running on port 8080.
+
+Test the application.
+
+Run the oc command with the expose subcommand to expose the application:
+
+[student@workstation DO180-apps]$ oc expose svc/nodejs-hello
+route.route.openshift.io/nodejs-hello exposed
+Retrieve the address associated with the application.
+
+[student@workstation DO180-apps]$ oc get route -o yaml
+apiVersion: v1
+items:
+- apiVersion: route.openshift.io/v1
+  kind: Route
+...output omitted...
+  spec:
+    host: nodejs-hello-${RHT_OCP4_DEV_USER}-nodejs.${RHT_OCP4_WILDCARD_DOMAIN}
+    port:
+      targetPort: 8080-tcp
+    to:
+      kind: Service
+      name: nodejs-hello
+...output omitted...
+Access the application from the workstation VM by using the curl command:
+
+[student@workstation DO180-apps]$ curl -w "\n" \
+> http://nodejs-hello-${RHT_OCP4_DEV_USER}-nodejs.${RHT_OCP4_WILDCARD_DOMAIN}
+Hello world!
+The output demonstrates the application is up and running.
+
+Finish
+
+On workstation, run the lab troubleshoot-s2i finish script to complete this exercise.
+
+[student@workstation DO180-apps]$ lab troubleshoot-s2i finish
+This concludes the exercise.

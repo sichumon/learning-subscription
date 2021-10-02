@@ -1,0 +1,42 @@
+Appendix C. Creating a Quay Account
+Abstract
+
+Goal	Describe how to create a Quay account for labs in the course.
+Creating a Quay Account
+Objectives
+After completing this section, you should be able to create a Quay account and create public container image repositories for the labs in the course.
+
+Creating a Quay Account
+
+You need a Quay account to create one or more public container image repositories for the labs in this course. If you already have a Quay account, you can skip the steps to create a new account listed in this appendix.
+
+IMPORTANT
+If you already have a Quay account, ensure that you only create public container image repositories for the labs in this course. The lab grading scripts and instructions require unauthenticated access to pull container images from the repository.
+
+To create a new Quay account, perform the following steps:
+
+Navigate to https://quay.io using a web browser.
+
+Click Sign in in the upper-right corner (next to the search bar).
+
+On the Sign in page, you can log in using your Google or GitHub credentials (created in Appendix A).
+
+
+Figure C.1: Sign in using Google or GitHub credentials.
+Alternatively, click Create Account to create a new account.
+
+
+Figure C.2: Creating a new account
+If you chose to skip the Google or GitHub log-in method and instead opted to create a new account, you will receive an email with instructions on how to activate your Quay account. Verify your email address and then sign in to the Quay website with the username and password you provided during account creation.
+
+After you have logged in to Quay you can create new image repositories by clicking Create New Repository on the Repositories page.
+
+
+Figure C.3: Creating a new image repository
+Alternatively, click the plus icon (+) in the upper-right corner (to the left of the bell icon), and then click New Repository.
+
+
+Figure C.4: Creating a new image repository
+
+REFERENCES
+https://docs.quay.io/solution/getting-started.html

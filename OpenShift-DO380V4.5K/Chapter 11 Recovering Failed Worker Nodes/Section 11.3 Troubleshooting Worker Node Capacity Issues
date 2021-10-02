@@ -1,0 +1,27 @@
+Troubleshooting Worker Node Capacity Issues
+Objectives
+After completing this section, you should be able to diagnose and troubleshoot capacity issues that occur on worker nodes.
+
+Causes for Worker Node Storage Exhaustion
+The OpenShift environment, and applications running within that environment, can cause storage issues on one or more worker nodes. As a cluster operator or administrator, you have an array of tools, such as configured monitoring probes and scripted cluster health reports, that aid in assessing and remediating worker node storage constraints.
+
+Typical cluster operations, and the various deployments running within the cluster, are often the leading causes of storage exhaustion. You can avoid this problem using honed operational practices, or mitigate it through focused troubleshooting techniques. Continually improving operational practices, such as removing old logs or container images, instills behaviors that result in effective capacity management. Additionally, simulating disaster recovery scenarios and practicing troubleshooting skills directly correlates to overall better cluster health.
+
+When left unmanaged, services that log output to the local disk of a worker node result in depleted disk space that can degrade overall cluster health and performance. Large or numerous container images consume space and require proper footprint management to avoid worker node storage depletion. Additionally, applications that are configured to utilize ephemeral storage allocated directly from the local disk of a worker node deplete available capacity.
+
+One clue that OpenShift provides when worker node storage issues arise is the application of a disk-pressure:NoSchedule and/or disk-pressure:NoExecute taint. These taints are displayed in the output of the oc describe node <NODE_NAME> command.
+
+Other Worker Node Capacity Concerns
+Because worker node storage issues commonly arise in active clusters, these are not the main resources that require proper management by cluster administrators. System memory used by running applications is finite, and a large or poorly authored deployment is a candidate for worker node RAM depletion.
+
+Similarly, CPU processing power is a limited resource that requires consideration when deploying applications with high computational requirements.
+
+Lastly, network bandwidth is shared between all applications that run on a worker node, so an application that utilizes heavy traffic throughput results in degradation of all pods running on the worker node.
+
+Best Practices for Managing Worker Node Resources
+A best practice for maintaining worker node performance and overall cluster health, is properly utilizing the default configured monitoring. It is also prudent to configure additional monitoring probes for cluster operations, as needed, for both custom operators and deployed applications.
+
+Traditional system administration tools, such as the logrotate service, are invaluable for maintaining resource allocations.
+
+Employing quotas to manage application consumption of resources is also prudent in large scale environments. Curating container images and using good management practices to prune old, stale, or large images reduces storage constraints caused by the growth of the image footprints.
+

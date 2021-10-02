@@ -1,0 +1,87 @@
+Quiz: Describing OpenShift Container Platform Features
+Choose the correct answers to the following questions:
+
+1.		
+Which of the following definitions best describes container orchestration platforms?
+
+A )	
+They extend your application's operational knowledge and provide a way to package and distribute them.
+
+B )	
+They allow you to manage a cluster of servers that run containerized applications. They add features such as self-service, high availability, monitoring, and automation.
+
+C )		
+They allow you to provision Infrastructure-as-a-Service clusters on a variety of cloud providers, including AWS, GCP, and Microsoft Azure.
+
+D )		
+They enable developers to write, package, and publish their applications as operators to the operator catalog.
+
+
+2.		
+Which three of the following key features enable high availability for your applications? (Choose three.)
+
+A		
+An OpenShift etcd cluster keeps the cluster state available for all nodes.
+
+B		
+OpenShift HAProxy load balancers allow external access to applications.
+
+C		
+OpenShift services load balance access to applications from inside the cluster.
+
+D		
+OpenShift deployment configurations ensure application containers are restarted in scenarios such as loss of a node.
+
+
+3.		
+Which two of the following statements about OpenShift are true? (Choose two.)
+
+A		
+Developers can create and start cloud applications directly from a source code repository.
+
+B		
+OpenShift patches Kubernetes to add features that would not be available to other distributions of Kubernetes.
+
+C		
+OpenShift Dedicated gives you access to an exclusive set of operators that Red Hat curates and maintains. This helps to ensure that the operators are secure and safe to run in your environment.
+
+D		
+OpenShift cluster administrators can discover and install new operators from the operator catalog.
+
+
+4.		
+Which two of the following services do OpenShift components use for load balancing their traffic? (Choose two.)
+
+A		
+The OpenShift API, which is accessible over the external load balancer.
+
+B		
+Services, which use Netfilter for load balancing.
+
+C		
+Services, which use HAProxy for load balancing.
+
+D		
+Routes, which use Netfilter for load balancing.
+
+E		
+Routes, which use the HAProxy for load balancing.
+
+
+5.		
+Which two of the following statements about OpenShift high availability and scaling are true? (Choose two.)
+
+A		
+OpenShift does not provide high availability by default. You need to use third-party high availability products.
+
+B		
+OpenShift uses metrics from Prometheus to dynamically scale application pods.
+
+C		
+High availability and scaling are restricted to applications that expose a REST API.
+
+D		
+OpenShift can scale applications up and down based on demand.
+
+
+ANSWERS: 1.B , 2.B,C,D 3.A,D 4.A,E 5.B,D

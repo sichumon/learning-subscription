@@ -1,0 +1,181 @@
+Lab: Integrating Identity Management
+Performance Checklist
+
+In this lab, you will create nested projects within a domain and assign roles in OpenStack to users authenticated by Red Hat IdM. You will also initiate and validate a Fernet key rotation.
+
+Outcomes
+
+You should be able to:
+
+Create projects and subprojects in a domain.
+
+Assign group roles to a group in a domain.
+
+Identify roles assigned to users in a domain.
+
+Initiate and validate Fernet key rotation.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab identity-review setup command. This ensures that the OpenStack services are running and that the environment has been properly configured for this lab.
+
+[student@workstation ~]$ lab identity-review setup
+Create a project called consulting in the Example domain.
+
+Source the admin environment file, /home/student/admin-rc. Create the consulting project in the Example domain.
+
+[student@workstation ~]$ source ~/admin-rc
+[student@workstation ~]$ openstack project create consulting --domain Example
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | 0ed0e18ad28747ccac32ec344e271d58 |
+| enabled     | True                             |
+| id          | 191dd8a9c767498ca21587c48f01d96c |
+| is_domain   | False                            |
+| name        | consulting                       |
+| parent_id   | 0ed0e18ad28747ccac32ec344e271d58 |
+| tags        | []                               |
++-------------+----------------------------------+
+Verify that the consulting project is created in the Example domain.
+
+[student@workstation ~]$ openstack project list --domain Example
++----------------------------------+------------+
+| ID                               | Name       |
++----------------------------------+------------+
+| 191dd8a9c767498ca21587c48f01d96c | consulting |
++----------------------------------+------------+
+Create a new subproject named development in the consulting project.
+
+[student@workstation ~]$ openstack project create development \
+--parent consulting --domain Example
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | 0ed0e18ad28747ccac32ec344e271d58 |
+| enabled     | True                             |
+| id          | 547e84f2efeb431ea77c48aed5a14a68 |
+| is_domain   | False                            |
+| name        | development                      |
+| parent_id   | 191dd8a9c767498ca21587c48f01d96c |
+| tags        | []                               |
++-------------+----------------------------------+
+Assign the consulting-members group in the Example domain the _member_ role to the consulting project in the Example domain.
+
+[student@workstation ~]$ openstack role add \
+--group consulting-members --group-domain Example \
+--project consulting --project-domain Example _member_
+Assign the consulting-members group in the Example domain the admin role for all the subprojects of the consulting project in the Example domain.
+
+[student@workstation ~]$ openstack role add \
+--group consulting-members --group-domain Example \
+--project consulting --project-domain Example --inherited admin
+Verify the roles assigned to the following users in the consulting project within the Example domain:
+
+operator1
+
+architect1
+
+Verify that the _member_ role is assigned to the operator1 user in the consulting project in the Example domain.
+
+[student@workstation ~]$ openstack role assignment list \
+--user operator1 --user-domain Example \
+--project consulting --names --effective
++----------+-------------------+-----+--------------------+-----+-----------+
+| Role     | User              | ... | Project            | ... | Inherited |
++----------+-------------------+-----+--------------------+-----+-----------+
+| _member_ | operator1@Example |     | consulting@Example |     | False     |
++----------+-------------------+-----+--------------------+-----+-----------+
+Verify that the _member_ role is assigned to the architect1 user in the consulting project in the Example domain.
+
+[student@workstation ~]$ openstack role assignment list \
+--user architect1 --user-domain Example \
+--project consulting --names --effective
++----------+--------------------+-----+--------------------+-----+-----------+
+| Role     | User               | ... | Project            | ... | Inherited |
++----------+--------------------+-----+--------------------+-----+-----------+
+| _member_ | architect1@Example |     | consulting@Example |     | False     |
++----------+--------------------+-----+--------------------+-----+-----------+
+Verify the roles assigned to the following users in the development subproject in the Example domain.
+
+operator1
+
+architect1
+
+Verify that the admin role is assigned to the operator1 user in the development subproject in the Example domain.
+
+[student@workstation ~]$ openstack role assignment list \
+--user operator1 --user-domain Example \
+--project development --names --effective
++-------+-------------------+-----+---------------------+-----+-----------+
+| Role  | User              | ... | Project             | ... | Inherited |
++-------+-------------------+-----+---------------------+-----+-----------+
+| admin | operator1@Example |     | development@Example |     | True      |
++-------+-------------------+-----+---------------------+-----+-----------+
+Verify that the admin role is assigned to the architect1 user in the development subproject in the Example domain.
+
+[student@workstation ~]$ openstack role assignment list \
+--user architect1 --user-domain Example \
+--project development --names --effective
++-------+--------------------+-----+---------------------+-----+-----------+
+| Role  | User               | ... | Project             | ... | Inherited |
++-------+--------------------+-----+---------------------+-----+-----------+
+| admin | architect1@Example |     | development@Example |     | True      |
++-------+--------------------+-----+---------------------+-----+-----------+
+On director, initiate the rotation of the overcloud Fernet keys. Verify the completion of Fernet keys rotation.
+
+Log in to the director system.
+
+[student@workstation ~]$ ssh director
+(undercloud) [stack@director ~]$ 
+Execute the Mistral workflow to initiate the rotation of the Fernet keys.
+
+(undercloud) [stack@director ~]$ openstack workflow execution create \
+tripleo.fernet_keys.v1.rotate_fernet_keys '{"container": "overcloud"}'
++--------------------+-------------------------------------------+
+| Field              | Value                                     |
++--------------------+-------------------------------------------+
+| ID                 | b41b09b9-f9ad-4924-9b6d-b9b11bd613f6      |
+| Workflow ID        | 01bd8112-405d-4f0d-9aea-83c642d82946      |
+| Workflow name      | tripleo.fernet_keys.v1.rotate_fernet_keys |
+| Workflow namespace |                                           |
+| Description        |                                           |
+| Task Execution ID  | <none>                                    |
+| State              | RUNNING                                   |
+| State info         | None                                      |
+| Created at         | 2018-09-06 11:49:41                       |
+| Updated at         | 2018-09-06 11:49:41                       |
++--------------------+-------------------------------------------+
+Verify the status of the workflow execution by referencing its ID displayed in the output of the previous command. Rerun the command if required, and wait until the state is set to SUCCESS.
+
+(undercloud) [stack@director ~]$ openstack workflow execution show \
+b41b09b9-f9ad-4924-9b6d-b9b11bd613f6
++--------------------+-------------------------------------------+
+| Field              | Value                                     |
++--------------------+-------------------------------------------+
+| ID                 | b41b09b9-f9ad-4924-9b6d-b9b11bd613f6      |
+| Workflow ID        | 01bd8112-405d-4f0d-9aea-83c642d82946      |
+| Workflow name      | tripleo.fernet_keys.v1.rotate_fernet_keys |
+| Workflow namespace |                                           |
+| Description        |                                           |
+| Task Execution ID  | <none>                                    |
+| State              | SUCCESS                                   |
+| State info         | None                                      |
+| Created at         | 2018-09-06 11:49:41                       |
+| Updated at         | 2018-09-06 11:50:44                       |
++--------------------+-------------------------------------------+
+Log off from director.
+
+Evaluation
+
+On workstation, run the lab identity-review grade command to confirm the success of this exercise.
+
+[student@workstation ~]$ lab identity-review grade
+Cleanup
+
+On workstation, run the lab identity-review cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab identity-review cleanup
+This concludes the lab.

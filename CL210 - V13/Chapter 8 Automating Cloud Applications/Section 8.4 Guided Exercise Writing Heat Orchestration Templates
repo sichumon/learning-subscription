@@ -1,0 +1,213 @@
+
+Guided Exercise: Writing Heat Orchestration Templates
+In this exercise, you will edit an orchestration template to launch a multitier orchestration stack.
+
+Outcomes
+
+You should be able to:
+
+Edit an orchestration template to launch a multitier stack.
+
+Launch a stack using the orchestration template.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab orchestration-heat-templates setup command. This script ensures that the OpenStack services are running and the environment is properly configured for the exercise. The script also ensures that the resources needed for launching the stack are available and downloads the required scripts to the /home/student/heat-templates directory.
+
+[student@workstation ~]$ lab orchestration-heat-templates setup
+When you edit YAML files, you must use spaces, not tab characters, for indentation. If you use vi for text editing, configure the .vimrc file to set auto-indentation and set the ts and sw variables to two spaces for YAML files. Edit the /home/student/.vimrc file with the following content:
+
+autocmd FileType yaml setlocal ai ts=2 sw=2 et
+Download the http://materials.example.com/heat/finance-app1.yaml file to the /home/student/heat-templates directory. Edit the orchestration template to launch a customized instance.
+
+The orchestration template must include the following items:
+
+The finance-web instance must deploy a PHP web page that interacts with the MariaDB database. Run the webserver.sh script as the user-data script to deploy a PHP web page on the finance-web instance.
+
+The finance-db instance must configure a MariaDB database. Run the dbserver.sh script as the user-data script to deploy a MariaDB database and to create a database named mydb.
+
+The following parameters must be passed to the webserver.sh script using the user_data property:
+
+The $web_public_ip and $web_private_ip variables must be initialized with the external and private IP addresses of the finance-web instance, respectively. The $db_private_ip variable must be initialized with the private IP address of the finance-db instance. These variables are used in the webserver.sh script.
+
+The orchestration stack must retry once to execute the user-data script. The user-data script must return success on the successful execution of the script. Set the timeout period to 600 seconds, after which the webserver.sh script must return a fail result. Set the timeout period to 800 seconds, after which the dbserver.sh script must return a fail result.
+
+Change to the /home/student/heat-templates directory. Download the http://materials.example.com/heat/finance-app1.yaml orchestration template file to the /home/student/heat-templates directory.
+
+[student@workstation ~]$ cd ~/heat-templates
+[student@workstation heat-templates]$ wget \
+http://materials.example.com/heat/finance-app1.yaml
+Use the user_data property to define the /home/student/heat-templates/webserver.sh user-data script to deploy a PHP web page to finance-web. Set the user_data_format property of the OS::Nova::Server resource type to RAW.
+
+Edit the /home/student/heat-templates/finance-app1.yaml file and add the content highlighted below:
+
+  web_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: web_instance_name }
+      image: { get_param: web_image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/webserver.sh }
+The web page uses the $web_private_ip, $db_private_ip, and $web_public_ip variables passed as parameters. These parameters are defined using the params property of the str_replace intrinsic function.
+
+The $web_private_ip variable uses the web_net_port resource attribute, fixed_ips, to retrieve the first IP address associated with the web_server resource. The $db_private_ip variable uses the db_net_port resource attribute, fixed_ips, to retrieve the first IP address associated with the db_server resource. The $web_public_ip variable uses the web_floating_ip resource attribute, floating_ip_address, to set the public IP address associated with the web_server resource.
+
+Edit the /home/student/heat-templates/finance-app1.yaml file and add the content highlighted below:
+
+  web_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: instance_name }
+      image: { get_param: image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/webserver.sh }
+          params:
+            $web_private_ip: {get_attr: [web_net_port,fixed_ips,0,ip_address]}
+            $db_private_ip: {get_attr: [db_net_port,fixed_ips,0,ip_address]}
+            $web_public_ip: {get_attr: [web_floating_ip,floating_ip_address]}
+Use the WaitHandleCondition resource to send a signal about the status of the user-data script.
+
+The $wc_notify variable is set to the wait handle URL using the curl_cli attribute of the web_wait_handle resource. The wait handle URL value is set to the $wc_notify variable. If the web page deployed by the script is accessible (HTTP status code 200), then the $wc_notify variable returns a status of SUCCESS. The web_server resource state is marked as CREATE_COMPLETE when the WaitConditionHandle resource signals SUCCESS.
+
+The WaitConditionHandle returns FAILURE if the web page is not accessible or if it times out after 600 seconds. The web_server resource state is then marked as CREATE_FAILED.
+
+Edit the /home/student/heat-templates/finance-app1.yaml file and add the content highlighted below:
+
+  web_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: instance_name }
+      image: { get_param: image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/webserver.sh }
+          params:
+            $web_private_ip: {get_attr: [web_net_port,fixed_ips,0,ip_address]}
+            $db_private_ip: {get_attr: [db_net_port,fixed_ips,0,ip_address]}
+            $web_public_ip: {get_attr: [web_floating_ip,floating_ip_address]}
+            $wc_notify: {get_attr: [web_wait_handle,curl_cli]}
+Use the user_data property to define the /home/student/heat-templates/dbserver.sh user-data script to configure the MariaDB server on finance-db. Set the user_data_format property of the OS::Nova::Server resource type to RAW.
+
+Use the WaitHandleCondition resource to send a signal about the status of the user-data script. The $wc_notify variable is set to the wait handle URL using the curl_cli attribute of the db_wait_handle resource.
+
+Edit the /home/student/heat-templates/finance-app1.yaml file and add the content highlighted below:
+
+  db_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: db_instance_name }
+      image: { get_param: db_image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/dbserver.sh }
+          params:
+            $db_wc_notify: {get_attr: [db_wait_handle,curl_cli]}
+Save and exit the file.
+
+Create the /home/student/heat-templates/environment.yaml environment file. Enter the values for all input parameters defined in the /home/student/heat-templates/finance-app1.yaml template file.
+
+Create the /home/student/heat-templates/environment.yaml file with the following content:
+
+parameters:
+  web_image_name: rhel7-web
+  db_image_name: rhel7-db
+  web_instance_name: finance-web
+  db_instance_name: finance-db
+  instance_flavor: default
+  key_name: example-keypair
+  public_net: provider-datacentre
+  private_net: finance-network1
+  private_subnet: finance-subnet1
+Launch the stack and verify it by accessing the web page deployed on the instance. Use the developer1 user credentials to launch the stack.
+
+Use the developer1 user credentials to perform a dry-run stack deployment and inspect the resources that will be created when you launch the stack. Rectify all errors before proceeding to the next step.
+
+Use the finance-app1.yaml template file and the environment.yaml environment file to create the stack. Name the stack finance-app1.
+
+NOTE
+Before you perform a dry run of deploying the stack, download the http://materials.example.com/heat/finance-app1.yaml-final template file to the /home/student/heat-templates directory. Use the diff command to compare the finance-app1.yaml template file with the known good template file, finance-app1.yaml-final. Fix any differences you find, and then proceed to launch the stack.
+
+[student@workstation heat-templates]$ wget \
+http://materials.example.com/heat/finance-app1.yaml-final
+[student@workstation heat-templates]$ diff finance-app1.yaml \
+finance-app1.yaml-final
+[student@workstation heat-templates]$ source ~/developer1-finance-rc
+[student@workstation heat-templates(developer1-finance)]$ openstack stack \
+create \
+--environment environment.yaml \
+--template finance-app1.yaml \
+--dry-run -c description \
+finance-app1
++-------------+---------------------------+
+| Field       | Value                     |
++-------------+---------------------------+
+| description | multi-tier stack template |
++-------------+---------------------------+
+Launch the stack using the finance-app1.yaml template file and the environment.yaml environment file. Name the stack finance-app1.
+
+If the dry run is successful, use the openstack stack create command to launch the stack. Do not use the --dry-run option while launching the stack.
+
+[student@workstation heat-templates(developer1-finance)]$ openstack stack \
+create \
+--environment environment.yaml \
+--template finance-app1.yaml \
+--wait \
+finance-app1
+...output omitted...
+List the output returned by the finance-app1 stack.
+
+[student@workstation heat-templates(developer1-finance)]$ openstack stack \
+output list finance-app1
++----------------+---------------------------------------------------+
+| output_key     | description                                       |
++----------------+---------------------------------------------------+
+| web_private_ip | Private IP address of the web server              |
+| web_public_ip  | External IP address of the web server             |
+| website_url    | This URL is the "external" URL that can be used   |
+|                | to access the web server.                         |
+|                |                                                   |
+| db_private_ip  | Private IP address of the DB server               |
++----------------+---------------------------------------------------+
+Inspect the website_url output value of the stack. The IP address in the output_value field might vary.
+
+[student@workstation heat-templates(developer1-finance)]$ openstack stack \
+output show finance-app1 website_url
++--------------+--------------------------------------------+
+| Field        | Value                                      |
++--------------+--------------------------------------------+
+| description  | This URL is the "external" URL that can be |
+|              | used to access the web server.             |
+|              |                                            |
+| output_key   | website_url                                |
+| output_value | http://172.25.250.107/index.php            |
++--------------+--------------------------------------------+
+Verify that the multitier stack was created and the user-data script was executed successfully on both the instances by accessing the URL returned as the value for the website_url output.
+
+Cleanup
+
+On workstation, run the lab orchestration-heat-templates cleanup command to clean up this exercise.
+
+[student@workstation ~]$ lab orchestration-heat-templates cleanup
+This concludes the guided exercise.

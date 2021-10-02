@@ -1,0 +1,144 @@
+
+Lab: Managing Cluster Monitoring and Metrics
+In this lab, you will configure Alertmanager to send alert notifications and configure persistent storage for Prometheus.
+
+Outcomes
+
+You should be able:
+
+Configure Alertmanager to send email notifications.
+
+Configure Prometheus to use persistent storage.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that:
+
+The cluster API is reachable.
+
+The utility.lab.example.com host is configured to receive email.
+
+The ocp-admins@example.com email alias sends messages to the lab user on utility.lab.example.com.
+
+The cluster contains a firing TestAlert alert.
+
+Prometheus and Alertmanager use ephemeral storage.
+
+[student@workstation ~]$ lab monitor-review start
+NOTE
+Consider using the Cluster Monitoring chapter of the Red Hat OpenShift Container Platform Monitoring guide as a reference.
+
+Procedure 9.4. Instructions
+
+Configure Alertmanager to send email notifications for all warning alerts. Use the values in the following table to configure Alertmanager:
+
+Setting	Value
+smtp_smarthost	192.168.50.254:25
+smtp_from	alerts-review@ocp4.example.com
+to	ocp-review@example.com
+repeat_interval	2m
+NOTE
+You are not required to configure a secure connection from Alertmanager to the SMTP host.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Extract the alertmanager-main secret, which contains the current alertmanager.yaml configuration file.
+
+[student@workstation ~]$ oc extract secret/alertmanager-main \
+>  -n openshift-monitoring  --to=/tmp
+/tmp/alertmanager.yaml
+Update the content of the /tmp/alertmanager.yaml file with the required configuration. The following configuration is valid:
+
+"global":
+  "resolve_timeout": "5m"
+  smtp_smarthost: 192.168.50.254:25
+  smtp_from: alerts-review@ocp4.example.com
+  smtp_require_tls: false
+"receivers":
+- "name": default
+- name: email-notification
+  email_configs:
+    - to: ocp-review@example.com
+"route":
+  "group_by":
+  - "namespace"
+  "group_interval": "5m"
+  "group_wait": "30s"
+  "receiver": default
+  "repeat_interval": 2m
+  "routes":
+  - "match":
+      "alertname": "Watchdog"
+    "receiver": default
+  - match:
+      severity: warning
+    receiver: email-notification
+NOTE
+In a previous guided exercise, you preprocess the alertmanager.yaml file to remove extraneous quote (") characters. If you preprocess the file, then the file content matches the style of other YAML files in the course.
+
+You do not need to remove the extraneous quote characters. This solution shows only the required changes to the extracted /tmp/alertmanager.yaml file.
+
+Update the alertmanager-main secret with the content of the local alertmanager.yaml file:
+
+[student@workstation ~]$ oc set data secret/alertmanager-main \
+>  -n openshift-monitoring  --from-file=/tmp/alertmanager.yaml
+secret/alertmanager-main data updated
+Verify that the new Alertmanager configuration loads without any errors:
+
+[student@workstation ~]$ oc logs -f -c alertmanager alertmanager-main-0 \
+>  -n openshift-monitoring
+...output omitted...
+level=info ts=... msg="Loading configuration file" file=.../alertmanager.yaml
+level=info ts=... msg="Completed loading of configuration file" ...
+NOTE
+If you see configuration errors in the logs, then modify the /tmp/alertmanager.yaml file and reapply your changes.
+
+Configure Prometheus to use persistent storage. Request 25Gi of storage space from the nfs-storage storage class. Ensure that Prometheus retains the data for ten days.
+
+NOTE
+The ~/DO380/labs/monitor-review/persistent-storage.yml file contains a template for persistent storage configuration.
+
+Modify the ~/DO380/labs/monitor-review/persistent-storage.yml file to match the storage requirements for Prometheus.
+
+prometheusK8s:
+  retention: 10d
+  volumeClaimTemplate:
+    spec:
+      storageClassName: nfs-storage
+      resources:
+        requests:
+          storage: 25Gi
+Use the ~/DO380/labs/monitor-review/persistent-storage.yml file to create the cluster-monitoring-config configuration map.
+
+[student@workstation ~]$ cd ~/DO380/labs/monitor-review
+[student@workstation monitor-review]$ oc create cm cluster-monitoring-config \
+>  -n openshift-monitoring  --from-file="config.yaml=persistent-storage.yml"
+configmap/cluster-monitoring-config created
+[student@workstation monitor-review]$ cd ~
+[student@workstation ~]$
+Verify that persistent volume claims are created for Prometheus. After the persistent volume claims display, press Ctrl+C to exit the watch command.
+
+[student@workstation ~]$ watch oc get pvc -n openshift-monitoring
+NAME                                ...  CAPACITY  ...  STORAGECLASS  AGE
+prometheus-k8s-db-prometheus-k8s-0  ...  25Gi      ...  nfs-storage   23h
+prometheus-k8s-db-prometheus-k8s-1  ...  25Gi      ...  nfs-storage   23h
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab monitor-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab monitor-review finish
+This concludes the section.

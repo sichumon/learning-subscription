@@ -1,0 +1,125 @@
+Scaling an Application
+Objectives
+After completing this section, students should be able to:
+
+Control the number of replicas of a pod.
+
+Specify the number of replicas in a deployment or deployment configuration resource.
+
+Manually scale the number of replicas.
+
+Create a horizontal pod autoscaler (HPA) resource.
+
+Specifying Pod Replicas in Configuration Workloads
+The number of pod replicas for a specific deployment or deployment configuration can be increased or decreased to meet your needs. Despite the ReplicaSet and ReplicationController resources, the number of replicas needed for an application is typically defined in a deployment or deployment configuration resource. A replica set or replication controller (managed by a deployment or a deployment configuration) guarantees that the specified number of replicas of a pod are running at all times. The replica set or replication controller can add or remove pods as necessary to conform to the desired replica count.
+
+Both deployments and deployment configurations contain:
+
+The desired number of replicas
+
+A selector for identifying managed pods
+
+A pod definition, or template, for creating a replicated pod (including labels to apply to the pod)
+
+The following deployment resource (created using the oc create deployment command) displays the following items:
+
+apiVersion: apps/v1
+kind: Deployment
+...output omitted...
+spec:
+  replicas: 1 1
+  selector:
+    matchLabels:
+      deployment: scale 2
+  strategy: {}
+  template: 3
+    metadata:
+      labels:
+        deployment: scale 4
+    spec:
+      containers:
+...output omitted...
+1
+
+Specifies the desired number of copies (or replicas) of the pod to run.
+
+2
+
+A replica set (for a deployment) or a replication controller (for a deployment configuration) uses a selector to count the number of running pods, in the same way that a service uses a selector to find the pods to load balance.
+
+3
+
+A template for pods that the replica set or replication controller creates.
+
+4
+
+Labels on pods created by the template must match those used for the selector.
+
+A deployment configuration, typically created using either the web console or the oc new-app command with the --as-deployment-config option, defines the same information, but in a slightly different way. Deployment configurations use a deploymentconfig selector with a matching deploymentconfig label in the pod metadata.
+
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+...output omitted...
+spec:
+  replicas: 1
+  selector:
+    deploymentconfig: hello
+  strategy:
+    resources: {}
+  template:
+    metadata:
+      annotations:
+        openshift.io/generated-by: OpenShiftNewApp
+      labels:
+        deploymentconfig: hello
+...output omitted...
+If the deployment or deployment configuration resource is under version control, then modify the replicas line in the resource file and apply the changes using the oc apply command.
+
+Whether in a deployment or a deployment configuration resource, a selector is a set of labels that all of the pods managed by the replica set or replication controller must match. The same set of labels must be included in the pod definition that the deployment or deployment configuration instantiates. This selector is used to determine how many instances of the pod are already running in order to adjust as needed.
+
+NOTE
+The replication controller does not perform autoscaling, because it does not track load or traffic. The horizontal pod autoscaler resource, presented later in this section, manages autoscaling.
+
+Manually Scaling the Number of Pod Replicas
+Developers and administrators can choose to manually scale the number of pod replicas in a project. More pods may be needed for an anticipated surge in traffic, or the pod count may be reduced to reclaim resources that can be used elsewhere by the cluster. Whether increasing or decreasing the pod replica count, the first step is to identify the appropriate deployment or deployment configuration (dc) to scale using the oc get command.
+
+[user@demo ~]$ oc get deployment
+NAME    READY   UP-TO-DATE   AVAILABLE   AGE
+scale   1/1     1            1           8h
+The number of replicas in a deployment or deployment configuration resource can be changed manually using the oc scale command.
+
+[user@demo ~]$ oc scale --replicas 5 deployment/scale
+The deployment resource propagates the change to the replica set; it reacts to the change by creating new pods (replicas) or deleting existing ones, depending on whether the new desired replica count is less than or greater than the existing count.
+
+Although it is possible to manipulate a replica set or replication controller resource directly, the recommended practice is to manipulate the deployment or deployment configuration resource instead. A new deployment creates either a new replica set or a new replication controller and changes made directly to a previous replica set or replication controller are ignored.
+
+Autoscaling Pods
+OpenShift can autoscale a deployment or a deployment configuration based on current load on the application pods, by means of a HorizontalPodAutoscaler resource type.
+
+A horizontal pod autoscaler resource uses performance metrics collected by the OpenShift Metrics subsystem. The Metrics subsystem comes pre-installed in OpenShift 4, rather than requiring a separate install, as in OpenShift 3. To autoscale a deployment or deployment configuration, you must specify resource requests for pods so that the horizontal pod autoscaler can calculate the percentage of usage.
+
+The recommended way to create a horizontal pod autoscaler resource is using the oc autoscale command, for example:
+
+[user@demo ~]$ oc autoscale dc/hello --min 1 --max 10 --cpu-percent 80
+The previous command creates a horizontal pod autoscaler resource that changes the number of replicas on the hello deployment configuration to keep its pods under 80% of their total requested CPU usage.
+
+The oc autoscale command creates a horizontal pod autoscaler resource using the name of the deployment or deployment configuration as an argument (hello in the previous example).
+
+NOTE
+Autoscaling for Memory Utilization continues to be a Technology Preview feature for Red Hat OpenShift Container Platform 4.5.
+
+The maximum and minimum values for the horizontal pod autoscaler resource serve to accommodate bursts of load and avoid overloading the OpenShift cluster. If the load on the application changes too quickly, then it might be advisable to keep a number of spare pods to cope with sudden bursts of user requests. Conversely, too many pods can use up all cluster capacity and impact other applications sharing the same OpenShift cluster.
+
+To get information about horizontal pod autoscaler resources in the current project, use the oc get command. For example:
+
+[user@demo ~]$ oc get hpa
+NAME   REFERENCE               TARGETS        MINPODS  MAXPODS  REPLICAS  ...
+hello  DeploymentConfig/hello  <unknown>/80%  1        10       1         ...
+scale  Deployment/scale        60%/80%        2        10       2         ...
+
+IMPORTANT
+The horizontal pod autoscaler initially has a value of <unknown> in the TARGETS column. It might take up to five minutes before <unknown> changes to display a percentage for current usage.
+
+A persistent value of <unknown> in the TARGETS column might indicate that the deployment or deployment configuration does not define resource requests for the metric. The horizontal pod autoscaler will not scale these pods.
+
+Most of the pods created using the oc new-app command do not define resource requests. Using the OpenShift autoscaler may therefore require editing the deployment or deployment configuration resources, creating custom YAML or JSON resource files for your application, or adding limit range resources to your project that define default resource requests.

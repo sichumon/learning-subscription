@@ -1,0 +1,182 @@
+Chapter 6. Configuring Trusted TLS Certificates
+Integrating OpenShift with an Enterprise Certificate Authority
+Guided Exercise: Integrating OpenShift with an Enterprise Certificate Authority
+Configuring Applications to Trust the Enterprise Certificate Authority
+Guided Exercise: Configuring Applications to Trust the Enterprise Certificate Authority
+Troubleshooting OpenShift Certificates
+Guided Exercise: Troubleshooting OpenShift Certificates
+Lab: Configuring Trusted TLS Certificates
+Summary
+Abstract
+
+Goal	Configure trusted TLS certificates for external access to cluster services and applications.
+Objectives	
+Change the wildcard certificate used by the ingress controller operator.
+
+Configure an application to use the trusted certificate bundle.
+
+Describe common issues with OpenShift certificates.
+
+Sections	
+Integrating OpenShift with an Enterprise Certificate Authority (and Guided Exercise)
+
+Configuring Applications to Trust the Enterprise Certificate Authority (and Guided Exercise)
+
+Troubleshooting OpenShift Certificates (and Guided Exercise)
+
+Lab	
+Configuring Trusted TLS Certificates
+
+Integrating OpenShift with an Enterprise Certificate Authority
+Objectives
+After completing this section, you should be able to:
+
+Change the wildcard certificate used by the ingress controller operator.
+
+Replace the master API certificate.
+
+Create an edge route using a wildcard certificate.
+
+Describing the Default Wildcard Certificate
+The Red Hat OpenShift Container Platform installer creates an internal certificate authority (CA) and uses this CA to sign additional certificates.
+
+The certificate used by the ingress controller operator is a wildcard certificate for all routes in the .apps subdomain for your cluster, such as .apps.ocp4.example.com. Routes for the web console, Grafana, Prometheus, and OAuth use this same wildcard certificate.
+
+When using the wildcard certificate signed by the internal OpenShift CA, the web console prompts users with a warning indicating that the connection is not secure.
+
+
+Figure 6.1: Certificate Warning
+The View Certificate link provides details about the certificate.
+
+
+Figure 6.2: Default Ingress Certificate
+If OpenShift certificates are not signed by a recognized certificate authority, then users attempting to access the cluster must add one or more exceptions to enable using the certificates.
+
+Although using these exceptions might be acceptable for internal use, this solution is frequently insufficient for client-facing URLs.
+
+Companies can use a certificate signed by a recognized certificate authority, such as Let’s Encrypt, or use a certificate signed by their own enterprise certificate authority.
+
+NOTE
+The only clients that implicitly trust certificates signed by the internal OpenShift certificate authority are other components within the OpenShift cluster. Therefore, these certificates should not be replaced.
+
+Changing the Ingress Controller Operator Certificate
+The ingress operator configures the ingress controller to route traffic into the OpenShift environment. The certificate used by the ingress controller can be updated so that it uses a certificate signed by a recognized certificate authority, or by your own enterprise CA. Changing the ingress controller operator to use a different certificate and its associated key only requires a handful of steps. Before starting this process, you need:
+
+The new certificate and key in PEM format.
+
+The certificate must have a subjectAltName extension of *.apps.<OPENSHIFT-DOMAIN>, such as *.apps.ocp4.example.com, that enables using the certificate as a wildcard certificate for the .apps subdomain.
+
+IMPORTANT
+Changing the certificate used by the ingress controller operator does not affect certificates signed by the internal OpenShift certificate authority.
+
+To begin, create a new configuration map in the openshift-config namespace.
+
+Prefix the file path with ca-bundle.crt= to name the data key in the configuration map as ca-bundle.crt. This configuration map can contain one or more certificates. For example, you can combine the new wildcard certificate and the certificate authority used to sign the wildcard certificate into one file. Add these certificates to the certificate bundle if additional certificates are needed to proxy out of your cluster.
+
+Although it may not seem intuitive, some OpenShift components communicate with each other using external-facing URLs.
+
+Adding your certificates to the cluster proxy ensures that your web console pods can trust the authentication pods and vice versa.
+
+This step is not needed if the certificate is signed by a certificate authority that already exists in the Red Hat CoreOS (RHCOS) trust bundle.
+
+[user@demo ~]$ oc create configmap <CONFIGMAP-NAME> \
+>   --from-file ca-bundle.crt=<PATH-TO-CERTIFICATE> \
+>   -n openshift-config
+Configure the cluster proxy to use the new configuration map. This step injects the certificate information contained in your configuration map into other configuration maps labeled with config.openshift.io/inject-trusted-cabundle=true.
+
+As with the preceding step, this step is not needed if the certificate is signed by a certificate authority that already exists in the RHCOS trust bundle.
+
+There are several ways to modify the cluster proxy, such as using oc edit, oc patch, or modifying a configuration file under version control and then using oc apply.
+
+Additional changes to the cluster proxy can support a custom PKI infrastructure.
+
+[user@demo ~]$ oc patch proxy/cluster --type=merge \
+>   --patch='{"spec":{"trustedCA":{"name":"<CONFIGMAP-NAME>"}}}'
+IMPORTANT
+If you fail to perform the preceding two steps when using a certificate signed by your enterprise CA, then you will be unable to log into the web console.
+
+Create a new TLS secret in the openshift-ingress namespace using the new certificate and its corresponding key. The OpenShift ingress operator uses this secret.
+
+[user@demo ~]$ oc create secret tls <SECRET-NAME> \
+>  --cert <PATH-TO-CERTIFICATE> \
+>  --key <PATH-TO-KEY> \
+>  -n openshift-ingress
+Modify the default ingress controller operator in the openshift-ingress-operator namespace so that defaultCertificate uses the newly created secret.
+
+[user@demo ~]$ oc patch ingresscontroller.operator/default --type=merge \
+>   --patch='{"spec":{"defaultCertificate":{"name":"<SECRET-NAME>"}}}' \
+>   -n openshift-ingress-operator
+If the change is successful, then new router pods in the openshift-ingress namespace deploy and change to a status of running.
+
+[user@demo ~]$ watch oc get pods -n openshift-ingress
+Replacing the Master API Certificate
+The OpenShift master API uses a different certificate than the certificate used by the ingress controller. Changing the master API certificate allows users to log in securely using the oc command. As with the ingress controller certificate, a certificate signed by a recognized certificate authority or by your company enterprise CA can replace the master API certificate.
+
+To change the master API certificate, you need:
+
+The master API certificate and key in PEM format.
+
+The certificate is issued to the URL used to access the master API, such as api.ocp4.example.com.
+
+The subjectAltName extension for the certificate contains the URL used to access the master API, such as DNS:api.ocp4.example.com.
+
+If the certificate is signed by your enterprise CA, then you can create a combined certificate by concatenating the master API certificate and the CA certificate into one PEM file. Concatenate additional certificates into the combined PEM file as necessary to establish a chain of trust.
+
+[user@demo ~]$ cat WILDCARD.pem CA.pem > COMBINED-CERT.pem
+Change the master API certificate with the following steps. Create a new TLS secret in the openshift-config namespace using the master API certificate and key. Use the combined PEM certificate file for the --cert option if you created one.
+
+[user@demo ~]$ oc create secret tls <SECRET-NAME> \
+>   --cert <PATH-TO-CERTIFICATE> --key <PATH-TO-KEY> \
+>   -n openshift-config
+Modify the cluster API server to use the new secret. This can be accomplished by using oc edit, oc patch, or by modifying a file under version control and then using oc apply.
+
+[user@demo ~]$ oc patch apiserver cluster --type=merge --patch='{"spec": \
+>   {"servingCerts": {"namedCertificates": \
+>   [{"names": ["<API-SERVER-URL>"], \
+>   "servingCertificate": {"name": "<SECRET-NAME>"}}]}}}'
+If the apiserver updated successfully, then new kube-apiserver pods in the openshift-kube-apiserver namespace are created.
+
+The kube-apiserver cluster operator transitions to a progressing state while the pods are created.
+
+[user@demo ~]$ oc get co/kube-apiserver
+NAME             VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+kube-apiserver   4.5.4     True        True          False      28d
+The pods are ready when the kube-apiserver cluster operator is no longer progressing.
+
+[user@demo ~]$ oc get co/kube-apiserver
+NAME             VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+kube-apiserver   4.5.4     True        False         False      28d
+NOTE
+It can take five minutes or more before all of the kube-apiserver pods are updated.
+
+Verifying the New Certificate
+Your system can be configured to trust your enterprise CA using the following two steps:
+
+Copy your enterprise CA certificate to the /etc/pki/ca-trust/source/anchors/ directory. Change the name of the certificate if it conflicts with an existing file name in that directory.
+
+Run the update-ca-trust extract command.
+
+Access the web console to verify the new certificate. Use the oc whoami command to find the web console URL.
+
+[user@demo ~]$ oc whoami --show-console
+https://console-openshift-console.apps.ocp4.example.com
+After you enter the URL in your web browser, the web console displays with a lock icon in the URL address bar indicating that the connection is secure.
+
+If your enterprise certificate authority signed the certificate, then you web browser might indicate that it does not recognize the certificate issuer.
+
+
+Figure 6.3: Secured Firefox Connection
+If a recognized certificate authority signed the master API certificate, or if you configure your system to trust your enterprise CA, then you can log in securely using the oc login command.
+
+If you had previously logged in insecurely, you can delete the ~/.kube/ directory before using the oc login command.
+
+Alternatively, use the --certificate-authority option with the oc login command to specify the location of the CA certificate used to sign the master API certificate.
+
+Creating an Edge Route Using the New Wildcard Certificate
+Both new and existing OpenShift applications can immediately take advantage of the new wildcard certificate by creating an edge route. While an edge route only secures traffic between the router and the end-user, it does not require making any modifications to the application container image.
+
+You can still use reencrypt routes and passthrough routes to secure traffic between the end-user and the application pods.
+
+Use the oc create route edge to create a new edge route.
+
+[user@demo ~]$ oc create route edge <ROUTE-NAME> --service <SERVICE>

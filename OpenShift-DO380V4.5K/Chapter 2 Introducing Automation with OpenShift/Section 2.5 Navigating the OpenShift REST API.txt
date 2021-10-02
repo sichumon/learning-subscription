@@ -1,0 +1,137 @@
+Navigating the OpenShift REST API
+Objectives
+After completing this section, you should be able to navigate the OpenShift REST API.
+
+Discussing the OpenShift REST API
+OpenShift provides a REST API, served by the API Server. Clients and automation tools can use the REST API to interact with the cluster. This way, both users and internal cluster components can perform operations with OpenShift without the need of using the oc or kubectl binaries.
+
+Authenticating with the REST API
+For interacting with the OpenShift API, two security concepts intervene:
+
+Authentication. Handled by the OpenShift OAuth server, its purpose is to validate that users are who they say they are.
+
+Authorization. Handled by the OpenShift API server, its purpose is to validate that users have access to the resources they are trying to interact with.
+
+In order to interact with OpenShift resources via the REST API, you must retrieve a bearer token from the OpenShift OAuth server, and then include this token as a header in requests to the API server.
+
+There are several methods for retrieving the token, including:
+
+Request a token from the OAuth server path /oauth/authorize?client_id=openshift-challenging-client&response_type=token. The server responds with a 302 Redirect to a location. Find the access_token parameter in the location query string.
+
+Log in using the oc login command and inspect the kubeconfig yaml.
+
+This is normally located at ~/.kube/config. Find the token listed under your user entry. . Log in using the oc login command, and then run the oc proxy command to expose an API server proxy on your local machine. Any requests to the proxy server will identify as the user logged in with oc. . Log in using the oc login command, and then run the command oc whoami -t.
+
+WARNING
+Protect access to the localhost proxy port when running oc proxy.
+
+After that, you must include the bearer token as a header in requests to the API server as follows:
+
+[user@demo ~]$ curl -k \
+> --header "Authorization: Bearer qfyV5ULvv...i712kJT" \
+> -X GET https://api.example.com/api
+{
+  "kind": "APIVersions",
+  "versions": [
+    "v1"
+  ],
+  "serverAddressByClientCIDRs": [
+    {
+      "clientCIDR": "0.0.0.0/0",
+      "serverAddress": "10.0.136.182:6443"
+    }
+  ]
+}
+Finding REST API Paths
+The OpenShift REST API paths can be explored with a HTTP GET request to retrieve a list of possible paths:
+
+[user@demo ~]$ curl -k \
+> --header "Authorization: Bearer _qfyV5ULvv...i712kJT_" \
+> -X GET https://api.example.com/api
+{
+  "paths": [
+    "/api",
+    "/api/v1",
+    "/apis",
+    "/apis/",
+    "/apis/admissionregistration.k8s.io",
+    "/apis/admissionregistration.k8s.io/v1",
+    "/apis/admissionregistration.k8s.io/v1beta1",
+    "/apis/apiextensions.k8s.io",
+    "/apis/apiextensions.k8s.io/v1",
+    "/apis/apiextensions.k8s.io/v1beta1",
+...output omitted...
+}
+REST APIs are organized by Kind and resource Version. From the output above, observe the line:
+
+"/apis/admissionregistration.k8s.io/v1"
+The resource Kind is admissionregistration.k8s.io.
+
+The resource Version is v1.
+
+API resources are grouped as follows:
+
+The core v1 API resources, such as pods, are placed in the /api path.
+
+Other resources, such as deployments and routes, are placed in the /apis path.
+
+Cluster-scoped resources are organized as: /API_OR_APIS/API_VERSION/RESOURCE_TYPE
+
+Namespaced resources are organized as: /API_OR_APIS/API_VERSION/namespaces/NAMESPACE/RESOURCE_TYPE
+
+The REST API can also modify and delete resources in the cluster using verbs as shown in the following table:
+
+API Verb	HTTP Request Command	Description
+Create	POST	Create a new resource.
+Get/List	GET	Retrieve a single resource or a list of resources.
+Update	PUT	Update a resource by providing a full specification.
+Patch	PATCH	Update a resource by providing a partial change described in a patch operation.
+Delete	DELETE	Delete a resource or a list of resources.
+Create Project Example
+
+The following is an example of project creation:
+
+[user@demo ~]$ cat project.json
+{
+  "apiVersion": "project.openshift.io/v1",
+  "kind": "Project",
+  "metadata": {
+    "name": "example"
+  }
+}
+
+[user@demo ~]$ curl -k --header "Authorization: Bearer _qfyV5ULvv...i712kJT_" \
+> --header 'Content-Type: application/json' -d "$(< project.json)" \
+> -X POST https://api.example.com/apis/project.openshift.io/v1/projects
+{
+  "kind": "Project",
+  "apiVersion": "project.openshift.io/v1",
+  "metadata": {
+    "name": "example",
+...output omitted...
+  },
+  "spec": {
+    "finalizers": [
+      "openshift.io/origin",
+      "kubernetes"
+    ]
+  },
+  "status": {
+    "phase": "Active"
+  }
+}
+Inspecting API Resources with oc
+The oc explain RESOURCE command displays documentation for a given resource, including the API version and group necessary for forming a request path. For example, the oc explain pvc command outputs PersistentVolumeClaim as the KIND and v1 as the VERSION. The API path for a PVC is /api/v1/persistentvolumeclaims. The oc api-versions command lists the API group and versions for all available APIs. The oc api-resources command retrieves a list of all of the available APIs, including the API group and whether or not the API resources are namespaced.
+
+Filtering Output
+When using the API, responses return in JSON format. Sometimes, the responses can be quite long or verbose, and you might only require a single field. You can use the jq application to filter the output. Piping a curl response to jq will format and color code the output.
+
+Services Names Example
+
+[user@demo ~]$ curl -k --header "Authorization: Bearer qfyV5ULvv...i712kJT" \
+> -X GET https://api.example.com/api/v1/services | jq '.items[].metadata.name'
+"kubernetes"
+"openshift"
+"kubelet"
+"metrics"
+...output omitted...

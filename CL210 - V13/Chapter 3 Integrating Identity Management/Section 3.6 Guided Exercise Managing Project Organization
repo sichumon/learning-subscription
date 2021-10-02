@@ -1,0 +1,124 @@
+
+Guided Exercise: Managing Project Organization
+In this exercise, you will create nested projects within a domain.
+
+Outcomes
+
+You should be able to:
+
+Create domains, projects, and subprojects.
+
+Create groups and assign group roles.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab identity-project setup command. This script ensures that the OpenStack services are running and that the environment is properly configured for this guided exercise.
+
+[student@workstation ~]$ lab identity-project setup
+On workstation, source the ~/admin-rc file. Create a new domain named Lab.
+
+[student@workstation ~]$ source ~/admin-rc
+[student@workstation ~]$ openstack domain create Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| enabled     | True                             |
+| id          | 8f0c26484c444e3687858c47780663d2 |
+| name        | Lab                              |
+| tags        | []                               |
++-------------+----------------------------------+
+Create a new project named support, within the Lab domain.
+
+[student@workstation ~]$ openstack project create support --domain Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | 8f0c26484c444e3687858c47780663d2 |
+| enabled     | True                             |
+| id          | 46b949d1c59740f68f11e552fd2635b7 |
+| is_domain   | False                            |
+| name        | support                          |
+| parent_id   | 8f0c26484c444e3687858c47780663d2 |
+| tags        | []                               |
++-------------+----------------------------------+
+Create a new project named dev within the support project.
+
+[student@workstation ~]$ openstack project create dev --parent support \
+--domain Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | 8f0c26484c444e3687858c47780663d2 |
+| enabled     | True                             |
+| id          | ba9aa83cb4a04075a16bd976545f8176 |
+| is_domain   | False                            |
+| name        | dev                              |
+| parent_id   | 46b949d1c59740f68f11e552fd2635b7 |
+| tags        | []                               |
++-------------+----------------------------------+
+Create a new user group named developers within the Lab domain.
+
+[student@workstation ~]$ openstack group create developers --domain Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | 8f0c26484c444e3687858c47780663d2 |
+| id          | 8eadf3afdda44049acbb03229bff2fa1 |
+| name        | developers                       |
++-------------+----------------------------------+
+Assign the developers group in the Lab domain the _member_ role for the support project in the Lab domain.
+
+[student@workstation ~]$ openstack role add --group developers \
+--group-domain Lab --project support --project-domain Lab _member_
+Assign the developers group in the Lab domain the _member_ role for all the subprojects of the support project in the Lab domain. Use the --inherited flag to have the role inherited by subprojects of the support project.
+
+[student@workstation ~]$ openstack role add --group developers \
+--group-domain Lab --project support --project-domain Lab --inherited _member_
+Create a new user, developer4, in the Lab domain. Set the password for the new user to redhat.
+
+[student@workstation ~]$ openstack user create developer4 --domain Lab \
+--password redhat
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | 8f0c26484c444e3687858c47780663d2 |
+| enabled             | True                             |
+| id                  | 94ad108ffe49473bbef850123496a324 |
+| name                | developer4                       |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+Add the developer4 user of the Lab domain to the developers user group of the Lab domain.
+
+[student@workstation ~]$ openstack group add user --group-domain Lab \
+--user-domain Lab developers developer4
+Verify the role assignments for the support project in the Lab domain.
+
+[student@workstation ~]$ openstack role assignment list --project support \
+--project-domain Lab --names --effective
++----------+-----------------+-------+--------------+--------+-----------+
+| Role     | User            | Group | Project      | Domain | Inherited |
++----------+-----------------+-------+--------------+--------+-----------+
+| _member_ | developer4@Lab  |       | support@Lab  |        | False     |
++----------+-----------------+-------+--------------+--------+-----------+
+        
+Verify the role assignments for the dev subproject in the Lab domain.
+
+[student@workstation ~]$ openstack role assignment list --project dev \
+--project-domain Lab --names --effective
++----------+-----------------+-------+----------+--------+-----------+
+| Role     | User            | Group | Project  | Domain | Inherited |
++----------+-----------------+-------+----------+--------+-----------+
+| _member_ | developer4@Lab  |       | dev@Lab  |        | True      |
++----------+-----------------+-------+----------+--------+-----------+
+        
+Cleanup
+
+On workstation, run the lab identity-project cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab identity-project cleanup
+This concludes the guided exercise.

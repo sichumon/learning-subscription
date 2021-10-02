@@ -1,0 +1,180 @@
+Guided Exercise: Navigating the Red Hat OpenStack Platform Infrastructure
+In this exercise, you will connect to the workstation, utility, power, and director nodes to navigate the classroom infrastructure.
+
+Outcomes
+
+You should be able to navigate the classroom infrastructure.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab architecture-classroom setup command. The script verifies that the required nodes are reachable.
+
+[student@workstation ~]$ lab architecture-classroom setup
+On workstation, determine which networks and routes exist. The primary classroom network is 172.25.250.0/24. The workstation machine is configured as a router between the classroom network and the 172.25.252.0/24 network.
+
+List the network interfaces on workstation. The eth0 network interface connects workstation to the classroom network, 172.25.250.0/24. The eth1 network interface connects to the 172.25.252.0/24 network.
+
+[student@workstation ~]$ ip a
+...output omitted...
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 52:54:00:00:fa:fe brd ff:ff:ff:ff:ff:ff
+    inet 172.25.250.254/24 brd 172.25.250.255 scope global noprefixroute eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5054:ff:fe00:fafe/64 scope link
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 52:54:00:01:fc:00 brd ff:ff:ff:ff:ff:ff
+    inet 172.25.252.250/24 brd 172.25.252.255 scope global noprefixroute eth1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5054:ff:fe01:fc00/64 scope link
+       valid_lft forever preferred_lft forever
+...output omitted...
+View the routing rules on workstation.
+
+The eth0 network device connects to the RHOSP cloud deployment. The eth1 network device provides routing to access the classroom VM and other systems.
+
+[student@workstation ~]$ ip route
+default via 172.25.252.254 dev eth1 proto static metric 103 
+172.25.249.50 via 172.25.250.50 dev eth0 proto static metric 102
+172.25.249.200 via 172.25.250.200 dev eth0 proto static metric 102
+172.25.249.201 via 172.25.250.200 dev eth0 proto static metric 102
+172.25.250.0/24 dev eth0 proto kernel scope link src 172.25.250.254 metric 102
+172.25.252.0/24 dev eth1 proto kernel scope link src 172.25.252.250 metric 103
+192.168.122.0/24 dev virbr0 proto kernel scope link src 192.168.122.1 
+To properly synchronize services among RHOSP nodes, the controller node must reference more accurate NTP servers. Verify the NTP service provided by the classroom VM.
+
+[student@workstation ~]$ chronyc sources
+210 Number of sources = 1
+MS Name/IP address       Stratum Poll Reach LastRx Last sample
+=============================================================================
+^* classroom.example.com       8  10   377   787    -86us[ -101us] +/-  139us
+To selectively assign host names to instances connected to an external provider network, DNS services are must be configured for use by the RHOSP deployment. The fully qualified host names are assigned in the /etc/hosts file. The file contents are loaded by the dnsmasq service.
+
+Verify the DNS service provided by the dnsmasq service on workstation.
+
+[student@workstation ~]$ ps -ef | grep dnsmasq
+...output omitted...
+root 1614  1613  0 09:27 ? 00:00:00 /usr/sbin/dnsmasq --conf-file=/var/lib/libvirt/dnsmasq/default.conf --leasefile-ro --dhcp-script=/usr/libexec/libvirt_leaseshelper
+View the /etc/hosts file that translates host names to IP addresses and is loaded by the dnsmasq service. The file contains the entries of all the virtual machines used in the classroom and also instances launched on the overcloud.
+
+[student@workstation ~]$ cat /etc/hosts
+...output omitted...
+172.25.250.100 power.lab.example.com power
+172.25.250.200 director.lab.example.com director
+172.25.250.220 utility.lab.example.com utility
+# NOTE: The following uses a 249 subnet
+172.25.249.201 director-ui.lab.example.com director-ui
+172.25.250.254 workstation.lab.example.com workstation
+
+172.25.250.1 controller0.overcloud.example.com controller0
+172.25.250.50 keystone.overcloud.example.com keystone
+172.25.250.50 dashboard.overcloud.example.com dashboard
+172.25.250.2 compute0.overcloud.example.com compute0
+172.25.250.3 ceph0.overcloud.example.com ceph0
+172.25.250.12 compute1.overcloud.example.com compute1
+172.25.250.6  computehci0.overcloud.example.com computehci0
+
+172.25.250.101 float101.instance.example.com float101
+172.25.250.102 float102.instance.example.com float102
+172.25.250.103 float103.instance.example.com float103
+172.25.250.104 float104.instance.example.com float104
+...output omitted...
+On the utility node, verify the organization's users and groups that exists on a Red Hat IdM Server. RHOSP administrators can configure IdM users with project roles so they can log in to the dashboard and begin work.
+
+Use the ssh command to log in to utility as the student user. Use the kinit admin command to get the Kerberos tokens.
+
+[student@workstation ~]$ ssh utility
+[student@utility ~]$ kinit admin
+Password for admin@LAB.EXAMPLE.NET: RedHat123^
+Use the ipa user-find command to list the user accounts. The svc-ldap account is the integration user. The RHOSP identity service uses the svc-ldap account to query other IdM server user accounts.
+
+[student@utility ~]$ ipa user-find | grep User
+  User login: admin
+  User login: architect1
+  User login: architect2
+  User login: architect3
+  ...output omitted...
+  User login: developer1
+  User login: developer2
+  User login: developer3
+  ...output omitted...
+  User login: operator1
+  User login: operator2
+  User login: operator3
+  ...output omitted...
+  User login: svc-ldap
+Use the ipa group-find command to list the group accounts.
+
+[student@utility ~]$ ipa group-find | grep Group
+  Group name: admins
+  Group name: consulting-admins
+  Group name: consulting-members
+  Group name: consulting-swiftoperators
+  Group name: editors
+  Group name: finance-admins
+  Group name: finance-members
+  Group name: finance-swiftoperators
+  Group name: ipausers
+  Group name: production-admins
+  Group name: production-members
+  Group name: production-swiftoperators
+  Group name: research-admins
+  Group name: research-members
+  Group name: research-swiftoperators
+  Group name: trust admins
+Log off from utility.
+
+On the power node, verify that the rhtbmc program is running. View the virtual BMC configuration file. View the IPMI request listening addresses found to be using port 623.
+
+Use the ssh command to log in to power then become the root user.
+
+[student@workstation ~]$ ssh power
+[student@power ~]$ sudo -i
+[root@power ~]# 
+Verify that the rhtbmc program is running.
+
+[root@power ~]# ps -ef | grep rhtbmc
+... /usr/bin/python /usr/bin/rhtbmc
+... /usr/bin/python /usr/bin/rhtbmc
+... /usr/bin/python /usr/bin/rhtbmc
+... /usr/bin/python /usr/bin/rhtbmc
+... /usr/bin/python /usr/bin/rhtbmc
+... /usr/bin/python /usr/bin/rhtbmc
+... grep --color=auto rhtbmc
+View the virtual BMC configuration file, /etc/bmc/vms. The configuration file lists the virtual machines and their corresponding IP addresses that are used to listen for IPMI requests.
+
+[root@power ~]# cat /etc/bmc/vms
+# List the VMs that the fake ipmi will manage. Include in the list one
+# VM name per line along with the proxy IP the IPMI client (ipmitool)
+# will use to manage it.
+#
+# EXAMPLE: VM_NAME,IP_ADDRESS
+controller0,172.25.249.101
+compute0,172.25.249.102
+ceph0,172.25.249.103
+computehci0,172.25.249.106
+compute1,172.25.249.112
+List the IP addresses that are used by the virtual BMC to listen for IPMI requests on port 623.
+
+[root@power ~]# netstat -uln | grep 623
+udp        0      0 172.25.249.112:623      0.0.0.0:*
+udp        0      0 172.25.249.106:623      0.0.0.0:*
+udp        0      0 172.25.249.103:623      0.0.0.0:*
+udp        0      0 172.25.249.102:623      0.0.0.0:*
+udp        0      0 172.25.249.101:623      0.0.0.0:*
+Log off from power.
+
+Test the IPMI emulation software, which is performing power management for the overcloud's virtual machine nodes. On director, use the ipmitool command to query the status of the compute1 node. The IPMI address for compute1 is 172.25.249.112.
+
+Use the ssh command to log in to director as the stack user.
+
+[student@workstation ~]$ ssh stack@director
+(undercloud) [stack@director ~]$ 
+Use the IPMI command-line tool to check the current power status of compute1.
+
+(undercloud) [stack@director ~]$ ipmitool -I lanplus -U admin -P password \
+-H 172.25.249.112 power status
+Chassis Power is on
+Log off from director.
+
+This concludes the guided exercise.

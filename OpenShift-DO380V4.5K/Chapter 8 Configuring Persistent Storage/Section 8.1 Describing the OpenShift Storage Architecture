@@ -1,0 +1,167 @@
+Chapter 8. Configuring Persistent Storage
+Describing the OpenShift Storage Architecture
+Quiz: Describing the OpenShift Storage Architecture
+Provisioning Shared Storage for Applications
+Guided Exercise: Provisioning Shared Storage for Applications
+Provisioning Block Storage for Databases
+Guided Exercise: Provisioning Block Storage for Databases
+Provisioning Local Block Storage
+Guided Exercise: Installing the Local Storage Operator
+Lab: Configuring Persistent Storage
+Summary
+Abstract
+
+Goal	Configure storage providers and storage classes to ensure cluster user access to persistent volume resources.
+Objectives	
+Describe the components of the OpenShift storage architecture.
+
+Configure an application with shared file storage.
+
+Configure a database application with block storage.
+
+Use a custom resource to create persistent local volumes.
+
+Sections	
+Describing the OpenShift Storage Architecture (and Quiz)
+
+Provisioning Shared Storage for Applications (and Guided Exercise)
+
+Provisioning Block Storage for Databases (and Guided Exercise)
+
+Provisioning Local Block Storage (and Guided Exercise)
+
+Lab	
+Configuring Persistent Storage
+
+Describing the OpenShift Storage Architecture
+Objectives
+After completing this section, you should be able to describe the components of the OpenShift storage architecture.
+
+Persistent Storage Overview
+Many applications require long-term data storage, and each application has unique storage needs. Many storage technologies exist to address application storage requirements, each with different benefits, drawbacks, and costs.
+
+With the OpenShift storage architecture, cluster administrators can provide a variety of storage resources to OpenShift cluster users. The architecture enables administrators to limit expensive or scarce storage resources to specific projects that require specialized storage resources. Cluster administrators can also specify a default storage resource type that is scalable and affordable.
+
+The OpenShift storage architecture has three primary components:
+
+Persistent Volumes
+
+Persistent Volume Claims
+
+Storage Classes
+
+Persistent Volumes
+A persistent volume (PV), is an OpenShift cluster resource that describes an allocatable storage volume. A persistent volume defines metadata and configuration details that OpenShift uses to mount the volume on the node. After OpenShift mounts a volume on a node, it can deploy pods that use the storage volume.
+
+Each persistent volume identifies a volume plug-in, which is automation that OpenShift uses to mount a storage volume. The persistent volume resource defines parameters that the volume plug-in requires to mount storage. For example, an NFS persistent volume defines an nfs section that contains parameters to mount an NFS share. To mount the persistent volume on a node, OpenShift executes the NFS volume plug-in with parameters defined in the NFS persistent volume.
+
+By default, only privileged users can view persistent volume resources. Persistent volumes might contain sensitive information, such as remote storage endpoints or authentication details.
+
+Storage Classes
+OpenShift uses storage class resources to describe different types of persistent volumes in a cluster. A storage class is a cluster resource and does not contain sensitive information. Non-privileged users can view the storage classes that are available in a cluster.
+
+A storage class describes high-level storage characteristics, such as quality of service, throughput, or storage technology. A storage class resource does not contain low-level storage implementation details. A storage class is a public resource describing a type of storage volume in the cluster that does not expose sensitive configurations or information.
+
+A storage class must define a provisioner attribute. OpenShift uses a provisioner to create persistent volumes on demand. OpenShift does not contain a built-in provisioner for all storage technologies.
+
+Persistent Volume Claims
+Non-privileged users create a persistent volume claim (PVC), to request a persistent volume resource. A persistent volume claim specifies high-level storage criteria for a volume, such as:
+
+storage size
+
+storage class
+
+access mode
+
+OpenShift attempts to match each persistent volume claim with an available persistent volume in the cluster. If OpenShift identifies a persistent volume match for a persistent volume claim, then OpenShift binds the persistent volume to the persistent volume claim.
+
+Describing Persistent Volumes
+An example persistent volume resource definition follows:
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv0003   1
+spec:
+  capacity:
+    storage: 5Gi   2
+  volumeMode: Filesystem   3
+  accessModes:   4
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Recycle   5
+  storageClassName: slow   6
+  mountOptions:
+    - hard
+    - nfsvers=4.1
+  nfs:   7
+    path: /tmp
+    server: 172.17.0.2
+1
+
+The name of the persistent volume.
+
+2
+
+The size of the underlying storage volume.
+
+3
+
+Supported Block and Filesystem volume modes. A Filesystem volume is mounted as a directory, while a Block volume is mounted as a raw block device.
+
+4
+
+The access mode list describes how to access the volume from one or more cluster nodes. A ReadWriteOnce volume can only be mounted as read-write on a single cluster node. Access modes are discussed elsewhere in this course.
+
+5
+
+The reclaim policy is one of: Retain, Recycle, or Delete. The reclaim policy determines the actions to perform on a persistent volume when that persistent volume is released.
+
+6
+
+The storage class name for the persistent volume. A persistent volume claim must request the slow storage class to bind to this persistent volume.
+
+7
+
+This persistent volume uses the NFS volume plug-in. The nfs section defines parameters that the NFS volume plug-in requires to mount the volume on a node. This section includes sensitive NFS configuration information.
+
+Provisioning and Binding Persistent Volumes
+A persistent volume claim uses a storage class name to request a particular type of storage. OpenShift examines the pool of existing persistent volumes. If the storage class name for an existing persistent volume matches the request, then the persistent volume becomes a match candidate for the request.
+
+NOTE
+A persistent volume claim can request storage without specifying a storage class. If a PVC does not specify a storage class, then OpenShift uses a default storage class. The cluster administrator designates one of the storage classes as the default storage class.
+
+OpenShift further filters the match candidate list, based on other request criteria. If any persistent volumes satisfy all of the request criteria, then OpenShift binds one of the persistent volumes to the persistent volume claim. A persistent volume claim is exclusive; a persistent volume cannot bind to more than one persistent volume claim.
+
+If no existing persistent volumes satisfy the request criteria, then OpenShift attempts to provision a volume on demand. OpenShift provides the storage class provisioner with parameters defined in the storage class, ensuring that the correct type of storage is created. Dynamic provisioning refers to the creation of persistent volumes on-demand.
+
+NOTE
+If the provisioner attribute of a storage class is set to kubernetes.io/no-provisioner, then a provisioner is not available to create storage volumes.
+
+For technologies that do not have a provisioner, you must find other methods to create storage volumes. Recommended methods include:
+
+Install a storage operator. There are many third-party and open source operators that manage the provisioning of persistent volumes and related storage resources.
+
+In a later exercise, you install an operator to manage local storage persistent volumes.
+
+Write and use Ansible Playbooks. Playbooks enable configuration management at scale. Use a playbook to create and manage storage volumes, persistent volumes, and storage classes.
+
+In a later exercise, you use a playbook to create iSCSI targets, iSCSI persistent volumes, and an iSCSI storage class.
+
+Releasing a Persistent Volume
+When you delete a persistent volume claim, you indicate that you no longer need the persistent volume bound to that claim. If no pods are using the persistent volume, then OpenShift deletes the persistent volume claim immediately. OpenShift delays deletion until there are no running pods using the persistent volume.
+
+After deleting a persistent volume claim resource, OpenShift releases the associated persistent volume.
+
+Reclaiming a Persistent Volume
+OpenShift initiates a reclaim policy for a persistent volume after OpenShift releases it.
+
+OpenShift defines three reclaim policies:
+
+Delete
+The persistent volume is not put back into the pool of available persistent volumes. The persistent volume resource is deleted, and the underlying storage volume is also deleted. All dynamically-provisioned persistent volumes use a Delete reclaim policy.
+
+Retain
+OpenShift takes no immediate action to reclaim the volume. A cluster administrator must ensure proper handling of this volume, which might include data backup and volume deletion.
+
+Recycle
+OpenShift deletes all data on the volume, which enables volume reuse. After deletion, the volume is available to use again.

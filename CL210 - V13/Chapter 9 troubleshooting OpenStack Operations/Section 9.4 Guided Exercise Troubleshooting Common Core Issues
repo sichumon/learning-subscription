@@ -1,0 +1,491 @@
+Guided Exercise: Troubleshooting Common Core Issues
+In this exercise, you will fix an issue related to launching instances. You will also fix an issue with network communication.
+
+Outcomes
+
+You should be able to:
+
+Troubleshoot and fix an issue causing instance launch to fail.
+
+Troubleshoot and fix an issue in the OpenStack Networking service.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run lab troubleshooting-services setup to prepare the environment for this exercise, and to ensure all requires resources are present.
+
+[student@workstation ~]$ lab troubleshooting-services setup
+Launch an instance named finance-server1.
+
+Source the /home/student/developer1-finance-rc user environment file.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ 
+Create an instance named finance-server1 using the following values.
+
+Option	Value
+--flavor	default
+--image	rhel7
+--key-name	example-keypair
+--network	provider1-104
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--network provider1-104 \
+--wait \
+finance-server1
+The command hangs.
+
+Cancel the deployment using Ctrl+C, delete the instance, and then relaunch using the --debug option.
+
+[student@workstation ~(developer1-finance)]$ openstack server delete \
+finance-server1
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--network provider1-104 \
+--wait \
+finance-server1 --debug
+...output omitted...
+GET call to compute for http://172.25.250.50:8774/v2.1/servers/1619be15-a922-4e3f-afd1-afbdc734fb31 used request id req-d04865fe-9fa7-4e74-8a83-d6b1d98cf640
+REQ: curl -g -i -X GET http://172.25.250.50:8774/v2.1/servers/1619be15-a922-4e3f-afd1-afbdc734fb31 -H "User-Agent: python-novaclient" -H "Accept: application/json" -H "X-Auth-Token: {SHA1}41d0ee7cf0d8faa6e83c22930185063deb01960b"
+http://172.25.250.50:8774 "GET /v2.1/servers/1619be15-a922-4e3f-afd1-afbdc734fb31 HTTP/1.1" 200 609
+RESP: [200] Date: Tue, 13 Nov 2018 02:38:54 GMT Server: Apache OpenStack-API-Version: compute 2.1 X-OpenStack-Nova-API-Version: 2.1 Vary: OpenStack-API-Version,X-OpenStack-Nova-API-Version,Accept-Encoding x-openstack-request-id: req-afaf9cca-4811-4be5-85ba-7869e22cb9e0 x-compute-request-id: req-afaf9cca-4811-4be5-85ba-7869e22cb9e0 Content-Encoding: gzip Content-Length: 609 Content-Type: application/json
+RESP BODY: {"server": {"OS-EXT-STS:task_state": "scheduling", "addresses": ..., "links": [{"href": "http://172.25.250.50:8774/v2.1/servers/1619be15-a922-4e3f-afd1-afbdc734fb31", "rel": "self"}, {"href": "http://172.25.250.50:8774/servers/1619be15-a922-4e3f-afd1-afbdc734fb31", "rel": "bookmark"}], "image": {"id": "6b0128a9-4481-4ceb-b34e-ffe92e0dcfdd", "links": [{"href": "http://172.25.250.50:8774/images/6b0128a9-4481-4ceb-b34e-ffe92e0dcfdd", "rel": "bookmark"}]}, "OS-EXT-STS:vm_state": "building", "OS-SRV-USG:launched_at": null, "flavor": {"id": "e04380ed-b027-4a72-a697-4307bc014b6c", "links": [{"href": "http://172.25.250.50:8774/flavors/e04380ed-b027-4a72-a697-4307bc014b6c", "rel": "bookmark"}]}, "id": "1619be15-a922-4e3f-afd1-afbdc734fb31", "user_id": "e4035d555f6b88cf42ca4cacb9fa9999dca9787392222d2eb0875e4e34e6d76f", "OS-DCF:diskConfig": "MANUAL", "accessIPv4": "", "accessIPv6": "", "progress": 0, "OS-EXT-STS:power_state": 0, "OS-EXT-AZ:availability_zone": "", "config_drive": "", "status": "BUILD", "updated": "2018-11-13T02:38:54Z", "hostId": "", "OS-SRV-USG:terminated_at": null, "key_name": "example-keypair", "name": "finance-server1", "created": "2018-11-13T02:37:37Z", "tenant_id": "3c003f65d8d64914a053f178fbbf953c", "os-extended-volumes:volumes_attached": [], "metadata": ...}}
+...output omitted...
+The deployment keeps looping trying to call the Compute service.
+
+Cancel the deployment using Ctrl+C, and then delete the instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server delete \
+finance-server1
+Determine the cause of the deployment failure
+
+As the first step, check the nova_conductor service. Log in to controller0 then become root.
+
+[student@workstation ~(developer1-finance)]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+Check the health of the nova_conductor container.
+
+[root@controller0 ~]# docker exec -ti nova_conductor /openstack/healthcheck
+Error response from daemon: Container 8ffb511c9318d8024378f0419d709902a7601c33e59233203e7b7037c20c263b is restarting, wait until the container is running
+Determine why nova_conductor is failing.
+
+[root@controller0 ~]# docker logs nova_conductor
+...output omitted...
+++ cat /run_command
++ CMD='/usr/bin/nova-conductor '
++ ARGS=
++ [[ ! -n '' ]]
++ . kolla_extend_start
+++ [[ ! -d /var/log/kolla/nova ]]
++++ stat -c %a /var/log/kolla/nova
+++ [[ 2755 != \7\5\5 ]]
+++ chmod 755 /var/log/kolla/nova
+++ . /usr/local/bin/kolla_nova_extend_start
++ echo 'Running command: '\''/usr/bin/nova-conductor '\'''
++ exec /usr/bin/nova-conductor
+Running command: '/usr/bin/nova-conductor '
+Traceback (most recent call last):
+  File "/usr/bin/nova-conductor", line 10, in <module>
+    sys.exit(main())
+  File "/usr/lib/python2.7/site-packages/nova/cmd/conductor.py", line 35, in main
+    config.parse_args(sys.argv)
+  File "/usr/lib/python2.7/site-packages/nova/config.py", line 52, in parse_args
+    default_config_files=default_config_files)
+  File "/usr/lib/python2.7/site-packages/oslo_config/cfg.py", line 2507, in __call__
+    self._namespace._files_permission_denied)
+oslo_config.cfg.ConfigFilesPermissionDeniedError: Failed to open some config files: /etc/nova/nova.conf
+The error shows that the permissions on /etc/nova/nova.conf did not allow access for the user the container is running as.
+
+Use the docker inspect command to determine the configuration file location for the nova_conductor service.
+
+[root@controller0 ~]# docker inspect nova_conductor
+...output omitted...
+        "HostConfig": {
+            "Binds": [
+                "/var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro",
+...output omitted...
+The /etc/nova/nova.conf file shown in the error will be located at /var/lib/config-data/puppet-generated/nova/etc/nova/nova.conf. Check the permissions on the file then correct them.
+
+[root@controller0 ~]# cd /var/lib/config-data/puppet-generated/nova
+[root@controller0 nova]# ls -l etc/nova/nova.conf
+-rw-------. 1 root 42436 60203 Nov  2 06:46 etc/nova/nova.conf
+[root@controller0 nova]# chmod 640 etc/nova/nova.conf
+[root@controller0 nova]# ls -l etc/nova/nova.conf
+-rw-r-----. 1 root 42436 60203 Nov  2 06:46 etc/nova/nova.conf
+Restart the nova_conductor container, wait for it to become healthy, and then log out of controller0.
+
+[root@controller0 nova]# docker restart nova_conductor
+nova_conductor
+[root@controller0 nova]# docker ps | grep nova_conductor
+8ffb511c9318  172.25.249.200:8787/rhosp13/openstack-nova-conductor:latest  "kolla_start"  2 weeks ago  Up About a minute (healthy)
+[root@controller0 nova]# logout
+[heat-admin@controller0 ~]$ logout
+[student@workstation ~(developer1-finance)]$ 
+Retry launching the finance-server1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--network provider1-104 \
+--wait \
+finance-server1
+...output omitted...
+The deployment should succeed.
+
+From finance-server1, ping utility at 10.0.104.1.
+
+Obtain the console URL for finance-server1.
+
+[student@workstation ~(developer1-finance)]$ openstack console url \
+show finance-server1
++-------+----------------------------------------------------------------+
+| Field | Value                                                          |
++-------+----------------------------------------------------------------+
+| type  | novnc                                                          |
+| url   | http://172.25.250.50:6080/vnc_auto.html?token=a4d2bbb0-c625    |
+|       | -4b38-acdb-0b5a3ffd907a                                        |
++-------+----------------------------------------------------------------+
+Open the console URL in a web browser, and log in as root using redhat as the password. Use the ping command to test the connection to utility at 10.0.104.1.
+
+[root@finance-server1 ~]# ping -c3 10.0.104.1
+PING 10.0.104.1 (10.0.104.1) 56(84) bytes of data.
+From 10.0.104.105 icmp_seq=1 Destination Host Unreachable
+From 10.0.104.105 icmp_seq=2 Destination Host Unreachable
+From 10.0.104.105 icmp_seq=3 Destination Host Unreachable
+
+--- 10.0.104.1 ping statistics ---
+3 packets transmitted, 0 received, +3 errors, 100% packet loss, time 2001ms
+Investigate the communication problem to find the cause.
+
+On workstation, determine the ID for the provider1-104 network. This will be used to determine packet flow.
+
+[student@workstation ~(developer1-finance)]$ openstack network show \
+provider1-104 -c id
++-------+--------------------------------------+
+| Field | Value                                |
++-------+--------------------------------------+
+| id    | b9189edb-fc58-45fe-8eef-79f118ea2539 |
++-------+--------------------------------------+
+Determine which compute node is hosting the finance-server1 instance. Note also the generic instance name.
+
+[student@workstation ~(developer1-finance)]$ source ~/architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ openstack server show finance-server1
++-------------------------------------+----------------------------------------+
+| Field                               | Value                                  |
++-------------------------------------+----------------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                                 |
+| OS-EXT-AZ:availability_zone         | nova                                   |
+| OS-EXT-SRV-ATTR:host                | compute0.overcloud.example.com         |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | compute0.overcloud.example.com         |
+| OS-EXT-SRV-ATTR:instance_name       | instance-0000000a                      |
+| OS-EXT-STS:power_state              | Running                                |
+...output omitted...
+Log in to the appropriate compute node, and change to the root user.
+
+[student@workstation ~(architect1-finance)]$ ssh compute0
+[heat-admin@compute0 ~]$ sudo -i
+[root@compute0 ~]# 
+Find the TAP device used by the instance. Note that it should be connected to br-int. Also note the MAC address; this will be used when tracing packet flow.
+
+[root@compute0 ~]# virsh dumpxml instance-0000000a
+...output omitted...
+    <interface type='bridge'>
+      <mac address='fa:16:3e:05:e0:c2'/>
+      <source bridge='br-int'/>
+      <virtualport type='openvswitch'>
+        <parameters interfaceid='fc742bd3-2133-4a29-9a53-d4cc56e61a1f'/>
+      </virtualport>
+      <target dev='tapfc742bd3-21'/>
+      <model type='virtio'/>
+      <mtu size='1500'/>
+      <alias name='net0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+    </interface>
+...output omitted...
+View the OVS connections for the provider1-104 network and finance-server1 TAP device.
+
+[root@compute0 ~]# ovs-vsctl show
+...output omitted...
+    Bridge "br-eth3"
+        fail_mode: standalone
+        Port "br-eth3"
+            Interface "br-eth3"
+                type: internal
+        Port "patch-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539-to-br-int"
+            Interface "patch-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539-to-br-int"
+                type: patch
+                options: {peer="patch-br-int-to-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539"}
+    Bridge br-int
+        fail_mode: secure
+...output omitted...
+        Port "patch-br-int-to-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539"
+            Interface "patch-br-int-to-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539"
+                type: patch
+                options: {peer="patch-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539-to-br-int"}
+        Port "tapfc742bd3-21"
+            Interface "tapfc742bd3-21"
+Note that the TAP device connects the instance to br-int. Also note that the creation of the provider1-104 network resulted in a pair of interfaces connecting br-int to br-eth3 with a patch port. The interface names contain the ID of the provider1-104 network.
+
+Tracing packets through OpenFlow rules is tedious and error-prone. Use the ovs-appctl command to simulate sending an ICMP packet from finance-server1 to utility. Given the OVS connections shown in the previous step, traffic from the instance should enter br-int through the tapfc742bd3-21 port, then travel over the patch port to br-eth3.
+
+The table below describes the packet fields used in the command.
+
+Table 9.3. Packet Fields
+
+Field	Description
+in_port=	Defines the port the packet is entering the switch on. The TAP port of finance-server1 is tapfc742bd3-21.
+protocol	The protocol of the packet. This example is simulating a ping so the protocol is ICMP.
+nw_src=	The source network (IP) address. The IP address of finance-server1 is 10.0.104.105.
+dl_src=	The ethernet address (MAC) of the source machine. The MAC address of finance-server1 is fa:16:3e:05:e0:c2.
+nw_dst=	The destination network (IP) address. The IP address of utility is 10.0.104.1.
+
+NOTE
+The command input below has been broken across lines for readability; do not include carriage returns when you enter this command.
+
+[root@compute0 ~]# ovs-appctl ofproto/trace br-int \
+in_port="tapfc742bd3-21",icmp,nw_src=10.0.104.105,
+dl_src=fa:16:3e:05:e0:c2,nw_dst=10.0.104.1
+Flow: icmp,in_port=4,vlan_tci=0x0000,dl_src=fa:16:3e:05:e0:c2,dl_dst=00:00:00:00:00:00,
+nw_src=10.0.104.105,nw_dst=10.0.104.1,nw_tos=0,nw_ecn=0,nw_ttl=0,icmp_type=0,
+icmp_code=0
+
+bridge("br-int")
+----------------
+ 0. in_port=4, priority 100
+    set_field:0x1->reg13
+    set_field:0x3->reg11
+    set_field:0x2->reg12
+    set_field:0x8->metadata
+    set_field:0x4->reg14
+    resubmit(,8)
+ 8. reg14=0x4,metadata=0x8,dl_src=fa:16:3e:05:e0:c2, priority 50, cookie 0xab405c15
+    resubmit(,9)
+ 9. ip,reg14=0x4,metadata=0x8,dl_src=fa:16:3e:05:e0:c2,nw_src=10.0.104.105, priority 90, cookie 0x6d4e4677
+    resubmit(,10)
+10. metadata=0x8, priority 0, cookie 0xb42ed0a4
+    resubmit(,11)
+11. ip,metadata=0x8, priority 100, cookie 0xa4029170
+    load:0x1->NXM_NX_XXREG0[96]
+    resubmit(,12)
+12. metadata=0x8, priority 0, cookie 0x6603eb2c
+    resubmit(,13)
+13. ip,reg0=0x1/0x1,metadata=0x8, priority 100, cookie 0xa00b21a5
+    ct(table=14,zone=NXM_NX_REG13[0..15])
+    drop
+     -> A clone of the packet is forked to recirculate. The forked pipeline will be resumed at table 14.
+
+Final flow: icmp,reg0=0x1,reg11=0x3,reg12=0x2,reg13=0x1,reg14=0x4,metadata=0x8,
+in_port=4,vlan_tci=0x0000,dl_src=fa:16:3e:05:e0:c2,dl_dst=00:00:00:00:00:00,
+nw_src=10.0.104.105,nw_dst=10.0.104.1,nw_tos=0,nw_ecn=0,nw_ttl=0,icmp_type=0,i
+icmp_code=0
+Megaflow: recirc_id=0,eth,ip,in_port=4,vlan_tci=0x0000/0x1000,dl_src=fa:16:3e:05:e0:c2,
+nw_src=10.0.104.105,nw_dst=0.0.0.0/1,nw_frag=no
+Datapath actions: ct(zone=1),recirc(0xa)
+
+===============================================================================
+recirc(0xa) - resume conntrack with default ct_state=trk|new (use --ct-next to customize)
+===============================================================================
+
+Flow: recirc_id=0xa,ct_state=new|trk,ct_zone=1,eth,icmp,reg0=0x1,reg11=0x3,reg12=0x2,
+reg13=0x1,reg14=0x4,metadata=0x8,in_port=4,vlan_tci=0x0000,dl_src=fa:16:3e:05:e0:c2,
+dl_dst=00:00:00:00:00:00,nw_src=10.0.104.105,nw_dst=10.0.104.1,nw_tos=0,nw_ecn=0,
+nw_ttl=0,icmp_type=0,icmp_code=0
+
+bridge("br-int")
+----------------
+    thaw
+        Resuming from table 14
+14. ct_state=+new-est+trk,ip,reg14=0x4,metadata=0x8, priority 2002, cookie 0x43cfb2b5
+    load:0x1->NXM_NX_XXREG0[97]
+    resubmit(,15)
+15. metadata=0x8, priority 0, cookie 0xba3f581d
+    resubmit(,16)
+16. metadata=0x8, priority 0, cookie 0x42968196
+    resubmit(,17)
+17. metadata=0x8, priority 0, cookie 0x8d3beedd
+    resubmit(,18)
+18. ip,reg0=0x2/0x2,metadata=0x8, priority 100, cookie 0x8c9c9578
+    ct(commit,zone=NXM_NX_REG13[0..15],exec(load:0->NXM_NX_CT_LABEL[0]))
+    load:0->NXM_NX_CT_LABEL[0]
+    resubmit(,19)
+19. metadata=0x8, priority 0, cookie 0x491f8315
+    resubmit(,20)
+20. metadata=0x8, priority 0, cookie 0x66f27962
+    resubmit(,21)
+21. metadata=0x8, priority 0, cookie 0xc32c3d73
+    resubmit(,22)
+22. metadata=0x8, priority 0, cookie 0xdebd3512
+    resubmit(,23)
+23. metadata=0x8, priority 0, cookie 0x8f98275c
+    resubmit(,24)
+24. metadata=0x8, priority 0, cookie 0x6f85b1ed
+    set_field:0xfffe->reg15
+    resubmit(,32)
+32. priority 0
+    resubmit(,33)
+33. reg15=0xfffe,metadata=0x8, priority 100
+    set_field:0x4->reg13
+    set_field:0x1->reg15
+    resubmit(,34)
+    34. priority 0
+            set_field:0->reg0
+            set_field:0->reg1
+            set_field:0->reg2
+            set_field:0->reg3
+            set_field:0->reg4
+            set_field:0->reg5
+            set_field:0->reg6
+            set_field:0->reg7
+            set_field:0->reg8
+            set_field:0->reg9
+            resubmit(,40)
+        40. metadata=0x8, priority 0, cookie 0xb484f3de
+            resubmit(,41)
+        41. ip,reg15=0x1,metadata=0x8, priority 110, cookie 0x1d2d7934
+            resubmit(,42)
+        42. metadata=0x8, priority 0, cookie 0xd311b4f8
+            resubmit(,43)
+        43. metadata=0x8, priority 0, cookie 0x9ec6220a
+            resubmit(,44)
+        44. metadata=0x8, priority 0, cookie 0xe1453aba
+            resubmit(,45)
+        45. metadata=0x8, priority 0, cookie 0x3fa4aed4
+            resubmit(,46)
+        46. metadata=0x8, priority 0, cookie 0x61ba3940
+            resubmit(,47)
+        47. metadata=0x8, priority 0, cookie 0x6efeaece
+            resubmit(,48)
+        48. metadata=0x8, priority 0, cookie 0x1734102d
+            resubmit(,49)
+        49. reg15=0x1,metadata=0x8, priority 50, cookie 0x75acab86
+            resubmit(,64)
+        64. priority 0
+            resubmit(,65)
+        65. reg15=0x1,metadata=0x8, priority 100
+            push_vlan:0x8100
+            set_field:4200->vlan_vid
+            output:5
+
+            bridge("br-eth3")
+            -----------------
+                 0. priority 0
+                    NORMAL
+                     -> no learned MAC for destination, flooding
+            pop_vlan
+    set_field:0xfffe->reg15
+
+Final flow: recirc_id=0xa,eth,icmp,reg11=0x3,reg12=0x2,reg13=0x4,reg14=0x4,
+reg15=0xfffe,metadata=0x8,in_port=4,vlan_tci=0x0000,dl_src=fa:16:3e:05:e0:c2,
+dl_dst=00:00:00:00:00:00,nw_src=10.0.104.105,nw_dst=10.0.104.1,nw_tos=0,nw_ecn=0,
+nw_ttl=0,icmp_type=0,icmp_code=0
+Megaflow: recirc_id=0xa,ct_state=+new-est-rel-rpl-inv+trk,ct_label=0/0x1,eth,icmp,
+in_port=4,vlan_tci=0x0000/0x1fff,dl_src=fa:16:3e:05:e0:c2,dl_dst=00:00:00:00:00:00,
+nw_src=10.0.104.105,nw_dst=10.0.104.1,nw_frag=no
+Datapath actions: ct(commit,zone=1,label=0/0x1),push_vlan(vid=104,pcp=0),3
+The simulated ICMP traffic does reach br-eth3 successfully.
+
+Review the configuration of br-eth3.
+
+[root@compute0 ~]# ovs-vsctl show
+...output omitted...
+    Bridge "br-eth3"
+        fail_mode: standalone
+        Port "br-eth3"
+            Interface "br-eth3"
+                type: internal
+        Port "patch-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539-to-br-int"
+            Interface "patch-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539-to-br-int"
+                type: patch
+                options: {peer="patch-br-int-to-provnet-b9189edb-fc58-45fe-8eef-79f118ea2539"}
+...output omitted...
+Note that there are only an internal and a patch port present; there is no external interface shown.
+
+View the IP configuration for the compute node.
+
+[root@compute0 ~]# ip a
+...output omitted...
+5: eth3: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN group default qlen 1000
+    link/ether 52:54:00:03:00:02 brd ff:ff:ff:ff:ff:ff
+6: eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master ovs-system state UP group default qlen 1000
+    link/ether 52:54:00:04:00:02 brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::5054:ff:fe04:2/64 scope link
+       valid_lft forever preferred_lft forever
+7: ovs-system: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN group default qlen 1000
+    link/ether 86:46:ff:6a:61:a8 brd ff:ff:ff:ff:ff:ff
+8: genev_sys_6081: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 65000 qdisc noqueue master ovs-system state UNKNOWN group default qlen 1000
+    link/ether 46:3f:1b:5a:6d:29 brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::443f:1bff:fe5a:6d29/64 scope link
+       valid_lft forever preferred_lft forever
+9: br-int: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN group default qlen 1000
+    link/ether 86:a7:a5:b8:33:42 brd ff:ff:ff:ff:ff:ff
+10: br-eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether 52:54:00:03:00:02 brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::5054:ff:fe03:2/64 scope link
+       valid_lft forever preferred_lft forever
+11: br-eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether 52:54:00:04:00:02 brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::5054:ff:fe04:2/64 scope link
+       valid_lft forever preferred_lft forever
+...output omitted...
+The eth3 interface is listed as down.
+
+Review the /etc/sysconfig/network-scripts/ifcfg-eth3 file.
+
+[root@compute0 ~]# cat /etc/sysconfig/network-scripts/ifcfg-eth3
+# This file is autogenerated by os-net-config
+DEVICE=eth3
+ONBOOT=no
+HOTPLUG=no
+NM_CONTROLLED=no
+PEERDNS=no
+DEVICETYPE=ovs
+TYPE=OVSPort
+OVS_BRIDGE=br-eth3
+BOOTPROTO=none
+The interface has been disabled at boot.
+
+Bring up the eth3 interface.
+
+[root@compute0 ~]# ifup eth3
+Review the configuration of br-eth3 again.
+
+[root@compute0 ~]# ovs-vsctl show
+...output omitted...
+    Bridge "br-eth3"
+        fail_mode: standalone
+        Port "eth3"
+            Interface "eth3"
+        Port "br-eth3"
+            Interface "br-eth3"
+                type: internal
+...output omitted...
+The eth3 interface is now shown in the output.
+
+Change the ONBOOT option to yes for eth3.
+
+# This file is autogenerated by os-net-config
+DEVICE=eth3
+ONBOOT=yes
+...output omitted...
+Use the ping command to retest communication between finance-server1 and utility.
+
+[root@finance-server1 ~]# ping -c3 10.0.104.1
+PING 10.0.104.1 (10.0.104.1) 56(84) bytes of data.
+64 bytes from 10.0.104.1: icmp_seq=1 ttl=64 time=0.193 ms
+64 bytes from 10.0.104.1: icmp_seq=2 ttl=64 time=0.228 ms
+64 bytes from 10.0.104.1: icmp_seq=3 ttl=64 time=0.191 ms
+
+--- 10.0.104.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.191/0.204/0.228/0.017 ms
+Cleanup
+
+On workstation, run the lab troubleshooting-services cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab troubleshooting-services cleanup
+This concludes the guided exercise.

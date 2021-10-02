@@ -1,0 +1,157 @@
+Chapter 9. Managing Cluster Monitoring and Metrics
+Introducing the Cluster Monitoring Stack
+Quiz: Introducing the Cluster Monitoring Stack
+Managing OpenShift Alerts
+Guided Exercise: Managing OpenShift Alerts
+Troubleshooting Using the Cluster Monitoring Stack
+Guided Exercise: Troubleshooting Using the Cluster Monitoring Stack
+Configuring Storage for the Cluster Monitoring Stack
+Guided Exercise: Configuring Storage for the Cluster Monitoring Stack
+Lab: Managing Cluster Monitoring and Metrics
+Summary
+Abstract
+
+Goal	Configure and manage the OpenShift monitoring stack.
+Objectives	
+List cluster monitoring features.
+
+Send alerts to external locations.
+
+Use Prometheus and Grafana to assist in diagnosing cluster problems.
+
+Configure Prometheus and Alertmanager to use persistent storage.
+
+Sections	
+Introducing the Cluster Monitoring Stack (and Quiz)
+
+Managing OpenShift Alerts (and Guided Exercise)
+
+Troubleshooting Using the Cluster Monitoring Stack (and Guided Exercise)
+
+Configuring Storage for the Cluster Monitoring Stack (and Guided Exercise)
+
+Lab	
+Managing Cluster Monitoring and Metrics
+
+Introducing the Cluster Monitoring Stack
+Objectives
+After completing this section, you should be able to:
+
+List cluster monitoring features.
+
+Describe alert types and identify when to silence an alert.
+
+Listing the Cluster Monitoring Stack Components
+The monitoring stack deploys the following components in the environment to provide a complete solution for monitoring the infrastructure, receiving alerts, and consulting performance graphs.
+
+Cluster Monitoring Operator
+The cluster monitoring operator (CMO) is the central component of the monitoring stack. It controls the deployed monitoring components and ensures that they are always in sync with the latest version of the CMO.
+
+Prometheus Operator
+The Prometheus operator deploys and configures both Prometheus and Alertmanager. The operator also manages the generation and configuration of configuration targets (service monitors and pod monitors).
+
+Prometheus
+Prometheus is the monitoring server.
+
+Prometheus Adapter
+The Prometheus adapter exposes cluster resources that are used for Horizontal Pod Autoscaling (HPA).
+
+Alertmanager
+Alertmanager handles alerts sent by the Prometheus server.
+
+kube-state-metrics
+kube-state-metrics is a converter agent that exports Kubernetes objects to metrics that Prometheus can parse.
+
+openshift-state-metrics
+openshift-state-metrics is based on the kube-state-metrics and adds monitoring for OpenShift-specific resources (such as image registry metrics).
+
+node-exporter
+node-exporter exports low-level metrics for worker nodes.
+
+Thanos Querier
+Thanos Querier is a single, multi-tenant interface that enables aggregating and deduplicating cluster and user workload metrics.
+
+Grafana
+Grafana is a platform for analyzing and visualizing metrics. The Grafana dashboards provided with the monitoring stack are read-only.
+
+Defining the Cluster Monitoring Stack Custom Resource Definitions
+The cluster monitoring operator deploys and manages the life cycle of a Prometheus-based stack for monitoring the cluster. The operator creates the following five custom resource definitions (CRDs):
+
+Prometheus for deploying Prometheus instances. Display all resource instances using the following command:
+
+[user@demo ~]$ oc get prometheuses -A
+ServiceMonitor for managing configuration files that describe how and where to scrape the data from application services. Display all resource instances using the following command:
+
+[user@demo ~]$ oc get servicemonitors -A
+PodMonitor for managing configuration files for scraping data from pods. Display all resource instances using the following command:
+
+[user@demo ~]$ oc get podmonitors -A
+Alertmanager for deploying and managing alert manager instances. Display all resource instances using the following command:
+
+[user@demo ~]$ oc get alertmanagers -A
+PrometheusRule for managing rules. Rules correspond to a query set, a filter, and any other field. Display all resource instances using the following command:
+
+[user@demo ~]$ oc get prometheusrules -A
+The prometheus-k8s-rulefiles-0 configuration map in the openshift-monitoring namespace provides a combined view of all of the Prometheus rules.
+
+Assigning Cluster Monitoring Roles
+Assign the cluster-monitoring-view cluster role to a user to permit viewing cluster alerts and metrics. This role allows a user to see the Monitoring section of the OpenShift web console.
+
+[user@demo ~]$ oc adm policy add-cluster-role-to-user cluster-monitoring-view \
+>  USER
+Describing Alertmanager Features
+An alert is a rule that evaluates to true or false. The rule is often based on cluster observations, such as cluster CPU utilization.
+
+An alert is also associated with a duration. For an alert to trigger, the alert rule must continue to evaluate to true for the defined duration.
+
+You access cluster alerts from the OpenShift web console at Monitoring → Alerting. A brief description of the alert, the alert state, and the alert severity are displayed. View alert details by clicking the name of the alert.
+
+
+Figure 9.1: Alert List
+An alert has four states:
+
+Firing
+The alert rule evaluates to true, and has evaluated to true for longer than the defined alert duration.
+
+Pending
+The alert rule evaluates to true, but has not evaluated to true for longer than the defined alert duration.
+
+Silenced
+The alert is Firing, but is actively being silenced. Administrators can silence an alert to temporary deactivate it.
+
+Not Firing
+Any alert that is not Firing, Pending, or Silenced is labeled as Not Firing.
+
+Although the Firing, Silenced, and Pending alert states are displayed by default from the web console, the display of each state can be toggled on or off.
+
+Understanding Alert Rules
+To stop an alert, you must fix or otherwise address any cluster conditions that cause the alert to fire.
+
+Click the name of any alert in the OpenShift web console to display alert details. You can check alert details regardless of the state.
+
+
+Figure 9.2: Alert Details
+In this example, the KubeCronJobRunning alert is defined in the KubeCronJobRunning alerting rule. This alert has a severity of Warning and is currently in a Pending state. As shown in the Message field, this alarm switches to Firing when the image pruning takes more than 1 hour to complete.
+
+The Message section describes the alert.
+
+Although hidden in this graphic, the alert detail page typically displays the evaluated metric in a graph. The graph contains a View in Metrics link that populates Monitoring → Metrics with the evaluation query.
+
+Silencing an Alert
+Silence an alert while you actively work to resolve the issue. No additional notifications about a silenced alert are sent until the silence expires.
+
+Silence an alert using the vertical ellipsis menu at the far right of the alert row.
+
+
+Figure 9.3: Silence Alert
+An alert is silenced for two hours by default, but it can be silenced for a longer or shorter period.
+
+Complete the Creator and Comment fields to provide insight into who silenced the alert and why the alert was silenced.
+
+The Alerting page, accessible from the Monitoring → Alerting menu, displays silenced alerts by default, including when each silence will end.
+
+
+Figure 9.4: Alert List with Silence
+In this example, the AlertManagerReceiversNotConfigured alert has been silenced. The silenced alert is scheduled to end at 3:16pm on Aug 21. The alert will start firing again if the condition causing the alert has not been resolved by that time.
+
+ 

@@ -1,0 +1,10 @@
+Summary
+In this appendix, you learned:
+
+OpenShift Container Platform provides mechanisms for automatically increasing and decreasing the number of compute nodes in your cluster. You can scale your cluster manually or automatically.
+
+When scaling a cluster manually, you interact with the MachineSets resource, which controls the Machines resource. Machines map to nodes.
+
+When scaling a cluster automatically, you interact with the MachineAutoscaler resource that instructs a MachineSet resource to update its number of replicas.
+
+The ClusterAutoscaler resource controls the maximum number of resources that the MachineAutoscalers can create. This allows you to prevent the uncontrolled growth of your cluster.

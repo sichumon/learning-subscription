@@ -1,0 +1,128 @@
+Configuring Network Policies
+Objectives
+After completing this section, you should be able to restrict network traffic between projects and pods.
+
+Managing Network Policies in OpenShift
+Network policies allow you to configure isolation policies for individual pods. Network policies do not require administrative privileges, giving developers more control over the applications in their projects.
+
+You can use network policies to create logical zones in the SDN that map to your organization network zones. The benefit of this approach is that the location of running pods becomes irrelevant because network policies allow you to segregate traffic regardless of where it originates.
+
+To manage network communication between two namespaces, assign a label to the namespace that needs access to another namespace. The following command assigns the name=network-1 label to the network-1 namespace.
+
+[user@demo ~]$ oc label namespace network-1 name=network-1
+The following examples describe network policies that allow communication between the network-1 and network-2 namespaces.
+
+The following network policy applies to all pods with the label deployment="product-catalog" in the network-1 namespace. The policy allows TCP traffic over port 8080 from pods whose label is role="qa" in the network-2 namespace.
+
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: network-1-policy
+spec:
+  podSelector:1
+    matchLabels:
+      deployment: product-catalog
+
+  ingress:2
+  - from:3
+    - namespaceSelector:
+        matchLabels:
+          name: network-2
+      podSelector:
+        matchLabels:
+          role: qa
+    ports:4
+    - port: 8080
+      protocol: TCP
+1
+
+The top-level podSelector field is required and defines which pods use the network policy. If the podSelector is empty, all pods in the namespace are matched.
+
+2
+
+The ingress field defines a list of ingress traffic rules to apply to the matched pods from the top-level podSelector.
+
+3
+
+The from field defines a list of rules to match traffic from all sources. The selectors are not limited to the project in which the network policy is defined.
+
+4
+
+The ports field is a list of destination ports that allow traffic to reach the selected pods.
+
+The following network policy allows traffic from all the pods and ports in the network-1 namespace to all pods and ports in the network-2 namespace. This policy is less restrictive than the network-1 policy, because it does not restrict traffic from any pods in the network-1 namespace.
+
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: network-2-policy
+spec:
+  podSelector: {}
+
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: network-1
+NOTE
+Network policies are Kubernetes resources. As such, you can manage them using oc commands.
+
+One benefit of using network policies is the management of security between projects (tenants) that you cannot do with layer 2 technologies, such as VLANs. This approach allows you to create tailored policies between projects to make sure users can only access what they should (which conforms to the least privilege approach).
+
+The fields in the network policy that take a list of objects can either be combined in the same object or listed as multiple objects. If combined, the conditions are combined with a logical AND. If separated in a list, the conditions are combined with a logical OR. The logic options allow you to create very specific policy rules. The following examples highlight the differences the syntax can make.
+
+This example combines the selectors into one rule, thereby only allowing access from pods in the dev namespace with the app=mobile label. This is an example of a logical AND.
+
+...output omitted...
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: dev
+      podSelector:
+        matchLabels:
+          app: mobile
+By changing the podSelector field in the previous example to be an item in the from list, all pods in the dev namespace and all pods from any namespace labeled app=mobile can reach the pods that match the top-level podSelector field. This is an example of a logical OR.
+
+...output omitted...
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: dev
+    - podSelector:
+        matchLabels:
+          app: mobile
+If a pod is matched by selectors in one or more network policies, then the pod will only accept connections that are allowed by at least one of those network policies. A strict example is a policy to deny all ingress traffic to pods in you project, including from other pods inside your project. An empty pod selector means that this policy applies to all pods in this project. The following policy blocks all traffic because no ingress rules are defined. Traffic is blocked unless you also define an explicit policy that overrides this default behavior.
+
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+If you have Cluster Monitoring or exposed routes, then you need to allow ingress from them as well. The following policies allow ingress from OpenShift monitoring and Ingress Controllers.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-openshift-ingress
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-openshift-monitoring
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: monitoring

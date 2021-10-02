@@ -1,0 +1,17 @@
+
+Summary
+In this chapter, you learned:
+
+One of the major benefits of OpenShift 4 architectural changes is that you can update your clusters Over-the-Air (OTA).
+
+Red Hat provides a new software distribution system that ensures the best path for updating your cluster and the underlying operating system.
+
+There are three distribution channels:
+
+The stable channel delivers delayed updates.
+
+The fast channel delivers updates are soon as they are available.
+
+The candidate channel delivers updates for testing feature acceptance in the next version of OpenShift Container Platform.
+
+Red Hat does not support reverting your cluster to a previous version. Red Hat only supports upgrading to a newer version.

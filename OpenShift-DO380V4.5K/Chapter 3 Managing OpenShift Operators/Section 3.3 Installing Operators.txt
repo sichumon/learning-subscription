@@ -1,0 +1,201 @@
+
+Installing Operators
+Objectives
+After completing this section, you should be able to:
+
+Install and troubleshoot operators from the OperatorHub.
+
+List workload and custom resources from an operator.
+
+Installing Operators from the OperatorHub
+There are several ways to install operators in an OpenShift cluster, including: OperatorHub, Helm charts, and custom YAML files, among others. The recommended way to install operators is from the OperatorHub, using either the Web Console or the CLI. Operators that come with OpenShift (also called cluster operators) are managed by the Cluster Version Operator, and operators that are installed from the OperatorHub are managed by the Operator Lifecycle Manager (OLM).
+
+Operators are installed to access one or more namespaces depending on the application or task performed by the operator.
+
+Operators follow a maturity model that is divided in phases, that range from basic installation to full automation.
+
+There are three initial settings that must be defined when installing an operator.
+
+Installation mode
+
+Update Channel
+
+Approval strategy
+
+Installing an Operator from the OLM Using the CLI
+Check available operators.
+
+[student@demo ~]$ oc get packagemanifests
+Inspect an operator.
+
+[student@demo ~]$ oc describe packagemanifests metering-ocp
+
+Name:         metering-ocp
+Namespace:    openshift-marketplace
+...output omitted...
+          Description:   A scheduled or on-off Metering Report summarizes data based on the query specified.
+          Display Name:  Metering Report
+          Kind:          Report
+          Name:          reports.metering.openshift.io
+          Version:       v1
+          Description:   A SQL query used by Metering to generate reports.
+          Display Name:  Metering Report Query
+          Kind:          ReportQuery
+          Name:          reportqueries.metering.openshift.io
+          Version:       v1
+...output omitted...
+In the CLI, there is no direct way to get the operator channel so a JSONPath query is needed:
+
+[student@demo ~]$ oc get packagemanifests metering-ocp \
+>   --output='jsonpath={range .status.channels[*]}{.name}{"\n"}{end}'
+Install the metering operator.
+
+Create a namespace for the operator.
+
+NOTE
+Operators need standard Kubernetes namespaces instead of OpenShift projects.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    openshift.io/cluster-monitoring: "true"
+    gls-demos: "true"
+  name: openshift-metering
+[student@demo ~]$ oc apply -f metering-operator-namespace.yaml
+namespace/openshift-metering created
+[student@demo ~]$ oc project openshift-metering
+Now using project "openshift-metering" on server "https://api.ocp-ichavero3.do380.dev.nextcle.com:6443".
+Create an operator group object.
+
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  labels:
+    gls-demos: "true"
+  name: openshift-metering
+  namespace: openshift-metering
+spec:
+  targetNamespaces:
+  - openshift-metering
+[student@demo ~]$ oc apply -f metering-operator-group.yaml
+operatorgroup.operators.coreos.com/openshift-metering created
+Create a subscription object.
+
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    gls-demos: "true"
+  name: test-openshift-metering 1
+  namespace: openshift-metering 2
+spec:
+  channel: "4.5"
+  name: metering-ocp 3
+  source: redhat-operators 4
+  sourceNamespace: openshift-marketplace 5
+1
+
+Name of the operator.
+
+2
+
+Namespace in which the operator will run.
+
+3
+
+Name of the operator to subscribe to.
+
+4
+
+Catalog source that provides the operator.
+
+5
+
+Namespace of the catalog source.
+
+[student@demo ~]$ oc apply -f metering-operator-subscription.yaml
+The OLM creates the operator, and then begins creating and running the proper resources.
+
+Verifying Operator Status
+There are several ways to check the status of operators. The following provides additional information about inspecting event logs, subscription objects, and namespace information to verify the status of an operator. Check the logs of the OLM pod to verify operator installation.
+
+[student@demo ~]$ oc logs pod/olm-operator-c5599dfd7-nknfx\
+>   -n openshift-operator-lifecycle-manager
+Inspect the subscription object to verify the operator status.
+
+[student@demo ~]$ oc describe sub test-openshift-metering
+Name:         test-openshift-metering
+Namespace:    openshift-metering
+Labels:       gls-demos=true
+Annotations:  kubectl.kubernetes.io/last-applied-configuration:
+                {"apiVersion":"operators.coreos.com/v1alpha1","kind":"Subscription","metadata":{
+"annotations":{},"labels":{"gls-demos":"true"},"name":"tes...
+API Version:  operators.coreos.com/v1alpha1
+Kind:         Subscription
+...output omitted...
+Spec:
+  Channel:           4.5
+  Name:              metering-ocp
+  Source:            redhat-operators
+  Source Namespace:  openshift-marketplace
+...output omitted...
+List All Operators
+List installed operators by checking ClusterServiceVersions. To list all the installed operators, get the ClusterServiceVersions in all namespaces.
+
+[student@demo ~]$ oc get csv -A
+Operators can be subscribed to one namespace or to all namespaces. To list the operators managed by the OLM, list the active subscriptions.
+
+[student@demo ~]$ oc get subs -A
+To view the status and events from CRs related to a given operator, describe the operator deployment.
+
+[student@demo ~]$ oc describe deployment.apps/metering-operator | grep -i kind
+                        olm.owner.kind=ClusterServiceVersion
+                          "kind": "MeteringConfig",
+                          "kind": "Report",
+                          "kind": "ReportQuery",
+                          "kind": "ReportDataSource",
+                          "kind": "StorageLocation",
+                          "kind": "PrestoTable",
+                          "kind": "HiveTable",
+
+[student@demo ~]$ oc get crd | grep -i hive
+hivetables.metering.openshift.io                            2020-05-05T07:49:48Z
+
+[student@demo ~]$ oc describe crd hivetables.metering.openshift.io | grep Kind
+Kind:         CustomResourceDefinition
+    Kind:       HiveTable
+    List Kind:  HiveTableList
+    Kind:       HiveTable
+    List Kind:  HiveTableList
+Check the operator elements by getting all objects in the operator’s namespace. If the operator is installed in all the namespaces, then make the query in the openshift-operators namespace and look for the name of the operator to discover the elements.
+
+[student@demo ~]$ oc get all -n openshift-metering
+NAME                                     READY   STATUS    RESTARTS   AGE
+pod/metering-operator-857774844f-trnff   2/2     Running   0          24m
+
+NAME                                        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)
+ AGE
+service/metering-ansible-operator-metrics   ClusterIP   172.30.72.185   <none>        8383/TCP
+ 24m
+
+NAME                                READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/metering-operator   1/1     1            1           24m
+
+NAME                                           DESIRED   CURRENT   READY   AGE
+replicaset.apps/metering-operator-857774844f   1         1         1       24m
+Use the oc logs command to view Events and logs of an operator.
+
+[student@demo ~]$ oc logs deployment.apps/metering-operator -c operator
+{"level":"info","ts":1600159497.1602325,"logger":"cmd","msg":"Go Version: go1.13.4"}
+{"level":"info","ts":1600159497.1606658,"logger":"cmd","msg":"Go OS/Arch: linux/amd64"}
+...output omitted...
+Updating an Operator from the OLM Using the CLI
+Modify the operators YAML file and apply the desired changes to the subscription object.
+
+[student@demo ~]$ oc apply -f metering-operator-subscription.yaml
+Deleting Operators
+To remove an operator from the cluster delete the subscription object.
+
+[student@demo ~]$ oc delete sub test-openshift-metering
+If the update presents failures: check the operator logs for errors or warnings, also its components and prerequisites might be the cause of the problem so they should be checked as well.

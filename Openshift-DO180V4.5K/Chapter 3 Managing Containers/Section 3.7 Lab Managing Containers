@@ -1,0 +1,226 @@
+    Lab: Managing Containers
+Performance Checklist
+
+In this lab, you will deploy a container that saves the MySQL database data into a folder on the host and then you will load the database in another container.
+
+Outcomes
+
+You should be able to deploy and manage a persistent database using a shared volume. You should also be able to start a second database using the same shared volume and observe that the data is consistent between the two containers because they are using the same directory on the host to store the MySQL data.
+
+Open a terminal on workstation as the student user and run the following command:
+
+[student@workstation ~]$ lab manage-review start
+Create the /var/local/mysql directory with the correct SELinux context and permissions.
+
+Create the /var/local/mysql directory.
+
+[student@workstation ~]$ sudo mkdir -pv /var/local/mysql
+mkdir: created directory ‘/var/local/mysql’
+Add the appropriate SELinux context for the /var/local/mysql directory and its contents. With the correct context, you can mount this directory in a running container.
+
+[student@workstation ~]$ sudo semanage fcontext -a \
+> -t container_file_t '/var/local/mysql(/.*)?'
+Apply the SELinux policy to the newly created directory.
+
+[student@workstation ~]$ sudo restorecon -R /var/local/mysql
+Change the owner of the /var/local/mysql directory to match the mysql user and mysql group for the rhscl/mysql-57-rhel7 container image:
+
+[student@workstation ~]$ sudo chown -Rv 27:27 /var/local/mysql
+changed ownership of ‘/var/local/mysql’ from root:root to 27:27
+Deploy a MySQL container instance using the following characteristics:
+
+Name: mysql-1
+
+Run as daemon: yes
+
+Volume: from /var/local/mysql host folder to /var/lib/mysql/data container folder
+
+Container image: rhscl/mysql-57-rhel7
+
+Port forward: no
+
+Environment variables:
+
+MYSQL_USER: user1
+
+MYSQL_PASSWORD: mypa55
+
+MYSQL_DATABASE: items
+
+MYSQL_ROOT_PASSWORD: r00tpa55
+
+Create and start the container.
+
+[student@workstation ~]$ sudo podman run --name mysql-1 \
+> -d -v /var/local/mysql:/var/lib/mysql/data \
+> -e MYSQL_USER=user1 -e MYSQL_PASSWORD=mypa55 \
+> -e MYSQL_DATABASE=items -e MYSQL_ROOT_PASSWORD=r00tpa55 \
+> rhscl/mysql-57-rhel7
+Trying to pull ...output omitted...
+...output omitted...
+Writing manifest to image destination
+Storing signatures
+6l6azfaa55x866e7eb18b1fd0423a5461d8f24c147b1ad8668b76e6167587cdd
+Verify that the container was started correctly.
+
+[student@workstation ~]$ sudo podman ps --format="{{.ID}} {{.Names}}"
+6l6azfaa55x8   mysql-1
+Load the items database using the /home/student/DO180/labs/manage-review/db.sql script.
+
+Get the container IP address.
+
+[student@workstation ~]$ sudo podman inspect \
+> -f '{{ .NetworkSettings.IPAddress }}' mysql-1
+10.88.0.6
+Load the database using the SQL commands in /home/student/DO180/labs/manage-review/db.sql. Use the IP address you find in the previous step as the database server's host IP.
+
+NOTE
+You can import all the commands in the above file using the less-than operator (<) after the mysql command, instead of typing them. Also, you need to add the -h CONTAINER_IP parameter to the mysql command to connect to the correct container.
+
+[student@workstation ~]$ mysql -uuser1 -h CONTAINER_IP \
+> -pmypa55 items < /home/student/DO180/labs/manage-review/db.sql
+Use an SQL SELECT statement to output all rows of the Item table to verify that the Items database is loaded.
+
+NOTE
+You can add the -e SQL parameter to the mysql command to execute an SQL instruction.
+
+[student@workstation ~]$ mysql -uuser1 -h CONTAINER_IP -pmypa55 items \ 
+> -e "SELECT * FROM Item"
++----+-------------------+------+
+| id | description       | done |
++----+-------------------+------+
+|  1 | Pick up newspaper |    0 |
+|  2 | Buy groceries     |    1 |
++----+-------------------+------+
+Stop the container gracefully.
+
+IMPORTANT
+This step is very important because a new container will be created sharing the same volume for database data. Having two containers using the same volume can corrupt the database. Do not restart the mysql-1 container.
+
+Use the following command to stop the container:
+
+[student@workstation ~]$ sudo podman stop mysql-1
+6l6azfaa55x866e7eb18b1fd0423a5461d8f24c147b1ad8668b76e6167587cdd
+Create a new container with the following characteristics:
+
+Name: mysql-2
+
+Run as a daemon: yes
+
+Volume: from /var/local/mysql host folder to /var/lib/mysql/data container folder
+
+Container image: rhscl/mysql-57-rhel7
+
+Port forward: yes, from host port 13306 to container port 3306
+
+Environment variables:
+
+MYSQL_USER: user1
+
+MYSQL_PASSWORD: mypa55
+
+MYSQL_DATABASE: items
+
+MYSQL_ROOT_PASSWORD: r00tpa55
+
+Create and start the container.
+
+[student@workstation ~]$ sudo podman run --name mysql-2 \
+> -d -v /var/local/mysql:/var/lib/mysql/data \
+> -p 13306:3306 \
+> -e MYSQL_USER=user1 -e MYSQL_PASSWORD=mypa55 \
+> -e MYSQL_DATABASE=items -e MYSQL_ROOT_PASSWORD=r00tpa55 \
+> rhscl/mysql-57-rhel7
+281c0e2790e54cd5a0b8e2a8cb6e3969981b85cde8ac611bf7ea98ff78bdffbb
+Verify that the container was started correctly.
+
+[student@workstation ~]$ sudo podman ps --format="{{.ID}} {{.Names}}"
+281c0e2790e5   mysql-2
+Save the list of all containers (including stopped ones) to the /tmp/my-containers file.
+
+Save the information with the following command:
+
+[student@workstation ~]$ sudo podman ps -a > /tmp/my-containers
+Access the Bash shell inside the container and verify that the items database and the Item table are still available. Confirm also that the table contains data.
+
+Access the Bash shell inside the container.
+
+[student@workstation ~]$ sudo podman exec -it mysql-2 /bin/bash
+Connect to the MySQL server.
+
+bash-4.2$ mysql -uroot
+List all databases and confirm that the items database is available.
+
+mysql> show databases;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| items              |
+| mysql              |
+| performance_schema |
+| sys                |
++--------------------+
+5 rows in set (0.03 sec)
+List all tables from the items database and verify that the Item table is available.
+
+mysql> use items;
+Database changed
+mysql> show tables;
++-----------------+
+| Tables_in_items |
++-----------------+
+| Item            |
++-----------------+
+1 row in set (0.01 sec)
+View the data from the table.
+
+mysql> SELECT * FROM Item;
++----+-------------------+------+
+| id | description       | done |
++----+-------------------+------+
+|  1 | Pick up newspaper |    0 |
+|  2 | Buy groceries     |    1 |
++----+-------------------+------+
+Exit from the MySQL client and from the container shell.
+
+mysql> exit
+Bye
+bash-4.2$ exit
+Using port forwarding, insert a new row into the Item table. The row should have a description value of Finished lab, and a done value of 1.
+
+Connect to the MySQL database.
+
+[student@workstation ~]$ mysql -uuser1 -h workstation.lab.example.com \ 
+> -pmypa55 -P13306 items
+...output omitted...
+
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+...output omitted...
+
+MySQL [items]>
+Insert the new row.
+
+MySQL[items]> insert into Item (description, done) values ('Finished lab', 1);
+Query OK, 1 row affected (0.00 sec)
+Exit from the MySQL client.
+
+MySQL[items]> exit
+Bye
+Because the first container is not required any more, remove it to release resources.
+
+Use the following command to remove the container:
+
+[student@workstation ~]$ sudo podman rm mysql-1
+6l6azfaa55x866e7eb18b1fd0423a5461d8f24c147b1ad8668b76e6167587cdd
+Evaluation
+
+Grade your work by running the lab manage-review grade command from your workstation machine. Correct any reported failures and rerun the script until successful.
+
+[student@workstation ~]$ lab manage-review grade
+Finish
+
+On workstation, run the lab manage-review finish command to complete this lab.
+
+[student@workstation ~]$ lab manage-review finish
+This concludes the lab.

@@ -1,0 +1,415 @@
+Lab: Navigating the Red Hat OpenStack Platform Architecture
+
+Performance Checklist
+
+In this lab, you will validate that the undercloud and overcloud are functional by navigating the classroom infrastructure, listing networks and interfaces, and finally by deploying a server instance with a floating IP address.
+
+Outcomes
+
+You should be able to:
+
+Navigate the classroom infrastructure.
+
+List the networks and interfaces on the overcloud nodes.
+
+Manage the containers using basic commands.
+
+List the OVS bridges on the overcloud nodes.
+
+Deploy and verify an external instance.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab architecture-lab setup command. The script checks that the default flavor, the rhel7 image, and the provider-172.25.250 network exist to test instance deployment.
+
+[student@workstation ~]$ lab architecture-lab setup
+On the director node, verify the networks and services of the undercloud.
+
+Log in to director as the stack user. Use the openstack network list command to list the networks built on the undercloud. Note the external network, the provisioning network (ctlplane), and the five VLAN networks.
+
+[student@workstation ~]$ ssh stack@director
+(undercloud) [stack@director ~]$ openstack network list
++-------------+--------------+-------------+
+| ID          | Name         | Subnets     |
++-------------+--------------+-------------+
+| 057a...250d | tenant       | e2fc...f6c0 |
+| 0cf6...e3d0 | management   | 5800...11e5 |
+| 3a82...e1f5 | ctlplane     | a8e0...9913 |
+| 3e25...7d07 | storage_mgmt | 1f31...d167 |
+| 6625...62e7 | storage      | e312...7347 |
+| 6d06...159d | external     | 3720...90d6 |
+| a432...0a0e | internal_api | 7c19...4549 |
++-------------+--------------+-------------+
+Use the ip addr command to list the interfaces on director. Note the eth1 interface, which links to the external network. The br-ctlplane interface links to the provisioning network.
+
+(undercloud) [stack@director ~]$ ip a | grep -E 'br-ctlplane|eth1'
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+  inet 172.25.250.200/24 brd 172.25.250.255 scope global noprefixroute eth1
+6: br-ctlplane: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default qlen 1000
+  inet 172.25.249.200/24 brd 172.25.249.255 scope global br-ctlplane
+  inet 172.25.249.202/32 scope global br-ctlplane
+  inet 172.25.249.201/32 scope global br-ctlplane
+Use the openstack compute service list command to list the nova services. All of the services must be enabled and up for the environment to work correctly.
+
+(undercloud) [stack@director ~]$ openstack compute service list \
+-c Binary -c Host -c Status -c State
++----------------+--------------------------+---------+-------+
+| Binary         | Host                     | Status  | State |
++----------------+--------------------------+---------+-------+
+| nova-conductor | director.lab.example.com | enabled | up    |
+| nova-scheduler | director.lab.example.com | enabled | up    |
+| nova-compute   | director.lab.example.com | enabled | up    |
++----------------+--------------------------+---------+-------+
+Use the openstack catalog list command to list all of the ironic endpoints. Note that each service has three different endpoints.
+
+(undercloud) [stack@director ~]$ openstack catalog list -c Name -c Endpoints
++------------------+------------------------------------------+
+| Name             | Endpoints                                |
++------------------+------------------------------------------+
+| ironic-inspector | regionOne                                |
+|                  |   public: https://172.25.249.201:13050   |
+|                  | regionOne                                |
+|                  |   internal: http://172.25.249.202:5050   |
+|                  | regionOne                                |
+|                  |   admin: http://172.25.249.202:5050      |
+|                  |                                          |
+| mistral          | regionOne                                |
+|                  |   internal: http://172.25.249.202:8989/v2|
+|                  | regionOne                                |
+|                  |   admin: http://172.25.249.202:8989/v2   |
+|                  | regionOne                                |
+|                  |   public: https://172.25.249.201:13989/v2|
+...output omitted...
+On the director node, find the IP addresses of the overcloud nodes. List the networks and show the details for the ctlplane subnet. Open the undercloud.conf file and look at the DHCP configuration.
+
+Use the openstack server list command to list the overcloud nodes' IP addresses.
+
+(undercloud) [stack@director ~]$ openstack server list -c Name -c Networks
++-------------+------------------------+
+| Name        | Networks               |
++-------------+------------------------+
+| compute1    | ctlplane=172.25.249.57 |
+| ceph0       | ctlplane=172.25.249.56 |
+| controller0 | ctlplane=172.25.249.53 |
+| compute0    | ctlplane=172.25.249.54 |
+| computehci0 | ctlplane=172.25.249.58 |
++-------------+------------------------+
+Use the openstack network list command to list the undercloud networks. Use the openstack subnet show command to show the details of the ctlplane subnet. Note the content of the allocation_pools parameter.
+
+(undercloud) [stack@director ~]$ openstack network list -c Name -c Subnets
++--------------+--------------------------------------+
+| Name         | Subnets                              |
++--------------+--------------------------------------+
+| tenant       | ca617bee-fbb4-46be-868a-97b6384c9202 |
+| external     | d49717b4-1327-4359-852b-c4e600ceba97 |
+| internal_api | e786ca9b-5390-4197-b4f7-d5bdb8efa309 |
+| storage_mgmt | a2706edf-0080-44f4-b41a-ac7198a920a0 |
+| management   | 746b8a96-3c66-4421-8cbb-30935754f82a |
+| ctlplane     | 6457fb0f-2d9d-43af-93ca-f0c3dc008c82 |
+| storage      | 0b695964-76c5-48d0-a6c0-6ac6c9d6465c |
++--------------+--------------------------------------+
+(undercloud) [stack@director ~]$ openstack subnet show \
+6457fb0f-2d9d-43af-93ca-f0c3dc008c82
++-------------------+---------------------------------+
+| Field             | Value                           |
++-------------------+---------------------------------+
+| allocation_pools  | 172.25.249.51-172.25.249.59     |
+...output omitted...
+Search for the dhcp_start and dhcp_end parameter IP adresses in the undercloud.conf file.
+
+(undercloud) [stack@director ~]$ grep '^dhcp_' undercloud.conf
+dhcp_start = 172.25.249.51
+dhcp_end = 172.25.249.59
+Note that all overcloud node IP addresses are within the allocation pool on the ctlplane subnet. The ctlplane subnet is configured in the undercloud.conf file. Overcloud nodes IP addresses are obtained from the allocation_pools option of the ctlplane subnet.
+
+On all four overcloud nodes, use the docker command to display the OpenStack services.
+
+Log in to the controller0 node as the heat-admin user. Gain root privileges using the sudo -i command. Use the docker ps command to list the containers on the controller node. Exit the controller0 node.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                              STATUS
+ovn-dbs-bundle-docker-0            Up 7 hours
+openstack-manila-share-docker-0    Up 7 hours
+openstack-cinder-volume-docker-0   Up 7 hours
+haproxy-bundle-docker-0            Up 7 hours
+redis-bundle-docker-0              Up 7 hours
+galera-bundle-docker-0             Up 7 hours
+...output omitted...
+[root@controller0 ~]# exit
+[heat-admin@controller0 ~]$ exit
+Log in to the compute0 node. Use the sudo -i command to gain root privileges. On the compute0 node, run the docker ps command to list the containers. Exit the compute0 node and log in to the computehci0 node. Gain root privileges using the sudo -i command and run the docker ps command. Note the difference between the two nodes. Exit the computehci0 node.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@compute0
+[heat-admin@compute0 ~]$ sudo -i
+[root@compute0 ~]# docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                      STATUS
+ovn_metadata_agent         Up 8 hours (healthy)
+ovn_controller             Up 8 hours
+nova_compute               Up 8 hours (healthy)
+logrotate_crond            Up 8 hours
+ceilometer_agent_compute   Up 8 hours
+nova_migration_target      Up 8 hours
+iscsid                     Up 8 hours
+nova_libvirt               Up 8 hours
+nova_virtlogd              Up 8 hours
+[root@compute0 ~]# exit
+[heat-admin@compute0 ~]$ exit
+(undercloud) [stack@director ~]$ ssh heat-admin@computehci0
+[heat-admin@computehci0 ~]$ sudo -i
+[root@computehci0 ~]# docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                      STATUS
+ceph-osd-computehci0-vdc   Up 8 hours
+ceph-osd-computehci0-vdd   Up 8 hours
+ceph-osd-computehci0-vdb   Up 8 hours
+ovn_controller             Up 8 hours
+ovn_metadata_agent         Up 8 hours (healthy)
+logrotate_crond            Up 8 hours
+nova_compute               Up 8 hours (healthy)
+nova_migration_target      Up 8 hours
+ceilometer_agent_compute   Up 8 hours
+iscsid                     Up 8 hours
+nova_libvirt               Up 8 hours
+nova_virtlogd              Up 8 hours
+[root@computehci0 ~]# exit
+[heat-admin@computehci0 ~]$ exit
+Log in to ceph0 as the heat-admin user. Gain root privileges using the sudo -i command. Use the docker ps command to list the containers on the ceph0 node. Exit the ceph0 node.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@ceph0
+[heat-admin@ceph0 ~]$ sudo -i
+[root@ceph0 ~]# docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                STATUS
+ceph-osd-ceph0-vdb   Up 8 hours
+ceph-osd-ceph0-vdc   Up 8 hours
+ceph-osd-ceph0-vdd   Up 8 hours
+logrotate_crond      Up 8 hours
+[root@ceph0 ~]# exit
+[heat-admin@ceph0 ~]$ exit
+logout
+Connection to ceph0 closed.
+(undercloud) [stack@director ~]$  
+Use docker commands to stop the nova_api container. Review the status of the container and then restart it. Ensure that the container returns a healthy status.
+
+Log in to controller0 as the heat-admin user. Use the docker stop command to stop the nova_api container. Verify the container status using docker ps. Use the docker start command to restart the nova_api container. Recheck the container status, waiting as needed, until the container status is healthy.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+Last login: Mon Aug 27 12:14:20 2018 from 172.25.250.200
+[heat-admin@controller0 ~]$
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# docker stop nova_api
+nova_api
+[root@controller0 ~]# docker ps -a \
+--format="table {{.Names}}\t{{.Status}}" | grep nova_api
+...output omitted...
+nova_api                           Exited (0) 2 minutes ago
+...output omitted...
+[root@controller0 ~]# docker start nova_api
+nova_api
+[root@controller0 ~]# docker ps \
+--format="table {{.Names}}\t{{.Status}}" | grep nova_api
+nova_api                           Up 26 seconds (health: starting)
+...output omitted...
+[root@controller0 ~]# docker ps \
+--format="table {{.Names}}\t{{.Status}}" | grep nova_api
+nova_api                           Up 31 seconds (healthy)
+...output omitted...
+On the controller0 and compute0 nodes, view the eth0, vlan, and br-ex interfaces. List the OVS bridges. List the OVS interfaces on br-ex and br-trunk.
+
+On the controller0 node, list the eth0, vlan, and br-ex interfaces. List the OVS bridges and the interfaces on br-ex and br-trunk. Exit the controller0 system.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ ip addr | grep -E 'eth0|vlan|br-ex'
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state
+    inet 172.25.249.59/24 brd 172.25.249.255 scope global eth0
+    inet 172.25.249.50/32 brd 172.25.249.255 scope global eth0
+10: br-ex: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.25.250.1/24 brd 172.25.250.255 scope global br-ex
+    inet 172.25.250.50/32 brd 172.25.250.255 scope global br-ex
+14: vlan40: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.4.1/24 brd 172.24.4.255 scope global vlan40
+    inet 172.24.4.50/32 brd 172.24.4.255 scope global vlan40
+15: vlan20: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.2.1/24 brd 172.24.2.255 scope global vlan20
+16: vlan10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.1.1/24 brd 172.24.1.255 scope global vlan10
+    inet 172.24.1.51/32 brd 172.24.1.255 scope global vlan10
+    inet 172.24.1.50/32 brd 172.24.1.255 scope global vlan10
+17: vlan30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.3.1/24 brd 172.24.3.255 scope global vlan30
+    inet 172.24.3.50/32 brd 172.24.3.255 scope global vlan30
+18: vlan50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.5.1/24 brd 172.24.5.255 scope global vlan50
+[heat-admin@controller0 ~]$ sudo ovs-vsctl list-br
+br-eth3
+br-eth4
+br-ex
+br-int
+br-trunk
+[heat-admin@controller0 ~]$ sudo ovs-vsctl list-ifaces br-trunk
+eth1
+vlan10
+vlan20
+vlan30
+vlan40
+vlan50
+[heat-admin@controller0 ~]$ sudo ovs-vsctl list-ifaces br-ex
+eth2
+patch-provnet-f8366a5d-9cf9-4d38-9760-9cf9df4eceaa-to-br-int
+[heat-admin@controller0 ~]$ exit
+Log in to compute0 as the heat-admin user. List the eth0, vlan, and br-ex interfaces. List the OVS bridges and the interfaces on br-ex and br-trunk. Exit the compute0 system.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@compute0
+ [heat-admin@compute0 ~]$ ip addr | grep -E 'eth0|vlan|eth2'
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state
+    inet 172.25.249.53/24 brd 172.25.249.255 scope global eth0
+4: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master ovs-system state
+14: vlan10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.1.2/24 brd 172.24.1.255 scope global vlan10
+15: vlan20: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.2.2/24 brd 172.24.2.255 scope global vlan20
+16: vlan30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.3.2/24 brd 172.24.3.255 scope global vlan30
+17: vlan50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.5.2/24 brd 172.24.5.255 scope global vlan50
+[heat-admin@compute0 ~]$ sudo ovs-vsctl list-br
+br-eth3
+br-eth4
+br-ex
+br-int
+br-trunk
+[heat-admin@compute0 ~]$ sudo ovs-vsctl list-ifaces br-trunk
+eth1
+vlan10
+vlan20
+vlan30
+vlan50
+[heat-admin@compute0 ~]$ exit
+On workstation, source the ~/operator1-production-rc keystone file. Create an instance in the production project using the attributes in the table below. Ensure that the server has a status of ACTIVE. Create a floating IP address on the provider-datacentre network and attach it to the instance.
+
+Table 1.3. Instance Attributes
+
+Attribute	Value
+Flavor	default
+Key pair	example-keypair
+Network	production-network1
+Image	production-rhel7
+Security group	production
+Name	production-server1
+User data	http://materials.example.com/oscli-setup.sh
+
+Source the ~/operator1-production-rc file and launch an instance as the operator1 user. Name the instance production-server1.
+
+[student@workstation ~]$ source operator1-production-rc
+[student@workstation ~(operator1-production)]$ openstack server create \
+--flavor default \
+--key-name example-keypair \
+--nic net-id=production-network1 \
+--security-group default \
+--image production-rhel7 \
+production-server1 --wait
++-----------------------------+---------------------------------+
+| Field                       | Value                           |
++-----------------------------+---------------------------------+
+| OS-DCF:diskConfig           | MANUAL                          |
+| OS-EXT-AZ:availability_zone | nova                            |
+| OS-EXT-STS:power_state      | Running                         |
+| OS-EXT-STS:task_state       | None                            |
+| OS-EXT-STS:vm_state         | active                          |
+| OS-SRV-USG:launched_at      | 2018-08-27T13:39:06.000000      |
+| OS-SRV-USG:terminated_at    | None                            |
+| accessIPv4                  |                                 |
+| accessIPv6                  |                                 |
+| addresses                   | production-network1=192.168.1.1 |
+| adminPass                   | eCkjYF6hkH9Q                    |
+| config_drive                |                                 |
+| created                     | 2018-08-27T13:38:16Z            |
+| flavor                      | default (c620...6c0f)           |
+| hostId                      | 8bb2...d4e4                     |
+| id                          | c82c...15ee                     |
+| image                       | production-rhel7 (d4c2...7be0)  |
+| key_name                    | example-keypair                 |
+| name                        | production-server1              |
+| progress                    | 0                               |
+| project_id                  | ee1b8ae964ee4ab3b2edf3fbc7791a40|
+| properties                  |                                 |
+| security_groups             | name='default'                  |
+| status                      | ACTIVE                          |
+| updated                     | 2018-08-27T13:39:06Z            |
+| user_id                     | 9951c5c09af6486c8fa6df513be889f1|
+| volumes_attached            |                                 |
++-----------------------------+---------------------------------+
+[student@workstation ~(operator1-production)]$ openstack server list \ 
+-c Name -c Status
++--------------------+--------+
+| Name               | Status |
++--------------------+--------+
+| production-server1 | ACTIVE |
++--------------------+--------+
+Use the openstack floating ip create command to create a floating IP address in the provider-datacentre network.
+
+[student@workstation ~(operator1-production)]$ openstack floating ip create \
+provider-datacentre
++---------------------+-----------------------+
+| Field               | Value                 |
++---------------------+-----------------------+
+| created_at          | 2018-08-27T13:20:58Z  |
+| description         |                       |
+| fixed_ip_address    | None                  |
+| floating_ip_address | 172.25.250.N          |
+| floating_network_id | f836...ceaa           |
+| id                  | 9779...4ed8           |
+| name                | 172.25.250.113        |
+| port_id             | None                  |
+| project_id          | ee1b...1a40           |
+| qos_policy_id       | None                  |
+| revision_number     | 0                     |
+| router_id           | None                  |
+| status              | DOWN                  |
+| subnet_id           | None                  |
+| updated_at          | 2018-08-27T13:20:58Z  |
++---------------------+-----------------------+
+Attach the floating IP address to the active server and verify that it responds.
+
+[student@workstation ~(operator1-production)]$ openstack server add \
+floating ip production-server1 172.25.250.N
+[student@workstation ~(operator1-production)]$ ping -c3 172.25.250.N
+PING 172.25.250.113 (172.25.250.113) 56(84) bytes of data.
+64 bytes from 172.25.250.113: icmp_seq=1 ttl=63 time=0.346 ms
+64 bytes from 172.25.250.113: icmp_seq=2 ttl=63 time=0.403 ms
+64 bytes from 172.25.250.113: icmp_seq=3 ttl=63 time=0.375 ms
+
+--- 172.25.250.113 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2000ms
+rtt min/avg/max/mdev = 0.346/0.374/0.403/0.032 ms
+Log into the instance using the attached address. Test for external network access. Ping the network gateway from production-server1.
+
+[student@workstation ~(operator1-production)]$ ssh cloud-user@172.25.250.N
+[cloud-user@production-server1 ~]$ ping -c3 172.25.250.254
+PING 172.25.250.254 (172.25.250.254) 56(84) bytes of data.
+64 bytes from 172.25.250.254: icmp_seq=1 ttl=63 time=0.804 ms
+64 bytes from 172.25.250.254: icmp_seq=2 ttl=63 time=0.847 ms
+64 bytes from 172.25.250.254: icmp_seq=3 ttl=63 time=0.862 ms
+
+--- 172.25.250.254 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.804/0.837/0.862/0.041 ms
+When finished testing, exit the production-server1 server instance.
+
+[cloud-user@production-server1 ~]$ exit
+[student@workstation ~(operator1-production)]$ 
+Evaluation
+
+On workstation, run the lab architecture-lab grade command to confirm the success of this exercise.
+
+[student@workstation ~(operator1-production)]$ lab architecture-lab grade
+Cleanup
+
+On workstation, run the lab architecture-lab cleanup script to clean up this exercise.
+
+[student@workstation ~(operator1-production)]$ lab architecture-lab cleanup
+This concludes the lab.

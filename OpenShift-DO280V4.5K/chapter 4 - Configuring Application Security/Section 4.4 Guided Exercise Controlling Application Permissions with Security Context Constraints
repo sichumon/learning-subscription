@@ -1,0 +1,129 @@
+
+Guided Exercise: Controlling Application Permissions with Security Context Constraints
+In this exercise, you will deploy applications that require pods with extended permissions.
+
+Outcomes
+
+You should be able to:
+
+Create service accounts and assign security context constraints (SCCs) to them.
+
+Assign a service account to a deployment configuration.
+
+Run applications that need root privileges.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and creates some HTPasswd users for the exercise.
+
+[student@workstation ~]$ lab authorization-scc start
+Log in to the OpenShift cluster and create the authorization-scc project.
+
+Log in to the cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Create the authorization-scc project.
+
+[student@workstation ~]$ oc new-project authorization-scc
+Now using project "authorization-scc" on server
+"https://api.ocp4.example.com:6443".
+...output omitted...
+Deploy an application named gitlab using the container image located at quay.io/redhattraining/gitlab-ce:8.4.3-ce.0. This image is a copy of the container image availabe at docker.io/gitlab/gitlab-ce:8.4.3-ce.0. Verify that the pod fails because the container image needs root privileges.
+
+Deploy the gitlab application.
+
+[student@workstation ~]$ oc new-app --name gitlab \
+>    --docker-image quay.io/redhattraining/gitlab-ce:8.4.3-ce.0
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "gitlab" created
+    deployment.apps "gitlab" created
+    service "gitlab" created
+--> Success
+...output omitted...
+Determine if the application is successfully deployed. It should give an error because this image needs root privileges to properly deploy.
+
+[student@workstation ~]$ oc get pods
+NAME                      READY   STATUS   RESTARTS   AGE
+gitlab-7d67db7875-gcsjl   0/1     Error    1          60s
+NOTE
+It might take some time for the image to reach the Error state. You might also see the CrashLoopBackOff status while checking the pod's health.
+
+Review the application logs to confirm that the failure is caused by insufficient privileges.
+
+[student@workstation ~]$ oc logs pod/gitlab-7d67db7875-gcsjl
+...output omitted...
+================================================================================
+Recipe Compile Error in /opt/gitlab/embedded/cookbooks/cache/cookbooks/gitlab/recipes/default.rb
+================================================================================
+
+Chef::Exceptions::InsufficientPermissions
+-----------------------------------------
+directory[/etc/gitlab] (gitlab::default line 26) had an error: Chef::Exceptions::InsufficientPermissions: Cannot create directory[/etc/gitlab] at /etc/gitlab due to insufficient permissions
+...output omitted...
+Log in as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Check if using a different SCC can resolve the permissions problem.
+
+[student@workstation ~]$ oc get pod/gitlab-7d67db7875-gcsjl -o yaml \
+>    | oc adm policy scc-subject-review -f -
+RESOURCE                      ALLOWED BY
+Pod/gitlab-7d67db7875-gcsjl   anyuid
+Create a new service account and assign the anyuid SCC to it.
+
+Create a service account named gitlab-sa.
+
+[student@workstation ~]$ oc create sa gitlab-sa
+serviceaccount/gitlab-sa created
+Assign the anyuid SCC to the gitlab-sa service account.
+
+[student@workstation ~]$ oc adm policy add-scc-to-user anyuid -z gitlab-sa
+clusterrole.rbac.authorization.k8s.io/system:openshift:scc:anyuid added: "gitlab-sa"
+Modify the gitlab application so that it uses the newly created service account. Verify that the new deployment succeeds.
+
+Log in as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+Assign the gitlab-sa service account to the gitlab deployment.
+
+[student@workstation ~]$ oc set serviceaccount deployment/gitlab gitlab-sa
+deployment.apps/gitlab serviceaccount updated
+Verify that the gitlab redeployment succeeds. You might need to run the oc get pods command multiple times until you see a running application pod.
+
+[student@workstation ~]$ oc get pods
+NAME                   READY   STATUS    RESTARTS   AGE
+gitlab-86d6d65-zm2fd   1/1     Running   0          55s
+Verify that the gitlab application works properly.
+
+Expose the gitlab application. Because the gitlab service listens on ports 22, 80, and 443, you must use the --port option.
+
+[student@workstation ~]$ oc expose service/gitlab --port 80 \
+>    --hostname gitlab.apps.ocp4.example.com
+route.route.openshift.io/gitlab exposed
+Get the exposed route.
+
+[student@workstation ~]$ oc get routes
+NAME     HOST/PORT                      PATH   SERVICES   PORT   ...
+gitlab   gitlab.apps.ocp4.example.com          gitlab     80     ...
+Verify that the gitlab application is answering HTTP queries.
+
+[student@workstation ~]$ curl -s \
+>    http://gitlab.apps.ocp4.example.com/users/sign_in | grep '<title>'
+<title>Sign in · GitLab</title>
+Delete the authorization-scc project.
+
+[student@workstation ~]$ oc delete project authorization-scc
+project.project.openshift.io "authorization-scc" deleted
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab authorization-scc finish

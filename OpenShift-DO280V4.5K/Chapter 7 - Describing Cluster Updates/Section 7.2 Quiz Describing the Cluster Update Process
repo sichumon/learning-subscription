@@ -1,0 +1,86 @@
+Quiz: Describing the Cluster Update Process
+Choose the correct answers to the following questions:
+
+1.		
+Which two of the following updates would be available in the fast-4.5 update channel? (Choose two.)
+
+A		
+4.4.2
+
+B		
+4.5.1
+
+C		
+4.6.1
+
+D		
+4.5.5
+
+2.		
+Which of the following components retrieves the updated cluster images from Quay.io?
+
+A		
+Cluster Monitoring (Prometheus)
+
+B		
+Operator Lifecycle Manager (OLM)
+
+C		
+Cluster Version Operator (CVO)
+
+D		
+Telemetry client (Telemeter)
+
+3.		
+Which of the following components manages the updates of operators that are not cluster operators?
+
+A		
+Operator Lifecycle Manager (OLM)
+
+B		
+Telemetry client (Telemeter)
+
+C		
+Cluster Version Operator (CVO)
+
+4.		
+Which two of the following commands allow you to retrieve the version of the cluster that is currently running? (Choose two.)
+
+A		
+oc adm upgrade
+
+B		
+oc get clusterchannel
+
+C		
+oc get clusterversion
+
+5.		
+Which of the following statements is true regarding the OTA feature?
+
+A		
+The stable channel is classified as General Availability (GA), whereas the fast channel is classified as Release Candidate (RC).
+
+B		
+When using the stable channel, you cannot skip intermediary versions. For example, when updating from 4.3.27 to 4.3.29, OpenShift must install the 4.3.28 version first.
+
+C		
+It is not recommended to switch from a stable channel or a fast channel to a candidate channel. However, you can switch from a fast channel to a stable channel and vice versa.
+
+D		
+Rolling back a failed update is only supported by Red Hat when you are attempting to update from a z-stream version to one another (for example, from 4.5.2 to 4.5.3, but not from 4.5.3 to 4.6).
+
+6.	Which two of the following channels are classified as general availability? (Choose two.)
+
+A	candidate-4.5.stable
+
+B	stable-4.5
+
+C	candidate-stable-4.5
+
+D	fast-4.5
+
+E	fast-4.5.1
+
+
+answers : 1.B,D  2.C  3.A  4.A,C  5.C  6.B,D 

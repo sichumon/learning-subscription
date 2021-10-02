@@ -1,0 +1,101 @@
+Provisioning Local Block Storage
+Objectives
+After completing this section, you should be able to use a custom resource to create persistent local volumes.
+
+Describing Local Volumes
+Network-based block storage technologies enable remote access to storage with better I/O performance than shared file storage. In some scenarios, applications require better performance.
+
+Locally-attached block devices can often achieve better I/O performance than remote block storage technologies. Kubernetes and OpenShift provide capability to create persistent volumes from locally-attached block devices. The persistent volume definition that follows mounts a locally-attached block device.
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: local-pv-01
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:  1
+    path: /mnt/disks/vol1  2
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname  3
+          operator: In
+          values:
+          - my-node  4
+1
+
+The local volume plug-in defines a path attribute, which is the location of the locally-mounted storage.
+
+2
+
+The /mnt/disks/vol1 path is the mount point for the locally attached block device. You must ensure the device is formatted and mounted to the node.
+
+3 4
+
+A local persistent volume must define node affinity rules that restrict the persistent volume to particular node. OpenShift uses the node affinity rules to schedule pods to the same node as the local persistent volume. In this example, the persistent volume corresponds to the block storage that is mounted on the my-node cluster node.
+
+Managing Local Volumes
+Local volumes do not support dynamic provisioning. You must find an appropriate management solution to use local volumes at scale.
+
+In a previous exercise, you used Ansible Playbooks to manage the provisioning of iSCSI block storage resources for the cluster. You can use a similar methodology to manage local volumes.
+
+Alternatively, you can use the Local Storage Operator to manage the life cycle of local persistent volumes.
+
+Describing the Local Storage Operator
+The Local Storage Operator creates and manages local volumes attached to nodes in the cluster. The operator requires configuration defined in LocalVolume custom resources to create and manage local volumes.
+
+The operator uses configuration defined in LocalVolume custom resources. Each resource identifies one or more block devices that the operator uses to create local volumes.
+
+The LocalVolume custom resource definition that follows defines a fast-local-storage and a standard-local-storage storage class.
+
+apiVersion: "local.storage.openshift.io/v1"  1
+kind: "LocalVolume"  2
+metadata:
+  name: "local-disks"  3
+spec:
+  storageClassDevices:
+    - storageClassName: "fast-local-storage"  4
+      volumeMode: Filesystem
+      devicePaths:
+        - /dev/sdb  5
+    - storageClassName: "standard-local-storage"  6
+      volumeMode: Filesystem
+      devicePaths:
+        - /dev/hda  7
+1 2
+
+The API specification for LocalVolume resources.
+
+3
+
+The local-disks custom resource.
+
+4 5
+
+The fast-local-storage storage class, which uses the /dev/sdb block device on each node.
+
+6 7
+
+The standard-local-storage storage class, which uses the /dev/hda block device on each node.
+
+Creating Local Persistent Volumes
+To create local persistent volumes, you must create a LocalVolume custom resource in the target namespace for the Local Storage operator.
+
+To determine the target namespace for the Local Storage operator, list the CSV resources for all namespaces:
+
+[user@demo ~]$ oc get csv --all-namespaces
+NAMESPACE       NAME                  ...   DISPLAY        ...   PHASE
+...output omitted...
+local-storage   local-storage-operator...   Local Storage  ...   Succeeded
+...output omitted...
+The output of the previous command indicates that the operator is installed in the local-storage namespace. You must create all LocalVolume custom resources in the same namespace.
+
+If the local-volumes.yml file contains a LocalVolume resource definition, then the following command creates a LocalVolume resource:
+
+[user@demo ~]$ oc create -f local-volumes.yml -n local-storage

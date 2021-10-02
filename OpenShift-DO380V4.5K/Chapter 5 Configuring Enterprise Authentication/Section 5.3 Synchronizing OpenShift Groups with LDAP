@@ -1,0 +1,217 @@
+Synchronizing OpenShift Groups with LDAP
+
+Objectives
+
+After completing this section, you should be able to:
+
+Automate group synchronization with an LDAP directory.
+Troubleshoot group synchronization issues.
+
+Synchronizing LDAP Groups
+
+Groups are used to manage user permissions in bulk.
+
+OpenShift can synchronize LDAP groups by querying the LDAP server and creating them internally. This process should be run periodically to ensure groups are kept up to date. OpenShift administrators can grant permissions based on LDAP groups, but these permissions must be assigned using the OpenShift RBAC system and are not inherited from the IdM.
+
+The LDAPSyncConfig resource contains the settings that the OpenShift cluster needs for group synchronization, which can be performed manually or using a CronJob.
+
+Configuring LDAP Group Synchronization
+To create an LDAPSyncConfig resource and test it, complete the following two steps.
+
+First, create a file containing an LDAPSyncConfig. The CronJob uses a secret and a ConfigMap instead of embedding the password and a local path.
+
+kind: LDAPSyncConfig
+apiVersion: v1
+url: ldaps://idm.ocp4.example.com
+bindDN: uid=ldap_user_for_sync,cn=users,cn=accounts,dc=example,dc=com
+bindPassword: ldap_user_for_sync_password
+insecure: false
+ca: /path/to/ca.crt
+rfc2307:
+    groupsQuery:
+        baseDN: "cn=groups,cn=accounts,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+        filter: (objectClass=posixgroup)
+    groupUIDAttribute: dn
+    groupNameAttributes: [ cn ]
+    groupMembershipAttributes: [ member ]
+    usersQuery:
+        baseDN: "cn=accounts,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+    userUIDAttribute: dn
+    userNameAttributes: [ cn ]
+    tolerateMemberNotFoundErrors: false
+    tolerateMemberOutOfScopeErrors: true
+Then, execute a dry run to verify the synchronization process.
+
+[user@demo ~]$ oc adm groups sync --sync-config tmp/ldap-sync.yml
+apiVersion: v1
+items:
+- metadata:
+    annotations:
+      openshift.io/ldap.sync-time: "2020-04-14T09:26:29Z"
+      openshift.io/ldap.uid: cn=admins,cn=groups,cn=accounts,dc=example,dc=com
+      openshift.io/ldap.url: idm.ocp4.example.com:636
+    creationTimestamp: "2020-03-30T14:15:49Z"
+    labels:
+      openshift.io/ldap.host: idm.ocp4.example.com
+    name: admins
+    resourceVersion: "2752973"
+    selfLink: /apis/user.openshift.io/v1/groups/admins
+    uid: f4bd4e3a-7290-11ea-b166-0a580a80001b
+  users:
+  - Administrator
+...
+In case of failure, the sync process displays errors:
+
+[user@demo ~]$ oc adm groups sync --sync-config tmp/ldap-sync.yml
+...
+error: could not bind to the LDAP server: LDAP Result Code 49 "Invalid Credentials":
+Scheduling LDAP Group Synchronization
+The following steps detail how to create a CronJob to perform a periodic LDAP group synchronization:
+
+Store the LDAP bind password in an OpenShift Secret so the CronJob can access the password in a secure way.
+
+Store the LDAPSyncConfig and the IdM certificate in a ConfigMap so the CronJob can use them.
+
+Create a new LDAPSyncConfig.
+
+kind: LDAPSyncConfig
+apiVersion: v1
+url: ldaps://idm.ocp4.example.com
+bindDN: uid=admin,cn=users,cn=accounts,dc=example,dc=com
+bindPassword:
+  file: /etc/secrets/bindPassword
+insecure: false
+ca: /etc/config/ca.crt
+rfc2307:
+    groupsQuery:
+        baseDN: "cn=groups,cn=accounts,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+        filter: (objectClass=ipausergroup)
+    groupUIDAttribute: dn
+    groupNameAttributes: [ cn ]
+    groupMembershipAttributes: [ member ]
+    usersQuery:
+        baseDN: "cn=users,cn=accounts,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+    userUIDAttribute: dn
+    userNameAttributes: [ uid ]
+Create a Secret.
+
+[user@demo ~]$ oc create secret generic ldap-secret \
+> --from-literal bindPassword=r3dh4t
+Create a ConfigMap:
+
+[user@demo ~]$ oc create configmap ldap-config --from-file \
+> ldap-group-sync.yaml=tmp/ldap-sync-config-cronjob.yml,ca.crt=tmp/ca.crt
+Create a CronJob.
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: group-sync
+spec:
+  schedule: "*/1 * * * *" 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: group-sync
+            image: registry.redhat.io/openshift4/ose-cli:v4.5 2
+            command:
+            - /bin/sh
+            - -c
+            - oc adm groups sync --sync-config /etc/config/ldap-group-sync.yaml --confirm 3
+            volumeMounts: 4
+              - mountPath: "/etc/config"
+                name: "ldap-sync-volume"
+              - mountPath: "/etc/secrets"
+                name: "ldap-bind-password"
+          volumes:
+            - name: "ldap-sync-volume"
+              configMap:
+                name: ldap-config
+            - name: "ldap-bind-password"
+              secret:
+                secretName: ldap-secret
+          serviceAccountName: ldap-group-syncer-sa 5
+          serviceAccount: ldap-group-syncer-sa
+1
+
+Schedule the job to run every minute to have shorter test cycles.
+
+2
+
+Provide an OCI image to run the CronJob. This image must contain the oc command.
+
+3
+
+The command to execute in the CronJob is the sync command with --confirm.
+
+4
+
+Provide the Secret and ConfigMap to the CronJob.
+
+5
+
+Provide a ServiceAccount that can execute get, list, create, update verbs on the groups resource.
+
+NOTE
+The - oc adm groups sync …​ --confirm fragment must be typed as a single line.
+
+Verify LDAP Group Synchronization
+Use the watch command to inspect the CronJob execution.
+
+[user@demo ~]$ watch oc get cronjobs,jobs,pods
+NAME                       SCHEDULE      SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob.batch/group-sync   */1 * * * *   False     0        33s             2m5s
+
+NAME                              COMPLETIONS   DURATION   AGE
+job.batch/group-sync-1597933740   1/1           4s         84s
+job.batch/group-sync-1597933800   1/1           4s         24s
+
+NAME                              READY   STATUS      RESTARTS   AGE
+pod/group-sync-1597933740-4d5t8   0/1     Completed   0          84s
+pod/group-sync-1597933800-jlwgl   0/1     Completed   0          24s
+Check the pod logs.
+
+[user@demo ~]$ oc logs pod/group-sync-1586857680-6969r
+group/admins
+...
+Review LDAP Users Permissions and Group Membership
+Verify a group definition and membership.
+
+[user@demo ~]$ oc get group admins -o yaml
+apiVersion: user.openshift.io/v1
+kind: Group
+metadata:
+  annotations:
+    openshift.io/ldap.sync-time: "2020-04-14T09:50:45Z"
+    openshift.io/ldap.uid: cn=admins,cn=groups,cn=accounts,dc=ocp-example,dc=do380,dc=dev,dc=nextcle,dc=com
+    openshift.io/ldap.url: idm.ocp4.example.com:636
+  creationTimestamp: "2020-03-30T14:15:49Z"
+  labels:
+    openshift.io/ldap.host: idm.ocp4.example.com
+  name: admins
+  resourceVersion: "2802446"
+  selfLink: /apis/user.openshift.io/v1/groups/admins
+  uid: f4bd4e3a-7290-11ea-b166-0a580a80001b
+users:
+- admin
+Granting Permissions to IdM User Groups
+OpenShift does not inherit permissions from the LDAP server; permissions must be added to each group.
+
+Roles can be added to LDAP groups in the same way as regular OpenShift groups after the group synchronization is performed.
+
+[user@demo ~]$ oc adm policy add-cluster-role-to-group cluster-admin admins

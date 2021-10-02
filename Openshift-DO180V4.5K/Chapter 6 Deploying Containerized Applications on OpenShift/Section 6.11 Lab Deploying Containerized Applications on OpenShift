@@ -1,0 +1,97 @@
+Lab: Deploying Containerized Applications on OpenShift
+Performance Checklist
+
+In this lab, you will create an application using the OpenShift Source-to-Image facility.
+
+Outcomes
+
+You should be able to create an OpenShift application and access it through a web browser.
+
+Open a terminal on workstation as the student user and run the following command:
+
+[student@workstation ~]$ lab openshift-review start
+Prepare the lab environment.
+
+Load your classroom environment configuration.
+
+Run the following command to load the environment variables created in the first guided exercise:
+
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+Log in to the OpenShift cluster.
+
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER} -p \
+> ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+Login successful
+...output omitted...
+Create a new project named "${RHT_OCP4_DEV_USER}-ocp" for the resources you create during this exercise:
+
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-ocp
+Create a temperature converter application written in PHP using the php:7.3 image stream tag. The source code is in the Git repository at https://github.com/RedHatTraining/DO180-apps/ in the temps directory. You may use the OpenShift command-line interface or the web console to create the application.
+
+Expose the application's service to make the application accessible from a web browser.
+
+If using the command-line interface, run the following commands:
+
+[student@workstation ~]$ oc new-app --as-deployment-config \
+>  php:7.3~https://github.com/RedHatTraining/DO180-apps \
+>  --context-dir temps --name temps
+--> Found image fbe3911 (2 weeks old) in image stream "openshift/php" under tag "7.3" for "php:7.3"
+
+    Apache 2.4 with PHP 7.3
+    -----------------------
+    PHP 7.3 available as container is a base platform ...output omitted...
+
+...output omitted...
+
+--> Creating resources ...
+    imagestream.image.openshift.io "temps" created
+    buildconfig.build.openshift.io "temps" created
+    deploymentconfig.apps.openshift.io "temps" created
+    service "temps" created
+--> Success
+    Build scheduled, use 'oc logs -f bc/temps' to track its progress.
+    Application is not exposed. You can expose services to the outside world by executing one or more of the commands below:
+     'oc expose svc/temps'
+    Run 'oc status' to view your app.
+Monitor progress of the build.
+
+[student@workstation ~]$ oc logs -f bc/temps
+Cloning "https://github.com/RedHatTraining/DO180-apps" ...
+	Commit:	f7cd8963ef353d9173c3a21dcccf402f3616840b (Initial commit, including all apps previously in course)
+...output omitted...
+Successfully pushed image-registry.openshift-image-registry.svc:5000/${RHT_OCP4_DEV_USER}-temps/temps@sha256:59f713adfacdbc2a3ca81c4ef4af46517dfffa3f0029372f86fbcaf571416a74
+Push successful
+Verify that the application is deployed.
+
+[student@workstation ~]$ oc get pods -w
+NAME             READY   STATUS      RESTARTS   AGE
+temps-1-build    0/1     Completed   0          91s
+temps-1-deploy   0/1     Completed   0          60s
+temps-1-p4zjc    1/1     Running     0          58s
+Press Ctrl+C to exit the oc get pods -w command.
+
+Expose the temps service to create an external route for the application.
+
+[student@workstation ~]$ oc expose svc/temps
+route.route.openshift.io/temps exposed
+Verify that you can access the application in a web browser at http://temps-${RHT_OCP4_DEV_USER}-ocp.${RHT_OCP4_WILDCARD_DOMAIN}.
+
+Determine the URL for the route.
+
+[student@workstation ~]$ oc get route/temps
+NAME    HOST/PORT                                                    ...
+temps   temps-${RHT_OCP4_DEV_USER}-ocp.${RHT_OCP4_WILDCARD_DOMAIN}   ...
+Verify that the temperature converter application works by opening a web browser and navigating to the URL displayed in the previous step.
+
+
+Evaluation
+
+On workstation, run the lab openshift-review grade command to grade your work. Correct any reported failures and rerun the script until successful.
+
+[student@workstation ~]$ lab openshift-review grade
+Finish
+
+On workstation, run the lab openshift-review finish command to complete this lab.
+
+[student@workstation ~]$ lab openshift-review finish
+This concludes the lab.

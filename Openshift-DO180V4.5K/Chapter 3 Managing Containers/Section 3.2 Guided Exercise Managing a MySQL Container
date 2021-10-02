@@ -1,0 +1,100 @@
+Guided Exercise: Managing a MySQL Container
+In this exercise, you will create and manage a MySQL® database container.
+
+Outcomes
+
+You should be able to create and manage a MySQL database container.
+
+Make sure that workstation has the podman command available and is correctly set up by running the following command from a terminal window:
+
+[student@workstation ~]$ lab manage-lifecycle start
+Download the MySQL database container image, and attempt to start it. The container does not start because several environment variables must be provided to the image.
+
+[student@workstation ~]$ sudo podman run --name mysql-db rhscl/mysql-57-rhel7
+Trying to pull ...output omitted...
+...output omitted...
+Writing manifest to image destination
+Storing signatures
+You must either specify the following environment variables:
+  MYSQL_USER (regex: '^[a-zA-Z0-9_]+$')
+  MYSQL_PASSWORD (regex: '^[a-zA-Z0-9_~!@#$%^&*()-=<>,.?;:|]+$')
+  MYSQL_DATABASE (regex: '^[a-zA-Z0-9_]+$')
+Or the following environment variable:
+  MYSQL_ROOT_PASSWORD (regex: '^[a-zA-Z0-9_~!@#$%^&*()-=<>,.?;:|]+$')
+Or both.
+Optional Settings:
+...output omitted...
+
+For more information, see https://github.com/sclorg/mysql-container
+NOTE
+If you try to run the container as a daemon (-d), the error message about the required variables is not displayed. However, this message is included as part of the container logs, which can be viewed using the following command:
+
+[student@workstation ~]$ sudo podman logs mysql-db
+Create a new container named mysql, and specify each required variable using the -e parameter.
+
+NOTE
+Make sure you start the new container with the correct name.
+
+[student@workstation ~]$ sudo podman run --name mysql \ 
+> -d -e MYSQL_USER=user1 -e MYSQL_PASSWORD=mypa55 \
+> -e MYSQL_DATABASE=items -e MYSQL_ROOT_PASSWORD=r00tpa55 \
+> rhscl/mysql-57-rhel7
+The command displays the container ID for the mysql container. Below is an example of the output.
+
+a49dba9ff17f2b5876001725b581fdd331c9ab8b9eda21cc2a2899c23f078509
+Verify that the mysql container started correctly. Run the following command:
+
+[student@workstation ~]$ sudo podman ps --format="{{.ID}} {{.Names}} {{.Status}}"
+a49dba9ff17f   mysql   Up About a minute ago
+The command only shows the first 12 characters of the container ID displayed in the previous command.
+
+Inspect the container metadata to obtain the IP address for the MySQL database:
+
+[student@workstation ~]$ sudo podman inspect \
+> -f '{{ .NetworkSettings.IPAddress }}' mysql
+10.88.0.6
+The IP address of your container may differ from the one shown above (10.88.0.6).
+
+NOTE
+The podman inspect command provides additional important information. For example, the Env section displays environment variables, such as the MYSQL_ROOT_PASSWORD variable.
+
+Populate the items database with the Projects table:
+
+[student@workstation ~]$ mysql -uuser1 -h 10.88.0.6 \
+> -pmypa55 items < /home/student/DO180/labs/manage-lifecycle/db.sql
+Create another container using the same container image as the previous container. Interactively enter the /bin/bash shell instead of using the default command for the container image.
+
+[student@workstation ~]$ sudo podman run --name mysql-2 \
+> -it rhscl/mysql-57-rhel7 /bin/bash
+bash-4.2$ 
+Try to connect to the MySQL database in the new container:
+
+bash-4.2$ mysql -uroot
+The following error displays:
+
+ERROR 2002 (HY000): Can't connect to local MySQL ...output omitted...
+The MySQL database server is not running, because the container executed the /bin/bash command rather than starting the MySQL server.
+
+Exit the container:
+
+bash-4.2$ exit
+Verify that the mysql-2 container is not running:
+
+[student@workstation ~]$ sudo podman ps -a \
+> --format="{{.ID}} {{.Names}} {{.Status}}"
+2871e392af02 mysql-2  Exited (1) 19 seconds ago
+a49dba9ff17f mysql    Up 10 minutes ago
+c053c7e09c21 mysql-db Exited (1) 44 minutes ago
+Query the mysql container to list all rows in the Projects table. The command instructs the bash shell to to query the items database using a mysql command.
+
+[student@workstation ~]$ sudo podman exec mysql /bin/bash \
+> -c 'mysql -uuser1 -pmypa55 -e "select * from items.Projects;"'
+mysql: [Warning] Using a password on the command line interface can be insecure.
+id      name    code
+1       DevOps  DO180
+Finish
+
+On workstation, run the lab manage-lifecycle finish script to complete this exercise.
+
+[student@workstation ~]$ lab manage-lifecycle finish
+This concludes the exercise.

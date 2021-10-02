@@ -1,0 +1,261 @@
+
+Lab: Configuring OpenShift Enterprise Authentication
+In this lab, you will configure LDAP authentication for the OpenShift Container Platform.
+
+Outcomes
+
+You should be able to:
+
+Configure authentication using LDAP.
+
+Synchronize groups using LDAP.
+
+Grant a cluster role to a group synchronized from LDAP.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+On the workstation machine, use the lab command to prepare your system for this exercise.
+
+[student@workstation ~]$ lab auth-review start
+Procedure 5.3. Instructions
+
+Create an ldap-secret secret in the openshift-config namespace that contains the LDAP bind password Redhat123@! in the bindPassword key.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Create a secret with the LDAP bind password, which is required for the identity provider configuration.
+
+[student@workstation ~]$ oc create secret generic ldap-secret \
+>   --from-literal=bindPassword='Redhat123@!' \
+>   -n openshift-config
+secret/ldap-secret created
+Create a ca-config-map configuration map in the openshift-config namespace that contains the IdM certificate in the ca.crt key. The IdM certificate is at http://idm.ocp4.example.com/ipa/config/ca.crt.
+
+[student@workstation ~]$ curl -O http://idm.ocp4.example.com/ipa/config/ca.crt
+...output omitted...
+[student@workstation ~]$ oc create configmap -n openshift-config \
+>   ca-config-map --from-file=ca.crt
+configmap/ca-config-map created
+Add an LDAP identity provider to the OpenShift OAuth configuration. You can use the /home/student/DO380/solutions/auth-review/ldap-cr.yml file as a template.
+
+Configure the LDAP identity provider to:
+
+Bind to the LDAP identity provider as "uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com".
+
+Use "ldaps://idm.ocp4.example.com/cn=users,cn=accounts,dc=ocp4,dc=example,dc=com?uid" as the LDAP URL.
+
+Use the uid LDAP attribute as the preferred user name.
+
+Use the dn LDAP attribute as the id.
+
+Change to the ~/DO380/labs/auth-review/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/auth-review/
+Edit the ldap-cr.yml file. Ensure the file matches the following:
+
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  name: cluster
+spec:
+  identityProviders:
+  - htpasswd:
+      fileData:
+        name: htpasswd-secret
+    mappingMethod: claim
+    name: htpasswd_provider
+    type: HTPasswd
+  - name: ldapidp
+    mappingMethod: claim
+    type: LDAP
+    ldap:
+      attributes:
+        id:
+        - dn
+        preferredUsername:
+        - uid
+      bindDN: "uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com"
+      bindPassword:
+        name: ldap-secret
+      ca:
+        name: ca-config-map
+      insecure: false
+      url: "ldaps://idm.ocp4.example.com/cn=users,cn=accounts,dc=ocp4,dc=example,dc=com?uid"
+NOTE
+The url: "ldaps://…​?uid" fragment must be typed as a single line.
+
+The htpasswd_provider identity provider defines the admin user that you use in exercises and labs. The ldap-cr.yml file includes the htpasswd_provider identity provider so that the admin user is always available.
+
+Apply the custom resource. You can safely ignore the warning that displays.
+
+[student@workstation auth-review]$ oc apply -f ldap-cr.yml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+oauth.config.openshift.io/cluster configured
+Verify that you can log in as the openshift-user user with the openshift-user password.
+
+Wait until the oauth-openshift pods in the openshift-authentication namespace finish redeploying. Press Ctrl+C to exit the watch command.
+
+[student@workstation auth-review]$ watch oc get pod -n openshift-authentication
+Log in as the openshift-user user with the openshift-user password.
+
+[student@workstation auth-review]$ oc login -u openshift-user -p openshift-user
+Login successful.
+...output omitted...
+Log in as the admin user with the redhat password.
+
+[student@workstation auth-review]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Create an ldap-group-syncer cluster role with permissions to get, list, create, and update groups. Create an ldap-group-syncer service account in a new auth-review project. Bind the ldap-group-syncer cluster role to the ldap-group-syncer service account.
+
+Create a new auth-review project.
+
+[student@workstation auth-review]$ oc new-project auth-review
+Now using project "auth-review" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create the ldap-group-syncer service account and grant the permissions.
+
+[student@workstation auth-review]$ oc create clusterrole ldap-group-syncer \
+> --resource=groups --verb=get,list,create,update
+clusterrole.rbac.authorization.k8s.io/ldap-group-syncer created
+[student@workstation auth-review]$ oc create serviceaccount ldap-group-syncer
+serviceaccount/ldap-group-syncer created
+[student@workstation auth-review]$ oc create clusterrolebinding \
+> ldap-group-syncer --clusterrole=ldap-group-syncer \
+> --serviceaccount=auth-review:ldap-group-syncer
+clusterrolebinding.rbac.authorization.k8s.io/ldap-group-syncer created
+Create a cron job that runs the oc adm groups sync command every minute as the ldap-group-syncer service account. The cron job uses a configuration map that contains an LDAP group synchronization configuration file and the IdM certificate. The LDAP group synchronization configuration uses a secret containing the LDAP bind password.
+
+You can use the /home/student/DO380/labs/auth-review/cronjob.yml file as a template for the cron job. You can use the /home/student/DO380/labs/auth-review/cron-ldap-sync.yml file as a template for the LDAP group synchronization configuration file.
+
+Use ldaps://idm.ocp4.example.com/ as the IdM LDAP URL.
+
+Bind to the LDAP identity provider as "uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com" using the Redhat123@! password.
+
+Use the RFC 2307 schema for synchronization.
+
+Use cn=groups,cn=accounts,dc=ocp4,dc=example,dc=com as the base DN for the groups query.
+
+Use (objectClass=ipausergroup) for the groups query filter.
+
+Use the dn LDAP attribute as the group UID attribute.
+
+Use the cn LDAP attribute as the group name attribute.
+
+Use the member LDAP attribute as the group membership attribute.
+
+Use cn=users,cn=accounts,dc=ocp4,dc=example,dc=com as the base DN for the users query.
+
+Use the dn LDAP attribute as the user UID attribute.
+
+Use the uid LDAP attribute as the user name attribute.
+
+Modify the cronjob.yml file to match the following.
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: group-sync
+  namespace: auth-review
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: hello
+            image: registry.redhat.io/openshift4/ose-cli:v4.5
+            command:
+            - /bin/sh
+            - -c
+            - oc adm groups sync --sync-config /etc/config/ldap-group-sync.yaml --confirm
+            volumeMounts:
+              - mountPath: "/etc/config"
+                name: "ldap-sync-volume"
+              - mountPath: "/etc/secrets"
+                name: "ldap-bind-password"
+          volumes:
+            - name: "ldap-sync-volume"
+              configMap:
+                name: ldap-config
+            - name: "ldap-bind-password"
+              secret:
+                secretName: ldap-secret
+          serviceAccountName: ldap-group-syncer
+          serviceAccount: ldap-group-syncer
+NOTE
+The - oc adm groups sync …​ --confirm fragment must be typed as a single line.
+
+Edit the cron-ldap-sync.yml file and change the bindPassword and ca values as shown.
+
+kind: LDAPSyncConfig
+apiVersion: v1
+url: ldaps://idm.ocp4.example.com
+bindDN: uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com
+bindPassword:
+  file: /etc/secrets/bindPassword
+insecure: false
+ca: /etc/config/ca.crt
+rfc2307:
+...output omitted...
+Create a configuration map containing the LDAPSyncConfig and the trusted certificate.
+
+[student@workstation auth-review]$ curl -O \
+> http://idm.ocp4.example.com/ipa/config/ca.crt
+...output omitted...
+[student@workstation auth-review]$ oc create configmap \
+> -n auth-review ldap-config \
+> --from-file ldap-group-sync.yaml=cron-ldap-sync.yml,ca.crt=ca.crt
+configmap/ldap-config created
+Create a secret containing the LDAP bind password.
+
+[student@workstation auth-review]$ oc create secret generic \
+> -n auth-review ldap-secret \
+> --from-literal bindPassword='Redhat123@!'
+secret/ldap-secret created
+Create a cron job that runs the oc adm groups sync command every minute as the ldap-group-syncer service account, using the configuration map from the previous step.
+
+[student@workstation auth-review]$ oc create -f cronjob.yml
+cronjob.batch/group-sync created
+Verify that the openshift-admins group exists, and that the openshift-admins group contains the openshift-admin user.
+
+Wait for the cron job to complete at least one execution. Press Ctrl+C to exit the watch command.
+
+[student@workstation auth-review]$ watch oc get -n auth-review cronjob,job,pod
+Verify that the openshift-admins group exists. Verify that the openshift-admins group contains the openshift-admin user.
+
+[student@workstation auth-review]$ oc get group
+NAME                  USERS
+...output omitted...
+openshift-admins      openshift-admin
+...output omitted...
+Grant the cluster-admin cluster role to the openshift-admins group.
+
+Grant the permissions.
+
+[student@workstation auth-review]$ oc adm policy add-cluster-role-to-group \
+> cluster-admin openshift-admins
+clusterrole.rbac.authorization.k8s.io/cluster-admin added: "openshift-admins"
+Change to the /home/student/ directory.
+
+[student@workstation auth-review]$ cd
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab auth-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab auth-review finish
+This concludes the section.

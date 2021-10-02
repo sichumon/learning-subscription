@@ -1,0 +1,195 @@
+Lab: Controlling Pod Scheduling
+Performance Checklist
+
+In this lab, you will configure an application to run on a subset of the cluster nodes, and to scale with load.
+
+Outcomes
+
+You should be able to use the OpenShift command-line interface to:
+
+Add a new label to nodes.
+
+Deploy pods to nodes that match a specified label.
+
+Request CPU and memory resources for pods.
+
+Configure an application to scale automatically.
+
+Create a quota to limit the amount of resources a project can consume.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable and creates a directory for exercise files.
+
+[student@workstation ~]$ lab schedule-review start
+As the admin user, label two nodes with the tier label. Give the master01 node the label of tier=gold and the master02 node the label of tier=silver.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Identify if any nodes already use the tier label.
+
+[student@workstation ~]$ oc get nodes -L tier
+NAME       STATUS   ROLES           AGE     VERSION           TIER
+master01   Ready    master,worker   5d20h   v1.18.3+012b3ec
+master02   Ready    master,worker   5d20h   v1.18.3+012b3ec
+master03   Ready    master,worker   5d20h   v1.18.3+012b3ec
+Label the master01 node with the label tier=gold.
+
+[student@workstation ~]$ oc label node master01 tier=gold
+node/master01 labeled
+Label the master02 node with the label tier=silver.
+
+[student@workstation ~]$ oc label node master02 tier=silver
+node/master02 labeled
+Confirm that the labels have been added correctly.
+
+[student@workstation ~]$ oc get nodes -L tier
+NAME       STATUS   ROLES           AGE     VERSION           TIER
+master01   Ready    master,worker   5d20h   v1.18.3+012b3ec   gold
+master02   Ready    master,worker   5d20h   v1.18.3+012b3ec   silver
+master03   Ready    master,worker   5d20h   v1.18.3+012b3ec
+Switch to the developer user and create a new project named schedule-review.
+
+Log in to your OpenShift cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+Create the schedule-review project.
+
+[student@workstation ~]$ oc new-project schedule-review
+Now using project "schedule-review" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create a new application named loadtest using the container image located at quay.io/redhattraining/loadtest:v1.0. The loadtest application should be deployed to nodes labeled with tier=silver. Ensure that each container requests 100m of CPU and 20Mi of memory.
+
+In order to make the upcoming adjustments easier, create a deployment resource file without actually creating the application.
+
+[student@workstation ~]$ oc create deployment loadtest --dry-run=client \
+>    --image quay.io/redhattraining/loadtest:v1.0 \
+>    -o yaml > ~/DO280/labs/schedule-review/loadtest.yaml
+Edit ~/DO280/labs/schedule-review/loadtest.yaml to specify a node selector. Add the highlighted lines listed below and ensure that you have proper indentation.
+
+[student@workstation ~]$ vim ~/DO280/labs/schedule-review/loadtest.yaml
+
+...output omitted...
+    spec:
+      nodeSelector:
+        tier: silver
+      containers:
+      - image: quay.io/redhattraining/loadtest:v1.0
+        name: loadtest
+        resources: {}
+status: {}
+Continue editing ~/DO280/labs/schedule-review/loadtest.yaml. Replace the resources: {} line with the highlighted lines listed below. Ensure that you have proper indentation before saving the file.
+
+...output omitted...
+    spec:
+      nodeSelector:
+        tier: silver
+      containers:
+      - image: quay.io/redhattraining/loadtest:v1.0
+        name: loadtest
+        resources:
+          requests:
+            cpu: "100m"
+            memory: 20Mi
+status: {}
+Create the loadtest application.
+
+[student@workstation ~]$ oc create --save-config \
+>    -f ~/DO280/labs/schedule-review/loadtest.yaml
+deployment.apps/loadtest created
+Verify that your application pod is running. You might need to run the oc get pods command multiple times.
+
+[student@workstation ~]$ oc get pods
+NAME                        READY   STATUS    RESTARTS   AGE
+loadtest-85f7669897-z4mq7   1/1     Running   0          53s
+Verify that your application pod specifies resource requests.
+
+[student@workstation ~]$ oc describe pod/loadtest-85f7669897-z4mq7 \
+>    | grep -A2 Requests
+    Requests:
+      cpu:        100m
+      memory:     20Mi
+Create a route to your application named loadtest using the default (automatically generated) host name. Depending on how you created your application, you might need to create a service before creating the route. Your application works as expected if running curl http://loadtest-schedule-review.apps.ocp4.example.com/api/loadtest/v1/healthz returns {"health":"ok"}.
+
+Create a service by exposing the deployment for the loadtest application.
+
+[student@workstation ~]$ oc expose deployment/loadtest \
+>    --port 80 --target-port 8080
+service/loadtest exposed
+Create a route named loadtest by exposing the loadtest service.
+
+[student@workstation ~]$ oc expose service/loadtest --name loadtest
+route.route.openshift.io/loadtest exposed
+Identify the host name created by the loadtest route.
+
+[student@workstation ~]$ oc get route/loadtest
+NAME       HOST/PORT                                       ...
+loadtest   loadtest-schedule-review.apps.ocp4.example.com  ...
+Verify access to the loadtest application using the host name identified in the previous step.
+
+[student@workstation ~]$ curl http://loadtest-schedule-review.\
+> apps.ocp4.example.com/api/loadtest/v1/healthz
+{"health":"ok"}
+Create a horizontal pod autoscaler named loadtest for the loadtest application that will scale from 2 pods to a maximum of 40 pods if CPU load exceeds 70%. You can test the horizontal pod autoscaler with the following command: curl -X GET http://loadtest-schedule-review.apps.ocp4.example.com/api/loadtest/v1/cpu/3
+
+NOTE
+Although the horizontal pod autoscaler will scale the loadtest application, your OpenShift cluster will run out of resources before it reaches a maximum of 40 pods.
+
+Create the horizontal pod autoscaler for the loadtest application.
+
+[student@workstation ~]$ oc autoscale deployment/loadtest --name loadtest \
+>    --min 2 --max 40 --cpu-percent 70
+horizontalpodautoscaler.autoscaling/loadtest autoscaled
+Wait until the loadtest horizontal pod autoscaler reports default usage in the TARGETS column.
+
+[student@workstation ~]$ watch oc get hpa/loadtest
+Press Ctrl+C to exit the watch command after <unknown> changes to 0%.
+
+Every 2.0s: oc get hpa/loadtest             ...
+
+NAME       REFERENCE             TARGETS   MINPODS   MAXPODS   REPLICAS   ...
+loadtest   Deployment/loadtest   0%/70%    2         40        2          ...
+NOTE
+It can take up to five minutes before the <unknown> entry in the TARGETS column changes to 0%. If the <unknown> entry does not change, then use the oc describe command to verify that the containers for the loadtest application request CPU resources.
+
+Test the horizontal pod autoscaler by applying CPU load. Use the previously identified host name for the loadtest route. Wait for the curl command to complete.
+
+[student@workstation ~]$ curl -X GET http://loadtest-schedule-review.\
+> apps.ocp4.example.com/api/loadtest/v1/cpu/3
+Verify that additional pods have been added. You might need to run the oc get hpa/loadtest command multiple times. Your output will likely differ, but check that the replica count is greater than 2.
+
+[student@workstation ~]$ oc get hpa/loadtest
+NAME       REFERENCE             TARGETS     MINPODS   MAXPODS   REPLICAS   ...
+loadtest   Deployment/loadtest   1043%/70%   2         40        21         ...
+As the admin user, implement a quota named review-quota on the schedule-review project. Limit the schedule-review project to a maximum of 1 full CPU, 2G of memory, and 20 pods.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Create the resource quota.
+
+[student@workstation ~]$ oc create quota review-quota \
+>    --hard cpu="1",memory="2G",pods="20"
+resourcequota/review-quota created
+NOTE
+The quota will not impact existing pods, but the scheduler will evaluate the quota if new resources, such as pods, are requested.
+
+Grading
+
+Run the following lab command to verify your work. If the lab command reports any errors, review your changes, make corrections, and run the lab command again until successful.
+
+[student@workstation ~]$ lab schedule-review grade
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab schedule-review finish
+This concludes the lab.

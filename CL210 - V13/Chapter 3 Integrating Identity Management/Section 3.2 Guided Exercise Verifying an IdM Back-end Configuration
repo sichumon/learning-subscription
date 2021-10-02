@@ -1,0 +1,102 @@
+
+Guided Exercise: Verifying an IdM Back-end Configuration
+In this exercise, you will assign roles in OpenStack to users authenticated by Red Hat IdM.
+
+Outcomes
+
+You should be able to:
+
+Create projects in a domain.
+
+Assign roles to IdM users in a domain's project.
+
+Authenticate to dashboard using a Red Hat IdM back end.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab identity-idm setup command. This script ensures that the OpenStack services are running and that the environment is properly configured for this guided exercise.
+
+[student@workstation ~]$ lab identity-idm setup
+The classroom environment integrates the Red Hat OpenStack Platform (RHOSP) Identity Service with Red Hat IdM. It uses Red Hat IdM as an external authentication back end for the Example domain.
+
+List the users in the Example domain to verify the integration with the IdM server. You should see a list of the lab.example.net realm users.
+
+[student@workstation ~]$ source ~/admin-rc
+[student@workstation ~]$ openstack user list --domain Example
++------------------------------------------------------------------+------------+
+| ID                                                               | Name       |
++------------------------------------------------------------------+------------+
+...output omitted...
+| 8fe31f745b4f6dd29a431045d94dc24c3dd53f28a79c1fda1a11e981d57977d5 | architect2 |
+...output omitted...
+| b6cbbfb10d53eff2777a0235aeb2dd8de95fe4142ada32e2a803fd3b79c43029 | developer2 |
+| 44c56514e3c2c86274b1bd581264b3b1349fcceb336f9457fa844d0f1c1ae225 | developer3 |
+...output omitted...
++------------------------------------------------------------------+------------+
+Create a project named research within the Example domain.
+
+[student@workstation ~]$ openstack project create research --domain Example
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | 012f8a266990444da2130c6e8c68cdd1 |
+| enabled     | True                             |
+| id          | a6546caf46d746dfa5412ca0fc5c8c10 |
+| is_domain   | False                            |
+| name        | research                         |
+| parent_id   | 012f8a266990444da2130c6e8c68cdd1 |
+| tags        | []                               |
++-------------+----------------------------------+
+Assign the _member_ role for the research project to the IdM research-members group.
+
+[student@workstation ~]$ openstack role add \
+--project research \
+--project-domain Example \
+--group research-members \
+--group-domain Example \
+_member_
+Assign the admin role for the research project to the IdM research-admins group.
+
+[student@workstation ~]$ openstack role add \
+--project research \
+--project-domain Example \
+--group research-admins \
+--group-domain Example \
+admin
+Log in to the dashboard to verify the role assigned to the developer2 IdM user.
+
+On workstation, launch the Firefox web browser and connect to the dashboard at http://dashboard.overcloud.example.com/.
+
+Enter Example for the Domain, developer2 for the User Name, and redhat for the Password to authenticate.
+
+After you have logged in to the dashboard, observe that the top navigation menu displays the Project and Identity tabs.
+
+Sign out of the dashboard.
+
+Log in to the dashboard to verify the role assigned to the developer3 IdM user.
+
+On workstation, launch the Firefox web browser and connect to the dashboard at http://dashboard.overcloud.example.com/.
+
+Enter Example for the Domain, developer3 for the User Name, and redhat for the Password to authenticate.
+
+After you have logged in to the dashboard, observe that the top navigation menu displays the Project and Identity tabs.
+
+Sign out of the dashboard.
+
+Log in to the dashboard to verify the role assigned to the architect2 IdM user.
+
+On workstation, launch the Firefox web browser and connect to the dashboard at http://dashboard.overcloud.example.com/.
+
+Enter Example for the Domain, architect3 for the User Name, and redhat for the Password to authenticate.
+
+After you have logged in to the dashboard, observe that the top navigation menu displays the Project, Admin, and Identity tabs, indicating that this user is assigned the admin role.
+
+Sign out of the dashboard.
+
+Cleanup
+
+On workstation, run the lab identity-idm cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab identity-idm cleanup
+This concludes the guided exercise.

@@ -1,0 +1,197 @@
+Guided Exercise: Integrating OpenShift with an Enterprise Certificate Authority
+In this exercise you will configure your OpenShift cluster so that the ingress controller and master API use a certificate signed by the classroom certificate authority.
+
+Outcomes
+
+You should be able to:
+
+Inspect a new certificate signed by the classroom certificate authority.
+
+Configure the ingress controller to use the new certificate.
+
+Configure the master API to use the new certificate.
+
+Validate the new certificate by accessing the web console and by running the oc login command.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable, downloads files needed for the exercise, and generates a new certificate signed by the classroom certificate authority.
+
+[student@workstation ~]$ lab certificates-enterprise-ca start
+Procedure 6.1. Instructions
+
+Inspect the new certificate to view its subject, issuer, dates, and subject alternate name.
+
+Change to the ~/DO380/labs/certificates-enterprise-ca/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/certificates-enterprise-ca/
+The /usr/local/lib/ansible/certs/wildcard-api.yml Ansible Playbook created the wildcard-api.pem certificate and the wildcard-api-key.pem key using the classroom CA file located at /etc/pki/tls/certs/classroom-ca.pem to sign the certificate.
+
+Run the openssl command to view details about the certificate. The certificate is a wildcard for any URL ending in .apps.ocp4.example.com. It also covers the master API URL api.ocp4.example.com.
+
+[student@workstation certificates-enterprise-ca]$ openssl x509 -in \
+>   wildcard-api.pem -noout -subject -issuer -ext 'subjectAltName'
+subject=C = US, ST = NC, L = Raleigh, O = "Red Hat, Inc.", OU = Training, CN = *.apps.ocp4.example.com
+issuer=C = US, ST = NC, L = Raleigh, O = "Red Hat, Inc.", OU = Training, CN = GLS Training Classroom Certificate Authority
+X509v3 Subject Alternative Name:
+    DNS:*.apps.ocp4.example.com, DNS:api.ocp4.example.com
+Create an additional certificate combining the new certificate and the classroom CA certificate. Add comments to make it easier to identify the certificates.
+
+[student@workstation certificates-enterprise-ca]$ cat wildcard-api.pem \
+>   /etc/pki/tls/certs/classroom-ca.pem > combined-cert.pem
+Create a new TLS secret using the combined certificate.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation certificates-enterprise-ca]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Create a new TLS secret in the openshift-config namespace using combined-cert.pem and wildcard-api-key.pem.
+
+[student@workstation certificates-enterprise-ca]$ oc create secret tls \
+>   custom-tls --cert combined-cert.pem --key wildcard-api-key.pem \
+>   -n openshift-config
+secret/custom-tls created
+Configure the API server to use the custom-tls secret.
+
+Modify the apiserver-cluster.yaml file.
+
+[student@workstation certificates-enterprise-ca]$ vim apiserver-cluster.yaml
+Update the file to match the bold lines below. Specify the URL of the master API and the name of the TLS secret that you created.
+
+apiVersion: config.openshift.io/v1
+kind: APIServer
+metadata:
+  name: cluster
+spec:
+  servingCerts:
+    namedCertificates:
+    - names:
+      - api.ocp4.example.com
+      servingCertificate:
+        name: custom-tls
+Apply the changes using the oc apply command.
+
+[student@workstation certificates-enterprise-ca]$ oc apply \
+>   -f apiserver-cluster.yaml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+apiserver.config.openshift.io/cluster configured
+If the change is successful, then the kube-apiserver pods in the openshift-kube-apiserver namespace redeploy. It can take five minutes or more before the pods are ready. Wait until the PROGRESSING column for the kube-apiserver cluster operator has a value of True. Press Ctrl+C to exit the watch command.
+
+[student@workstation certificates-enterprise-ca]$ watch oc get co/kube-apiserver
+Every 2.0s: oc get co/kube-apiserver     workstation.lab.example.com: ...
+
+NAME             VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+kube-apiserver   4.5.4     True        True          False      28d
+NOTE
+The kube-apiserver pods go into CrashLoopBackOff and Error states before ultimately reaching a Running status with all four containers running in each pod. Each pod might restart multiple times.
+
+Create a new configuration map in the openshift-config namespace using the combined certificate. Ensure that the configuration map uses a data key of ca-bundle.crt.
+
+[student@workstation certificates-enterprise-ca]$ oc create configmap \
+>   combined-certs --from-file ca-bundle.crt=combined-cert.pem \
+>   -n openshift-config
+configmap/combined-certs created
+Modify the cluster proxy so that it adds the new configuration map to the trusted certificate bundle.
+
+Modify the proxy-cluster.yaml file.
+
+[student@workstation certificates-enterprise-ca]$ vim proxy-cluster.yaml
+Update the file to match the bold line in the following example. Specify the name of the configuration map that you just created.
+
+apiVersion: config.openshift.io/v1
+kind: Proxy
+metadata:
+  name: cluster
+spec:
+  trustedCA:
+    name: combined-certs
+Apply the changes using the oc apply command.
+
+[student@workstation certificates-enterprise-ca]$ oc apply -f proxy-cluster.yaml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+proxy.config.openshift.io/cluster configured
+Create a TLS secret named custom-tls-bundle in the openshift-ingress namespace. Use custom-combined-certs as the certificate and wildcard-api-key.pem as the key.
+
+[student@workstation certificates-enterprise-ca]$ oc create secret tls \
+>   custom-tls-bundle --cert combined-cert.pem --key wildcard-api-key.pem \
+>   -n openshift-ingress
+secret/custom-tls-bundle created
+Modify the ingress controller operator to use the custom-tls-bundle secret. A successful change redeploys the router pods in the openshift-ingress namespace.
+
+Modify the ingresscontrollers.yaml file.
+
+[student@workstation certificates-enterprise-ca]$ vim ingresscontrollers.yaml
+Update the file to match the bold line below. Specify the name of the TLS secret that you just created.
+
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  finalizers:
+  - ingresscontroller.operator.openshift.io/finalizer-ingresscontroller
+  name: default
+  namespace: openshift-ingress-operator
+spec:
+  defaultCertificate:
+    name: custom-tls-bundle
+  replicas: 2
+Apply the changes using the oc apply command.
+
+[student@workstation certificates-enterprise-ca]$ oc apply \
+>   -f ingresscontrollers.yaml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+ingresscontroller.operator.openshift.io/default configured
+Change to the /home/student/ directory.
+
+[student@workstation certificates-enterprise-ca]$ cd
+Wait until the new router-default pods in the openshift-ingress namespace finish redeploying and the previous router pods disappear. Press Ctrl+C to exit the watch command.
+
+[student@workstation ~]$ watch oc get pods -n openshift-ingress
+IMPORTANT
+If the previous router pods have not fully terminated, then accessing the OpenShift web console URL in the next step might still produce a certificate warning.
+
+Identify the route to the OpenShift web console, and then access the URL in Firefox. Your system trusts any certificate signed by the /etc/pki/tls/certs/classroom-ca.pem CA file.
+
+Identify the OpenShift web console URL.
+
+[student@workstation ~]$ oc whoami --show-console
+https://console-openshift-console.apps.ocp4.example.com
+Use Firefox to access https://console-openshift-console.apps.ocp4.example.com.
+
+Firefox displays a secure lock icon in the address bar.
+
+Previously in this exercise, the kube-apiserver pods in the openshift-kube-apiserver namespace were redeployed. Confirm that the redeployment finished, and then test the certificate used by the OpenShift master API.
+
+Wait until the PROGRESSING column for the kube-apiserver cluster operator has a value of False. Press Ctrl+C to exit the watch command.
+
+[student@workstation certificates-enterprise-ca]$ watch oc get co/kube-apiserver
+Every 2.0s: oc get co/kube-apiserver     workstation.lab.example.com: ...
+
+NAME             VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+kube-apiserver   4.5.4     True        False         False      28d
+Log out of OpenShift.
+
+[student@workstation ~]$ oc logout
+Logged "admin" out on "https://api.ocp4.example.com:6443"
+Remove the existing /home/student/.kube/ directory.
+
+[student@workstation ~]$ rm -rf ~/.kube/
+Log in to your OpenShift cluster as the admin user. Because your system trusts the master API certificate, you are not prompted to accept an insecure connection.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab certificates-enterprise-ca finish
+This concludes the section.

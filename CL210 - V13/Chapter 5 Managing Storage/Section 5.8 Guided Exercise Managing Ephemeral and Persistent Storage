@@ -1,0 +1,377 @@
+
+Guided Exercise: Managing Ephemeral and Persistent Storage
+In this exercise, you will launch instances using ephemeral and persistent root disks, attach additional disks to the instances, and trace the objects representing the disks in the back-end storage.
+
+Outcomes
+
+You should be able to:
+
+Create instances using ephemeral and persistent root disks and add additional disks.
+
+Compare and contrast storage structures and locations for those different disks.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run lab storage-compare setup to ensure that the environment is ready for the exercise. This command creates additional items that you are going to use at different stages of the exercise.
+
+[student@workstation ~]$ lab storage-compare setup
+On workstation, launch the finance-server1 instance in the finance project and trace the back-end objects representing the storage of the instance.
+
+As architect1, launch the instance with the following parameters.
+
+name: finance-server1
+
+flavor: default
+
+image: rhel7
+
+key-name: example-keypair
+
+nic: net-id=finance-network1
+
+availability-zone: nova:compute1.overcloud.example.com
+
+[student@workstation ~]$ source architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--availability-zone nova:compute1.overcloud.example.com \
+finance-server1 --wait
+...output omitted...
+As developer1, find the unique ID of the finance-server1 instance. Note the unique ID of the instance. You are going to use this ID in the following step.
+
+[student@workstation ~(architect1-finance)]$ source developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ openstack server list \
+-c ID -c Name
++--------------------------------------+-----------------+
+| ID                                   | Name            |
++--------------------------------------+-----------------+
+| 2c477594-d47a-4f44-9974-17a1ee0f266d | finance-server1 |
++--------------------------------------+-----------------+
+Match the unique ID of the instance noted from the preceding step with the back-end object in the Ceph pool vms.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+rados -p vms \
+ls | grep 2c477594-d47a-4f44-9974-17a1ee0f266d
+rbd_id.2c477594-d47a-4f44-9974-17a1ee0f266d_disk
+Delete the finance-server1 instance and verify that the root disk of the instance no longer exists in the vms Ceph pool.
+
+Delete the finance-server1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server delete \
+finance-server1
+Confirm that no object exists in the vms Ceph pool to represent the root disk of the finance-server1 instance. Use the same ID of the instance as in the preceding step.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+rados -p vms \
+ls | grep 2c477594-d47a-4f44-9974-17a1ee0f266d
+Explore the configuration settings of the OpenStack Compute service that allows it to use the Ceph storage to accommodate the instance disks. Using Ceph storage as the back end for the OpenStack compute service saves you from flooding the local disks of the compute node and running into scalability issues. Instead, it stores the disks into the vms Ceph pool and offers better scalability as with the Ceph storage.
+
+Open an SSH session to compute1 as root.
+
+[student@workstation ~(developer1-finance)]$ ssh root@compute1
+[root@compute1 ~]# 
+View the settings that enable Ceph storage as the back-end storage provider for the OpenStack Compute service.
+
+[root@compute1 ~]# grep rbd \
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/nova.conf
+rbd_user=openstack
+rbd_secret_uuid=945a02d4-c931-11e8-b4cd-52540001fac8
+images_type=rbd
+images_rbd_pool=vms
+images_rbd_ceph_conf=/etc/ceph/ceph.conf
+Adjust the configuration settings of the OpenStack Compute service to use the default approach of storing the instance disks on the local compute node rather than the Ceph storage. Launch an instance and verify that the root disk of the instance exists locally on the compute node. Delete the instance and verify that the root disk of the instance no longer exists on the compute node.
+
+Comment out the images_type=rbd line under the [libvirt] INI section of the /var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/nova.conf file.
+
+[libvirt]
+...output omitted...
+#images_type=rbd
+...output omitted...
+Restart the nova_compute container to bring the configuration change into effect.
+
+[root@compute1 ~]# docker restart nova_compute
+nova_compute
+Wait for thirty seconds and verify the status of the nova_compute container.
+
+[root@compute1 ~]# sleep 30; docker ps \
+--format="{{.Names}}\t{{.Status}}" | grep nova
+nova_compute  Up 31 seconds (healthy)
+nova_migration_target Up 4 hours
+nova_libvirt  Up 4 hours
+nova_virtlogd Up 4 hours
+Log off from compute1.
+
+[root@compute1 ~]# logout
+[student@workstation ~(developer1-finance)]$ 
+As architect1, launch the instance with the following parameters.
+
+name: finance-server1
+
+flavor: default
+
+image: rhel7
+
+key-name: example-keypair
+
+nic: net-id=finance-network1
+
+availability-zone: nova:compute1.overcloud.example.com
+
+[student@workstation ~(developer1-finance)]$ source architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--availability-zone nova:compute1.overcloud.example.com \
+finance-server1 --wait
+...output omitted...
+As developer1, find the unique ID of the finance-server1 instance. Note the unique ID of the instance. You are going to use this ID in the following step.
+
+[student@workstation ~(architect1-finance)]$ source developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ openstack server list \
+-c ID -c Name
++--------------------------------------+-----------------+
+| ID                                   | Name            |
++--------------------------------------+-----------------+
+| 54ec33d2-961c-4cc1-91b5-5d336fcb336a | finance-server1 |
++--------------------------------------+-----------------+
+Match the unique ID of the instance noted from the preceding step with the name of the directory under the /var/lib/nova/instances path on compute1. Confirm that the directory contains the root disk image file of the finance-server1 instance.
+
+[student@workstation ~(developer1-finance)]$ ssh root@compute1 \
+ls /var/lib/nova/instances
+54ec33d2-961c-4cc1-91b5-5d336fcb336a
+_base
+compute_nodes
+locks
+[student@workstation ~(developer1-finance)]$ ssh root@compute1 \
+ls /var/lib/nova/instances/54ec33d2-961c-4cc1-91b5-5d336fcb336a
+console.log
+disk
+disk.info
+The file disk represents the root disk of the finance-server1 instance.
+
+Delete the finance-server1 instance and verify that the root disk of the instance no longer exists on the compute node.
+
+Delete the finance-server1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server delete \
+finance-server1
+Confirm that the root disk image file of the finance-server1 instance no longer exists in the compute node.
+
+[student@workstation ~(developer1-finance)]$ ssh root@compute1 \
+ls /var/lib/nova/instances
+_base
+compute_nodes
+locks
+You have dealt with the ephemeral root disk of an instance in the preceding steps. The following steps of the exercise guide you on how to use a persistent root disk in an instance. On controller0, view the settings of the OpenStack Block Storage service that assists in using Ceph storage to accommodate persistent volumes. Create a persistent volume using the rhel7 image. Confirm that the volume exists in the volumes Ceph pool. Launch an instance with the new volume as its root disk.
+
+View the back-end storage provider of the OpenStack Block Storage service.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+crudini --get \
+/var/lib/config-data/puppet-generated/cinder/etc/cinder/cinder.conf \
+DEFAULT enabled_backends
+tripleo_ceph
+Open an SSH session to controller0.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0
+View the settings under the tripleo_ceph INI section of the OpenStack Block Storage service configuration file.
+
+[root@controller0 ~]# grep -A 6 \
+'^\[tripleo_ceph\]$' \
+/var/lib/config-data/puppet-generated/cinder/etc/cinder/cinder.conf
+[tripleo_ceph]
+backend_host=hostgroup
+volume_backend_name=tripleo_ceph
+volume_driver=cinder.volume.drivers.rbd.RBDDriver
+rbd_ceph_conf=/etc/ceph/ceph.conf
+rbd_user=openstack
+rbd_pool=volumes
+Notice the Ceph pool that accommodates the volumes is set to volumes.
+
+Log off from controller0.
+
+[root@controller0 ~]# logout
+[student@workstation ~(developer1-finance)]$ 
+As developer1, create a volume using the rhel7 image. Verify that the volume is created successfully.
+
+[student@workstation ~(developer1-finance)]$ openstack volume create \
+--size 10 \
+--image rhel7 \
+finance-vol1
+...output omitted...
+[student@workstation ~(developer1-finance)]$ openstack volume list
++-------------+--------------+-----------+------+-------------+
+| ID          | Name         | Status    | Size | Attached to |
++-------------+--------------+-----------+------+-------------+
+| 1972...34cf | finance-vol1 | available |   10 |             |
++-------------+--------------+-----------+------+-------------+
+NOTE
+After executing the openstack volume create command, wait for up to two minutes while the contents from the rhel7 image are extracted to the finance-vol1 volume. You may also use the watch openstack volume list command to monitor the real-time status of the finance-vol1 volume.
+
+Copy the unique ID of the volume from the output of the preceding openstack volume list command to compare with the object in the volumes Ceph pool. The unique ID assists in identifying the volumes that the volumes Ceph pool accommodates.
+
+Verify that the Ceph pool volumes has an object representing the volume finance-vol1. Use the unique ID of the volume noted in the preceding step.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+rados -p volumes \
+ls | grep 19723579-a453-4412-bf1c-377d647e34cf
+rbd_id.volume-19723579-a453-4412-bf1c-377d647e34cf
+As developer1, launch the instance with the following parameters.
+
+name: finance-server2
+
+flavor: default
+
+key-name: example-keypair
+
+nic: net-id=finance-network1
+
+volume: finance-vol1
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--volume finance-vol1 \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+finance-server2 --wait
+...output omitted...
+Access the new instance finance-server2 using any of the available floating IP addresses. Create a text file with arbitrary text in it. Delete the instance.
+
+View the available floating IP addresses.
+
+[student@workstation ~(developer1-finance)]$ openstack floating ip list\
+-c "Floating IP Address"
++---------------------+
+| Floating IP Address |
++---------------------+
+| 172.25.250.109      |
++---------------------+
+Associate the floating IP address with the finance-server2 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server add \
+floating ip finance-server2 172.25.250.109
+Open an SSH session to the finance-server2 instance and create a file as root with arbitrary text in it.
+
+[student@workstation ~(developer1-finance)]$ ssh 172.25.250.109
+[cloud-user@finance-server2 ~]$ sudo -i
+[root@finance-server2 ~]# echo Testing >> /test.txt
+[root@finance-server2 ~]# sync
+IMPORTANT
+The sync command flushes contents from the Linux buffer cache to the disk. Skipping this command may cost you the contents of the text file you created.
+
+Log off from the finance-server2 instance and delete it. Verify that the volume still exists in the volumes Ceph pool. Use the same unique ID of the volume as in the preceding steps.
+
+[root@finance-server2 ~]# logout
+[cloud-user@finance-server2 ~]$ logout
+[student@workstation ~(developer1-finance)]$ openstack server \
+delete finance-server2
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+rados -p volumes \
+ls | grep 19723579-a453-4412-bf1c-377d647e34cf
+rbd_id.volume-19723579-a453-4412-bf1c-377d647e34cf
+Notice that the volume exists irrespective of the termination of the instance. This acts as the persistent storage of the instance.
+
+Create a fresh instance using the same finance-vol1 as the boot disk of the instance and confirm that the file you created with the arbitrary text in one of the preceding steps still exists.
+
+As developer1, launch the instance with the following parameters.
+
+name: finance-server2
+
+flavor: default
+
+key-name: example-keypair
+
+nic: net-id=finance-network1
+
+volume: finance-vol1
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--volume finance-vol1 \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+finance-server2 --wait
+...output omitted...
+Associate the available floating IP address with the finance-server1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack floating ip list \
+-c "Floating IP Address"
++---------------------+
+| Floating IP Address |
++---------------------+
+| 172.25.250.109      |
++---------------------+
+[student@workstation ~(developer1-finance)]$ openstack server add \
+floating ip finance-server2 172.25.250.109
+Open an SSH session to the finance-server1 instance and verify the contents of the /test.txt file.
+
+[student@workstation ~(developer1-finance)]$ ssh 172.25.250.109
+[cloud-user@finance-server2 ~]$ cat /test.txt
+Testing
+Log off from finance-server2.
+
+[cloud-user@finance-server2 ~]$ logout
+[student@workstation ~(developer1-finance)]$ 
+Create a new volume of 1 GB in capacity and attach it to the finance-server2 instance.
+
+As developer1, create a 1 GB empty volume called finance-vol2.
+
+[student@workstation ~(developer1-finance)]$ openstack volume create \
+--size 1 finance-vol2
+...output omitted...
+Attach the finance-vol2 volume to the finance-server2 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server add \
+volume finance-server2 finance-vol2
+Verify the new disk of the finance-server2 instance.
+
+[student@workstation ~(developer1-finance)]$ ssh 172.25.250.109 lsblk
+NAME   MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
+vda    253:0    0  10G  0 disk
+└─vda1 253:1    0  10G  0 part /
+vdb    253:16   0   1G  0 disk
+Confirm that there is a new volume object in the volumes Ceph pool representing the finance-vol2 volume.
+
+Find and record the ID of the finance-vol2 volume to compare with the volumes Ceph pool object.
+
+[student@workstation ~(developer1-finance)]$ openstack volume list \
+-c ID -c Name
++--------------------------------------+--------------+
+| ID                                   | Name         |
++--------------------------------------+--------------+
+| 93b29d6b-59dd-4903-a0a0-42773ee02b89 | finance-vol2 |
+| 19723579-a453-4412-bf1c-377d647e34cf | finance-vol1 |
++--------------------------------------+--------------+
+Verify that the ID of the finance-vol2 matches one of the volume objects in the volumes Ceph pool.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+rados -p volumes \
+ls | grep 93b29d6b-59dd-4903-a0a0-42773ee02b89
+rbd_id.volume-93b29d6b-59dd-4903-a0a0-42773ee02b89
+Delete the finance-server2 instance. Delete the finance-vol1 and finance-vol2 volumes. Confirm that the volumes no longer exist in the volumes Ceph pool.
+
+Delete the finance-server2 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server delete \
+finance-server2
+Delete the finance-vol1 and finance-vol2 volumes.
+
+[student@workstation ~(developer1-finance)]$ openstack volume delete \
+finance-vol1 finance-vol2
+Confirm that the volumes no longer exist in the volumes Ceph pool.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+rados -p volumes ls
+rbd_directory
+rbd_info
+Cleanup
+
+On workstation, run the lab storage-compare cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab storage-compare cleanup
+This concludes the guided exercise.

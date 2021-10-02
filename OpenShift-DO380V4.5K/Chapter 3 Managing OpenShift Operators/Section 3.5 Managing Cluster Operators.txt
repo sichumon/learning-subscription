@@ -1,0 +1,55 @@
+Managing Cluster Operators
+Objectives
+After completing this section, you should be able to identify and manage cluster operators and their components.
+
+Describing Cluster Operators
+OpenShift uses operators to perform internal cluster functions, such as authentication, DNS, and the web console. These operators are called cluster operators because of the internal cluster functions they provide. Cluster operators are similar to operators, but they are managed by the Cluster Version Operator (CVO) instead of the OLM.
+
+Cluster operators were previously referred to as Platform operators.
+
+NOTE
+Not all cluster operators define CustomResourceDefinitions nor strictly follow the Controller pattern.
+
+To list the cluster operators and their status:
+
+[user@demo ~]$ oc get clusteroperator
+NAME                     VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+authentication           4.5.4     True        False         False      4d15h
+cloud-credential         4.5.4     True        False         False      4d15h
+cluster-autoscaler       4.5.4     True        False         False      4d15h
+console                  4.5.4     True        False         False      160m
+csi-snapshot-controller  4.5.4     True        False         False      4d15h
+...output omitted...
+AVAILABLE
+The cluster operator is working correctly.
+
+PROGRESSING
+The Cluster Version Operator is making changes to this operator.
+
+DEGRADED
+The cluster operator has detected a problem and it may not be working correctly.
+
+The console also shows this information in Administration → Cluster Settings → Cluster Operators.
+
+Describing the Cluster Version Operator
+The Cluster Version Operator manages installation and upgrades of cluster operators. During installation and upgrades, the Cluster Version Operator scans a release image, locating cluster operators and applying their resources.
+
+Examine the contents of the release image:
+
+[user@demo ~]$ VER=$(oc get clusterversion -o \
+>   jsonpath='{.status.desired.image}' version)
+[user@demo ~]$ oc adm release extract --from=$VER --to=release-image
+[user@demo ~]$ grep -l "kind: ClusterOperator" release-image/*
+...output omitted...
+release-image/0000_50_cluster-samples-operator_07-clusteroperator.yaml
+...output omitted...
+[user@demo ~]$ cat release-image/*-samples*clusterop*
+apiVersion: config.openshift.io/v1
+kind: ClusterOperator
+metadata:
+  name: openshift-samples
+spec: {}
+status:
+  versions:
+    - name: operator
+      version: "4.5.4"

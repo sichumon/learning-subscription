@@ -1,0 +1,309 @@
+Configuring OpenShift using GitOps and Jenkins
+Objectives
+After completing this section, you should be able to:
+
+Automate the configuration of cluster operators from resources in Git using Jenkins Pipelines.
+
+Describe pipeline settings using Jenkinsfile directives instead of the Jenkins web UI.
+
+Designing Jenkins Pipelines for GitOps
+The following figure illustrates a sample GitOps workflow without detailing tools and other implementation details:
+
+
+One possible design approach translates this workflow into Jenkins using two pipelines:
+
+An Apply pipeline that applies configuration changes from a version control system (VCS) to a live cluster.
+
+A Drift detection pipeline that detects when live cluster configurations changed outside of the expected GitOps process.
+
+These pipelines primarily use the oc apply and oc diff commands, introduced elsewhere.
+
+The following sections present a variation of this design and walk through a sample implementation.
+
+First, you learn about some common pipeline settings and how to use them. Then, you explore using these settings to implement Apply and Drift Pipelines to realize a GitOps workflow.
+
+A real-world implementation would be more sophisticated.
+
+Configuring a Pipeline from a Jenkinsfile
+Traditional Jenkins usage is very GUI-oriented. To follow configuration-as-code principles and be consistent with GitOps, avoid setting pipeline and multibranch pipeline project types from the Jenkins web UI.
+
+Fortunately, most settings from the web UI are also available from the triggers, options, and agent directives of a pipeline.
+
+Triggering Pipeline Builds
+The trigger directive defines when Jenkins starts a build of a pipeline. Pipelines without a trigger directive must be started manually through the Jenkins web UI.
+
+The main DSL statements allowed inside a trigger directive are:
+
+poolSCM takes a crontab expression to check a VCS repository periodically for changes. When it finds changes (new commits or merges) it starts a new build.
+
+cron starts new builds according to a crontab expression. It starts a new build periodically and unconditionally.
+
+upstream starts a pipeline build after another pipeline completes a build. It is a way of concatenating multiple pipelines into a larger workflow.
+
+Both the poolSCM and cron directives accept H/number as an alternative to */number for fixed time intervals. Using H takes a random number inside the internal and * starts from zero and leads to a more even distribution of builds over time.
+
+A triggers directive can take multiple statements, for example:
+
+triggers {
+  pollSCM ('H/20 * * * *')
+  upstream (upstreamProjects: 'library/main', threshold: hudson.model.Result.SUCCESS)
+}
+Jenkins also supports starting a build from an automated process using a web hook. Web hooks are Jenkins URLs that embed a random secret for authentication and the name of a VCS repository. When Jenkins receives a web hook, it starts builds for all pipelines that would pool that VCS repository.
+
+Using web hooks requires that your VCS can connect to your Jenkins instance, which might be prevented by firewall rules, especially when your VCS is an externally hosted service such as GitHub.
+
+Selecting an Agent to Run a Build
+The agent directive defines the agent for a pipeline or a stage. Its node directive selects an agent by its label.
+
+Non-containerized Jenkins instances that use preconfigured servers as agent nodes require you to configure your agent servers with labels so a node directive can select them.
+
+The OpenShift Sync plug-in automatically labels the Red Hat Jenkins Agent container images with the name of their image streams: nodejs and maven. The OpenShift Sync plug-in also creates multiple instances (pods) for each agent if there are concurrent builds.
+
+Red Hat recommends that all pipelines on OpenShift run as disposable agent pods instead of running on the Jenkins master. This configuration makes your Jenkins instance more reliable, requires less memory from the Jenkins master, and distributes the load of multiple builds among your OpenShift cluster nodes.
+
+The following example configures a pipeline to run using the standard Node.js container image from Red Hat:
+
+agent {
+  node {
+    label 'maven'
+  }
+}
+Configuring Options of a Pipeline
+The options directive supports different settings for a pipeline or a stage, for example:
+
+disableConcurrentBuilds prevents multiple builds of the same pipeline from building in parallel. For example, it avoids concurrent and conflicting updates to the same cluster operator in a GitOps pipeline. With a CI/CD workflow, it could prevent concurrent updates to the same test database.
+
+buildDiscarder removes old builds, their logs, and their artifacts from the Jenkins instance. If you do not discard these, then your master node could fill up all its configuration folder volume.
+
+timeout puts a time limit for the duration of a build. If a build takes longer than the designated time limit, then it is aborted and reported as failed.
+
+Among the arguments for a buildDiscarder, the logRotator directive supports keeping some of the most recent builds, as in the following example:
+
+options {
+  buildDiscarder (logRotator (numToKeepStr: '30', artifactNumToKeepStr: '30'))
+  disableConcurrentBuilds ()
+  timeout (time: 1, unit: 'HOURS')
+}
+Designing Stages of a Pipeline
+When you design and implement a pipeline, it is important to consider which kind of pipeline project to use. Do you require support for running builds from multiple branches?
+
+Pipeline projects ignore all branches except the one specified at project creation time, which is usually your master or main branch. You must merge any other branch to the main branch for the pipeline to act on your changes.
+
+Multibranch pipeline projects can run parallel builds for different branches and require that you write your pipeline to work reliably under these conditions.
+
+If you use a branch-based workflow for approving changes, you probably require a multibranch pipeline. One way of writing a pipeline for a multibranch pipeline project is to either perform or skip stages based on the branch running the build.
+
+Skipping Stages in a Pipeline
+The when directive allows a stage to be executed or skipped under some conditions, for example:
+
+branch specifies the name of a branch that runs the stage in a multibranch pipeline.
+
+changeset specifies that the stage runs for changes affecting a set of files from VCS. File changes are specified using Maven file set syntax.
+
+expression allows using a Groovy expression to refer to values of parameters and environment variables.
+
+Using multiple conditions inside the same when directive requires using the allOf and anyOf directives, for example:
+
+when {
+  allOf {
+    branch 'master'
+    changeset '**/*.js'
+  }
+}
+Using the DSL of the OpenShift Client Plug-in or Raw OpenShift CLI Commands
+The OpenShift Client plug-in offers a Domain-Specific Language (DSL) designed for imperative CI/CD processes. Sophisticated CI/CD pipelines that perform complex manipulations of OpenShift resources usually benefit from using the DSL.
+
+As powerful as the OpenShift Client DSL is, it may not be the best choice for a GitOps workflow. A system administrator without Java or JavaScript programming knowledge might find understanding the Groovy syntax of a Jenkins DSL challenging.
+
+Among the disadvantages of using the OpenShift Client DSL to implement a GitOps workflow:
+
+The DSL always assumes a current project reads back all resources it creates or changes. It forces you to break commands that manipulate resources from different namespaces into multiple steps.
+
+That behavior works for CI/CD pipelines because they usually build and deploy a single application that lives inside a single OpenShift project.
+
+GitOps pipelines frequently mix namespaced and non-namespaced resources, or resources from multiple namespaces (of multiple operators), that a single oc apply command can manage.
+
+The DSL increases verbosity for simple declarative GitOps workflows because it is designed for scripted pipelines and requires adding script directives to declarative pipelines.
+
+Even if your pipeline never changes OpenShift credentials (it runs as the Jenkins service account) and never changes the project, the DSL requires withCluster and withProject Groovy blocks, further increasing verbosity.
+
+The following example shows a pipeline stage that applies OpenShift resource files using the DSL:
+
+stage ('Apply resources') {
+  steps {
+    script {
+      openshift.withCluster () {
+        openshift.withProject ('openshift-config') {
+          openshift.apply ('-k config')
+        }
+      }
+    }
+  }
+}
+The following shows the same example stage, but coded using the sh step to invoke the OpenShift CLI:
+
+stage ('Apply resources') {
+  steps {
+    sh 'oc apply -k config'
+  }
+}
+Given the simplicity of most GitOps declarative pipelines, using the OpenShift Client DSL is usually overkill. Invoking oc commands is easier and fits a large number of scenarios.
+
+Designing and Implementing The Apply Pipelines
+Joining the concepts of OpenShift declarative resource management, Jenkins declarative pipelines, and Jenkinsfile configuration directives enables you to implement a GitOps workflow. You start with the Apply pipeline, and then you review an implementation of the Drift pipeline.
+
+The Apply Pipeline supports multiple branches, as required by a typical GitOps process, because you must make changes to a branch and allow someone to review your changes before applying them to a live cluster. You also require at least minimal validation of your resource file to prevent incorrect resource files from being merged to the main branch.
+
+A sample Apply Pipeline has the following stages:
+
+Validate: Checks the syntax of the input configuration files to catch syntax errors early on. This stage runs on all of your branches.
+
+Apply: Applies the configuration changes to a cluster. This stage runs on your main branch only.
+
+Test: Tests that the configurations are live on a cluster by validating their expected side-effects. That stage also runs only on your main branch.
+
+The following sections discuss the main pieces of a Jenkinsfile for the Apply Pipeline.
+
+Configuring the Apply Pipeline
+The Apply Pipeline polls the VCS periodically for changes and disallows parallel builds because overlapping builds can intermittently fail as they apply and test changes to the same live cluster and the same cluster operators.
+
+Any standard agent can work, but the Node.js agent is the lightest one.
+
+Validating Configuration Files
+The Validate stage is the only stage that runs for all branches.
+
+Be warned that it is impossible to thoroughly validate OpenShift resource files before applying them to a live cluster. Make your best effort to validate using the --dry-run and --validate options. However, sometimes a resource works for oc apply command with the --dry-run option and fails without that option.
+
+You cannot perform reliable validation of your resource files because your cluster might have multiple resource controllers and admission plug-ins, which depend on each other; when you use the --dry-run option, changes are not visible across controllers and plug-ins.
+
+However, for most common scenarios your best efforts will be sufficient.
+
+It is possible to write a pipeline that provisions a temporary OpenShift cluster on-demand in a cloud provider, but it may not be a quick nor cheap operation to perform for every configuration change.
+
+The following is a complete implementation of a Validate stage of a GitOps Apply pipeline. This example assumes that you have a single live cluster:
+
+stage ('Validate resources') {
+  steps {
+    sh 'oc apply --dry-run -k config'
+  }
+}
+Applying Changes to Configuration Files
+The Apply stage only applies changes to the cluster when running builds from the master branch because these are approved changes.
+
+The Apply stage waits until each of the affected cluster operators act on the configuration changes. If the Apply state does not wait, then the subsequent Test stage could fail intermittently.
+
+The details vary for each cluster operator but the following is a common scenario:
+
+First, wait for each operator to start progressing.
+
+Then, wait for all pods managed by the operator to redeploy.
+
+Some cluster operators might also require that you make sure that there are no old pods remaining from a previous deployment.
+
+The following listing shows a generic example of waiting for a cluster operator and its redeployment:
+
+stage ('Apply resources') {
+  when {
+    branch 'master'
+  }
+  steps {
+    sh 'oc apply -k config'
+    // May require multiple of the following:
+    sh 'oc wait co/operatorname --for condition=Progressing \
+--timeout 15s || true'
+    sh 'oc rollout status deployment/operatormanagedapp \
+-n operatornamespace -w --timeout 360s'
+  }
+}
+Testing Configuration Changes
+The Test stage only tests side-effects of configuration changes when running builds from the master branch, similar to the Apply stage.
+
+The logic on the test stage can vary, from a simple and incomplete smoke test to verify that your cluster is still up after your configuration changes, to a very specific check of the intended side-effects of your configuration files.
+
+Sometimes, your test steps also have side-effects that may require a post directive to undo and clean up.
+
+The following is a skeleton of a Test stage in a GitOps Apply pipeline.
+
+stage ('Test configuration changes') {
+  when {
+    branch 'master'
+  }
+  steps {
+    // oc commands to test side-effects of previous changes
+    ...output omitted...
+  }
+  post {
+    always {
+      // oc commands to clean up side-effects of the tests
+      ...output omitted...
+    }
+  }
+}
+Designing and Implementing the Drift Pipeline
+The Drift pipeline is simpler than the Apply pipeline because it has no side-effects to be tested and undone. It is also simpler because it is not part of reviewing and approving changes to configuration files and does not have to be a multibranch pipeline.
+
+A sample Drift pipeline has the following stages:
+
+Check: verifies if the configuration of the cluster matches the configuration files in version control. If it does not match, then there is a configuration drift.
+
+Remediate: if a configuration drift is found, then take action to fix the issue and restore the cluster to the latest approved configurations.
+
+An alternative action for the Remediate stage is to notify IT Operations about the issue, for example, by sending an email message or opening a support ticket.
+
+The example implementation makes the Remediate state a post directive instead of an actual stage. It executes only when the Check stage fails because it finds a drift.
+
+The following sections describe the main pieces of a Jenkinsfile for the Drift pipeline.
+
+Configuring the Drift Pipeline
+Run the Drift pipeline periodically because unexpected configuration changes could occur at any time. Any of the standard agents will work, but the Node.js agent is the lightest one.
+
+Because the Drift pipeline has no side-effects of its own, parallel builds are not an issue.
+
+Checking for Configuration Drift
+The Drift pipeline saves a configuration drift report for auditing purposes. This report is the output of oc diff.
+
+The Check stage fails to build if a drift is found, so these builds are displayed in red in the Jenkins web UI. If there is no drift, then the build succeeds.
+
+The following is one way to implement the Check stage of a GitOps Drift pipeline:
+
+stage ('Check resource drift') {
+  steps {
+    sh 'oc diff -k config | tee drift-report.txt'
+    sh '! test -s drift-report.txt'
+  }
+}
+Firing the Apply Pipeline
+If the Apply pipeline remediates cluster configurations, it does not have to duplicate the logic required to validate, apply, and test configuration changes. That logic is already part of the Apply pipeline.
+
+Jenkins supports running a pipeline as a step in another pipeline using the build statement.
+
+The post directive either saves the drift report generated by the Check stage, or crates a no-drift report for auditing purposes in the Jenkins instance using the archiveArtifacts statement. Both reports are delivered as text files.
+
+A Drift pipeline could use an HTML beautifier of diff command outputs and the Jenkins HTML Publisher plug-in to generate better-looking drift and no-drift reports.
+
+The following is an example of the post directive that saves these reports and fires the Apply pipeline to restore the cluster configurations to the state in version control.
+
+post {
+  failure {
+    archiveArtifacts artifacts: '*.txt'
+    build job: 'apply/master'
+  }
+  success {
+    sh 'rm drift-report.txt'
+    sh 'echo \'There is no configuration drift\' > no-drift.txt'
+    archiveArtifacts artifacts: '*.txt'
+  }
+Improving the Design of Your GitOps Pipelines
+Red Hat recommends that you create a shell script with a test suite that is invoked from a Jenkinsfile, instead of coding tests directly in a Jenkinsfile.
+
+A related best practice for implementing complex logic outside of a pipeline is creating Groovy libraries. This may not be an exciting prospect to a non-developer system administrator, but it is an attractive alternative to developers implementing CI/CD workflows.
+
+As your Test and Apply stages become more complex, you can create multiple pairs of Apply and Drift pipelines, for example, one for the settings of each cluster operator. Each of these pipeline pairs would take input from a different VCS repository. This approach makes your Test stages simpler, and allows you to control who can change configurations for each cluster operator using VCS security rules.
+
+If your OpenShift cluster allows inbound access from your VCS, you can use a web hook instead of periodic VCS checks. This approach saves a few cluster compute resources otherwise wasted by pooling VCS.
+
+Eventually, you will need to roll back changes from a failed build of the Apply pipeline. Minimally, add some notification capabilities so that the IT team takes action, such as manually reverting to the latest known good configuration in version control.
+
+A GitOps tool native to Kubernetes, such as ArgoCD, can observe resources and perform drift checking only when resources change, instead of performing drift checking periodically. This approach saves a few cluster compute resources wasted comparing live resources with version control when there is no change to the live resources.
+
+Consider using different Git repositories to store your pipelines and your configuration files. This approach makes the whole process more reliable because it decreases the changes of human error.

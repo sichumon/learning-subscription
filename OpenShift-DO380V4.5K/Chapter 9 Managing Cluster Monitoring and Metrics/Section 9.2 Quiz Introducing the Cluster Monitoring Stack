@@ -1,0 +1,53 @@
+
+Quiz: Introducing the Cluster Monitoring Stack
+Choose the correct answers to the following questions:
+
+1.		
+The cluster monitoring stack (including Prometheus and Grafana) is a separate component that must be added after installing your OpenShift cluster. (True or False)
+
+A		
+True
+
+B		
+False
+
+2.		
+The prometheusrule custom resource definition only has instances in the openshift-monitoring namespace. (True or False)
+
+A		
+True
+
+B		
+False
+
+3.		
+Which two statements about pending alerts are true? (Choose two.)
+
+A		
+The alert expression for the pending alert evaluates as true, but the expression has not evaluated as true for a specified duration.
+
+B		
+The alert expression for the pending alert does not currently evaluate as true even though it might evaluate as true at some point in the future.
+
+C		
+Pending alerts rarely apply to critical alerts.
+
+D		
+Pending alerts are common and should not necessarily cause concern until they move to a firing state.
+
+4.		
+Which two statements about silenced alerts are true? (Choose two.)
+
+A		
+When silencing an alert, the default setting is to silence the alert indefinitely.
+
+B		
+When silencing an alert, the default setting is to silence the alert for two hours.
+
+C		
+Silence an alert during troubleshooting so that Alertmanager does not send additional notifications about the alert.
+
+D		
+Silence an alert during troubleshooting to tell Prometheus to stop checking the evaluation expression for the alert.
+
+This concludes the section.

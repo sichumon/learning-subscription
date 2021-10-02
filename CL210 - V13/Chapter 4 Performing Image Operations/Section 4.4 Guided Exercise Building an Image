@@ -1,0 +1,174 @@
+Guided Exercise: Building an Image
+In this exercise you will build and customize a disk image using diskimage-builder.
+
+Outcomes
+
+You should be able to:
+
+Build and customize an image using diskimage-builder.
+
+Upload the image into the OpenStack image service.
+
+Launch an instance using the customized image.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab customization-img-building setup command. This ensures that the required packages are installed on workstation, and provisions the environment with a public network, a private network, a key pair, and security rules to access the instance.
+
+[student@workstation ~]$ lab customization-img-building setup
+On workstation, retrieve the http://materials.example.com/osp-small.qcow2 disk image and save it under /home/student/.
+
+[student@workstation ~]$ wget http://materials.example.com/osp-small.qcow2
+Create a copy of the /usr/share/diskimage-builder/elements directory to work with under /home/student/.
+
+[student@workstation ~]$ cp -a /usr/share/diskimage-builder/elements \
+/home/student/
+Create a post-install.d directory under the working copy of the rhel7 element.
+
+[student@workstation ~]$ mkdir -p /home/student/elements/rhel7/post-install.d
+Add two scripts under the rhel7 element post-install.d directory to enable the named service, and add a forwarders option to /etc/named.conf.
+
+[student@workstation ~]$ cd /home/student/elements/rhel7/post-install.d/
+[student@workstation post-install.d]$ cat <<EOF > 01-enable-services
+#!/bin/bash
+systemctl enable named
+EOF
+[student@workstation post-install.d]$ cat <<EOF > 02-configure-named
+#!/bin/bash
+
+# add forwarders
+sed -i 's|\(.*\)\(recursion yes;\)|\1\2\n\1forwarders {172.25.250.254;};|' \
+/etc/named.conf
+
+# allow queries from the local subnet
+sed -i 's|\(.*allow-query\).*|\1     { localhost; 192.168.1.0/24; };|' \
+/etc/named.conf
+
+# disable dnssec validation
+sed -i 's|\(.*dnssec-validation\).*|\1 no;|' /etc/named.conf
+EOF
+Change to the /home/student directory and set the executable permission on the scripts.
+
+[student@workstation post-install.d]$ cd
+[student@workstation ~]$ chmod +x /home/student/elements/rhel7/post-install.d/*
+Export the following environment variables, which diskimage-builder requires. The DIB_NO_TMPFS variable is only required because workstation has a small hard disk, it is not required in most cases.
+
+Table 4.5. Environment Variables
+
+Variable	Content
+DIB_LOCAL_IMAGE	/home/student/osp-small.qcow2
+DIB_YUM_REPO_CONF	/etc/yum.repos.d/openstack.repo
+ELEMENTS_PATH	/home/student/elements
+DIB_NO_TMPFS	1
+
+[student@workstation ~]$ export DIB_LOCAL_IMAGE=/home/student/osp-small.qcow2
+[student@workstation ~]$ export DIB_YUM_REPO_CONF=/etc/yum.repos.d/openstack.repo
+[student@workstation ~]$ export ELEMENTS_PATH=/home/student/elements
+[student@workstation ~]$ export DIB_NO_TMPFS=1
+Build the finance-rhel-dns.qcow2 disk image and include the bind and bind-utils packages. The scripts created earlier are automatically integrated. Enter the password for student when prompted.
+
+[student@workstation ~]$ disk-image-create vm rhel7 \
+-t qcow2 \
+-p bind,bind-utils \
+-o finance-rhel-dns.qcow2
+...output omitted...
+As the developer1 OpenStack user, upload the finance-rhel-dns.qcow2 disk image to the OpenStack Image service as finance-rhel-dns, with a minimum disk requirement of 10 GiB, and a minimum RAM requirement of 2 GiB.
+
+Source the developer1-finance-rc credentials file.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ 
+Using the openstack command, upload the disk image finance-rhel-dns.qcow2 into the OpenStack Image service.
+
+[student@workstation ~(developer1-finance)]$ openstack image create \
+--disk-format qcow2 \
+--min-disk 10 \
+--min-ram 2048 \
+--file ~/finance-rhel-dns.qcow2 \
+finance-rhel-dns
+...output omitted...
+Launch an instance in the environment using the following attributes.
+
+Table 4.6. Instance Attributes
+
+Attribute	Value
+flavor	default
+key pair	example-keypair
+network	finance-network1
+image	finance-rhel-dns
+security group	finance-dns
+name	finance-dns1
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--image finance-rhel-dns \
+--security-group finance-dns \
+--wait finance-dns1
+...output omitted...
+List the available floating IP addresses, and then allocate one to finance-dns1.
+
+List the available floating IPs. The floating IPs available on your system may differ from those shown below.
+
+[student@workstation ~(developer1-finance)]$ openstack floating ip list \
+-c "Floating IP Address" -c Port
++---------------------+------+
+| Floating IP Address | Port |
++---------------------+------+
+| 172.25.250.110      | None |
+| 172.25.250.107      | None |
++---------------------+------+
+Attach an available floating IP to the finance-dns1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server add floating \
+ip finance-dns1 172.25.250.110
+If the image build was successful, the resulting DNS server should accept queries and forward them to the Domain Name Service running on workstation.
+
+Use the ssh command to log in to finance-dns1 as cloud-user.
+
+[student@workstation ~(developer1-finance)]$ ssh cloud-user@172.25.250.110
+Warning: Permanently added '172.25.250.110' (ECDSA) to the list of known hosts.
+[cloud-user@finance-dns1 ~]$ 
+Ensure that named is listening on port 53.
+
+[cloud-user@finance-dns1 ~]$ sudo ss -4nlp | grep named
+udp    UNCONN  0  0    127.0.0.1:53    *:*   users:(("named",pid=860,fd=513),...
+tcp    LISTEN  0  10   127.0.0.1:53    *:*   users:(("named",pid=860,fd=21))
+tcp    LISTEN  0  128  127.0.0.1:953   *:*   users:(("named",pid=860,fd=23))
+Use the dig command to perform a query against the local named service. Query the NS records for the example.com domain.
+
+[cloud-user@finance-dns1 ~]$ dig @localhost example.com NS
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-61.el7 <<>> @localhost example.com NS
+; (2 servers found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 43472
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 2
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;example.com.			IN	NS
+
+;; ANSWER SECTION:
+example.com.		85612	IN	NS	classroom.example.com.
+
+;; ADDITIONAL SECTION:
+classroom.example.com.	85612	IN	A	172.25.254.254
+
+;; Query time: 1 msec
+;; SERVER: ::1#53(::1)
+;; WHEN: Thu Sep 20 04:41:28 EDT 2018
+;; MSG SIZE  rcvd: 80
+
+[cloud-user@finance-dns1 ~]$ logout
+[student@workstation ~(developer1-finance)]$ 
+Note that there is no aa flag in the flags section of the output, this means the server that we queried was not authoritative for the example.com domain. Therefore the query was answered by an upstream name server and finance-dns1 must be working as designed.
+
+Cleanup
+
+On workstation, run the lab customization-img-building cleanup command to clean up this exercise.
+
+[student@workstation ~]$ lab customization-img-building cleanup

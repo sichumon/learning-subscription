@@ -1,0 +1,158 @@
+Guided Exercise: Refactoring the To Do List Application
+In this lab, you will refactor the To Do List application into multiple containers that are linked together, allowing the front-end HTML 5 application, the Node.js REST API, and the MySQL server to run in their own containers.
+
+Outcomes
+
+You should be able to refactor a monolithic application into its tiers and deploy each tier as a microservice.
+
+Run the following command to set up the working directories for the lab with the To Do List application files:
+
+[student@workstation ~]$ lab appendix-microservices start
+Move the HTML Files
+
+The first step in refactoring the To Do List application is to move the front-end code from the application into its own running container. This step guides you through moving the HTML application and its dependent files into their own directory for deployment to an Apache server running in a container.
+
+Move the HTML and static files to the src/ directory from the monolithic Node.js To Do List application:
+
+[student@workstation ~]$ cd ~/DO180/labs/appendix-microservices/apps/html5/
+[student@workstation html5]$ mv \
+> ~/DO180/labs/appendix-microservices/apps/nodejs/todo/* \
+> ~/DO180/labs/appendix-microservices/apps/html5/src/
+The current front-end application interacts with the API service using a relative URL. Because the API and front-end code will now run in separate containers, the front-end needs to be adjusted to point to the absolute URL of the To Do List application API.
+
+Open the /home/student/DO180/labs/appendix-microservices/apps/html5/src/script/item.js file. At the bottom of the file, look for the following method:
+
+app.factory('itemService', function ($resource) {
+    return $resource('api/items/:id');
+});
+Replace that code with the following content:
+
+app.factory('itemService', function ($resource) {
+    return $resource('http://workstation.lab.example.com:30080/todo/api/items/:id');
+});
+Make sure there are no line breaks in the new URL, save the file, and exit the editor.
+
+Build the HTML Image
+
+Run the build script to build the Apache parent image.
+
+[student@workstation html5]$ cd ~/DO180/labs/appendix-microservices/images/apache
+[student@workstation apache]$ ./build.sh
+STEP 1: FROM ubi7/ubi:7.7
+...output omitted...
+STEP 13: COMMIT do180/httpd
+Verify that the image is built correctly:
+
+[student@workstation apache]$ sudo podman images
+REPOSITORY             TAG      IMAGE ID        CREATED             SIZE
+localhost/do180/httpd  latest   34376f2a318f    2 minutes ago       282.6 MB
+...
+Build the child Apache image:
+
+[student@workstation apache]$ cd ~/DO180/labs/appendix-microservices/deploy/html5
+[student@workstation html5]$ ./build.sh
+STEP 1: FROM do180/httpd
+STEP 2: COPY ./src/ ${HOME}/
+--> cf11...dde1
+STEP 3: COMMIT do180/todo_frontend
+Verify that the image is built correctly:
+
+[student@workstation html5]$ sudo podman images
+REPOSITORY                     TAG      IMAGE ID       CREATED         SIZE
+localhost/do180/todo_frontend  latest   30b3fc531bc6   2 minutes ago   286.9 MB
+localhost/do180/httpd          latest   34376f2a318f   4 minutes ago   282.6 MB
+...
+Modify the REST API to Connect to External Containers
+
+The REST API currently uses hard-coded values to connect to the MySQL database. Edit the /home/student/DO180/labs/appendix-microservices/apps/nodejs/models/db.js file, which holds the database configuration. Update the dbname, username, and password values to use environment variables instead. Also, update the params.host to point to the host name of the host running the MySQL container and update the params.port to reflect the redirected port to the container. Both values are available as the MYSQL_SERVICE_HOST and MYSQL_SERVICE_PORT environment variables, respectively. Replaced contents should look like this:
+
+module.exports.params = {
+    dbname: process.env.MYSQL_DATABASE,
+    username: process.env.MYSQL_USER,
+    password: process.env.MYSQL_PASSWORD,
+    params: {
+        host: process.env.MYSQL_SERVICE_HOST,
+        port: process.env.MYSQL_SERVICE_PORT,
+        dialect: 'mysql'
+    }
+};
+NOTE
+This file can be copied and pasted from /home/student/DO180/solutions/appendix-microservices/apps/nodejs/models/db.js.
+
+Configure the back end to handle Cross-origin resource sharing (CORS). This occurs when a resource request is made from a different domain from the one in which the request was made. Because the API needs to handle requests from a different DNS domain (the front-end application), it is necessary to create security exceptions to allow these requests to succeed. Make the following modifications to the application in the language of your preference in order to handle CORS.
+
+Add "restify-cors-middleware": "1.1.1" as a new dependency to the package.json file located at /home/student/DO180/labs/appendix-microservices/apps/nodejs/package.json. Remember to put a comma at the end of the previous dependency. Make sure the end of the file looks like this:
+
+    "sequelize": "5.21.1",
+    "mysql2": "2.0.0",
+    "restify-cors-middleware": "1.1.1"
+  }
+}
+Update the app.js file located at /home/student/DO180/labs/appendix-microservices/apps/nodejs/app.js to configure CORS usage. Require the restify-cors-middleware module at the second line, and then update the contents of the file to match the following:
+
+var restify = require('restify');
+var corsMiddleware = require('restify-cors-middleware');
+var controller = require('./controllers/items');
+...output omitted...
+var server = restify.createServer()
+    .use(restify.plugins.fullResponse())
+    .use(restify.plugins.queryParser())
+    .use(restify.plugins.bodyParser());
+
+const cors = corsMiddleware({
+  origins: ['*']
+});
+
+server.pre(cors.preflight);
+server.use(cors.actual);
+
+controller.context(server, '/todo/api', model);
+The origins with value ["*"] instructs the server to allow any domains. In a production server, this value would usually be an array of domains known to require access to the API.
+
+Build the REST API Image
+
+Build the REST API child image using the following command. This image uses the Node.js image.
+
+[student@workstation html5]$ cd ~/DO180/labs/appendix-microservices/deploy/nodejs
+[student@workstation nodejs]$ ./build.sh
+STEP 1: FROM rhscl/nodejs-4-rhel7:latest
+...output omitted...
+STEP 11: COMMIT do180/todonodejs
+Run the podman images command to verify that all of the required images are built successfully:
+
+[student@workstation nodejs]$ sudo podman images
+REPOSITORY                      TAG      IMAGE ID      CREATED         SIZE
+localhost/do180/httpd           latest   2963ca81ac51  5 seconds ago   249 MB
+localhost/do180/todonodejs      latest   7b64ef105c50  7 minutes ago   533 MB
+localhost/do180/todo_frontend   latest   53ad57d2306c  9 minutes ago   254 MB
+...output omitted...
+Run the Containers
+
+Use the run.sh script to run the containers:
+
+[student@workstation nodejs]$ cd linked/
+[student@workstation linked]$ ./run.sh
+• Creating database volume: OK
+• Launching database: OK
+• Importing database: OK
+• Launching To Do application: OK
+Run the podman ps command to confirm that all three containers are running:
+
+[student@workstation linked]$ sudo podman ps
+... IMAGE                          ... PORTS                       NAMES
+... localhost/do180/todo_frontend  ... 0.0.0.0:30000->80/tcp      todo_frontend
+... localhost/do180/todonodejs     ... 8080/tcp, 0.0.0.0:30080... todoapi
+... localhost/rhscl/mysql-57-rhel7 ... 0.0.0.0:30306->3306/tcp    mysql
+Test the Application
+
+Use the curl command to verify that the REST API for the To Do List application is working correctly:
+
+[student@workstation linked]$ curl -w "\n" 127.0.0.1:30080/todo/api/items/1
+{"description": "Pick up newspaper", "done": false, "id":1}
+Open Firefox on workstation and navigate to http://127.0.0.1:30000, where you should see the To Do List application.
+
+Finish
+
+On workstation, run the lab appendix-microservices finish script to complete this lab.
+
+[student@workstation ~]$ lab appendix-microservices finish

@@ -1,0 +1,346 @@
+Chapter 10. Provisioning and Inspecting Cluster Logging
+Deploying Cluster Logging
+Guided Exercise: Deploying Cluster Logging
+Querying Cluster Logs with Kibana
+Guided Exercise: Querying Cluster Logs with Kibana
+Visualizing Cluster Logs with Kibana
+Guided Exercise: Visualizing Cluster Logs with Kibana
+Diagnosing Cluster Logging Problems
+Guided Exercise: Diagnosing Cluster Logging Problems
+Lab: Provisioning and Inspecting Cluster Logging
+Summary
+Abstract
+
+Goal	Deploy and query cluster-wide logging, and diagnose common issues using tools.
+Objectives	
+Deploy and configure cluster logging.
+
+Inspect Openshift and application logs using Lucene queries in the Kibana UI.
+
+Create charts to visualize logs with Kibana.
+
+Diagnose cluster logging problems with debugging and monitoring tools.
+
+Sections	
+Deploying Cluster Logging (and Guided Exercise)
+
+Querying Cluster Logs with Kibana (and Guided Exercise)
+
+Visualizing Cluster Logs with Kibana (and Guided Exercise)
+
+Diagnosing Cluster Logging Problems (and Guided Exercise)
+
+Lab	
+Provisioning and Inspecting Cluster Logging
+
+Deploying Cluster Logging
+Objectives
+After completing this section, you should be able to deploy and configure cluster logging.
+
+Discussing Cluster Logging
+The main benefit of cluster logging is the aggregation of all the logs from the pods and node of an OpenShift cluster to a centralized location. Centralized logging allows for easier searching, visualizing, and reporting of data.
+
+Table 10.1. Cluster logging components
+
+logStore	The logStore is the Elasticsearch cluster that:
+Stores the logs into indexes.
+
+Provides RBAC access to the logs.
+
+Provides data redundancy.
+
+collection	Implemented with Fluentd, the collector collects node and application logs, adds pod and namespace metadata, and stores them in the logStore. The collector is a DaemonSet, so there will be a Fluentd pod on each node.
+visualization	The centralized web UI from Kibana displays the logs and provides a way to query and chart the aggregated data.
+event routing	The Event Router monitors the OpenShift events API and sends the events to STDOUT so the collector can forward them to the logStore. The events from OpenShift are stored in the infra index in Elasticsearch.
+
+Installing the Elasticsearch Operator
+The Elasticsearch Operator handles the creation of and updates to the Elasticsearch cluster defined in the Cluster Logging Custom Resource. Each node in the Elasticsearch cluster is deployed with a PVC named and managed by the Elasticsearch Operator. A unique Deployment is created for each Elasticsearch node to ensure that each Elasticsearch node has a storage volume of its own.
+
+The Elasticsearch Operator must be installed in a namespace other than openshift-operators to avoid possible conflicts with metrics from other Community Operators. Create and use the openshift-operators-redhat namespace for the Elasticsearch Operator.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-operators-redhat
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    openshift.io/cluster-monitoring: "true"
+Create an OperatorGroup to install the operator in all namespaces and a Subscription to have the openshift-operators-redhat namespace subscribed to the operator.
+
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-operators-redhat
+  namespace: openshift-operators-redhat
+spec: {}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: "elasticsearch-operator"
+  namespace: "openshift-operators-redhat"
+spec:
+  channel: "4.5"
+  installPlanApproval: "Automatic"
+  source: "redhat-operators"
+  sourceNamespace: "openshift-marketplace"
+  name: "elasticsearch-operator"
+Create the RBAC objects to grant Prometheus permission to access the openshift-operators-redhat namespace.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-k8s
+  namespace: openshift-operators-redhat
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - services
+      - endpoints
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-k8s
+  namespace: openshift-operators-redhat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-k8s
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-k8s
+    namespace: openshift-operators-redhat
+---
+Verify that operator is available in each namespace.
+
+[user@host ~]$ oc get csv -A
+NAMESPACE        NAME                                           ...  PHASE
+default          elasticsearch-operator.4.5.0-202008100413.p0   ...  Succeeded
+kube-node-lease  elasticsearch-operator.4.5.0-202008100413.p0   ...  Succeeded
+kube-public      elasticsearch-operator.4.5.0-202008100413.p0   ...  Succeeded
+kube-system      elasticsearch-operator.4.5.0-202008100413.p0   ...  Succeeded
+...output omitted...
+Installing the Cluster Logging Operator
+The cluster logging operator creates components detailed in the cluster logging custom resource, and updates the deployment upon any changes to the custom resource. Similar to the Elasticsearch operator, the cluster logging operator requires a namespace, operator group, and subscription.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-logging
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    openshift.io/cluster-logging: "true"
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  targetNamespaces:
+    - openshift-logging
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  channel: "4.5"
+  name: cluster-logging
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+---
+Confirm the installation.
+
+[user@host ~]$ oc get csv -n openshift-logging
+NAME                                           ...  PHASE
+clusterlogging.4.5.0-202008100413.p0           ...  Succeeded
+elasticsearch-operator.4.5.0-202008100413.p0   ...  Succeeded
+Deploying a Cluster Logging Instance
+The cluster logging custom resource defines the configuration for an instance of the cluster logging components and provides the configuration for the components.
+
+Configuring Elasticsearch
+Consider the following when configuring the Elasticsearch component.
+
+For availability and scalability, Elasticsearch requires a minimum of three cluster nodes. The first three nodes of the Elasticsearch cluster are created with master, client, and data roles. Additional nodes are provisioned as data nodes, with client and data roles.
+
+Elasticsearch uses either persistent or ephemeral storage, but requires persistent storage to prevent data loss. Fast storage, such as SSDs, is preferred over spinning disks. Use dedicated local storage instead of NFS, SMB, or Amazon EBS. Consider the logging requirements of the applications in the OpenShift cluster and the OpenShift nodes when sizing the storage for Elasticsearch.
+
+The redundancy policy determines how Elasticsearch shards are replicated across data nodes in the cluster. Several Elasticsearch shards combine to make a single Elasticsearch index. Each shard is responsible for a subset of the data that an Elasticsearch index provides.
+
+FullRedundancy	Elasticsearch copies the shards for each index to every data node in the cluster. Fully replicated shards provide the most redundancy to protect from accidental data loss.
+MultipleRedundancy	The primary shards for each index are replicated to half of the data nodes. This provides a good balance between performance and redundancy.
+SingleRedundancy	Each primary shard is copied once to another node. If at least two data nodes remain available, then the logs are recoverable. If the Elasticsearch cluster has 5 or more nodes, SingleRedundancy performs better than MultipleRedundancy.
+ZeroRedundancy	Shards are not replicated. Data loss could happen if a node fails.
+Example Cluster Logging Instance
+apiVersion: "logging.openshift.io/v1"
+kind: "ClusterLogging"
+metadata:
+  name: "instance"
+  namespace: "openshift-logging"
+spec:
+  managementState: "Managed"
+  logStore:
+    type: "elasticsearch"
+    elasticsearch:
+      nodeCount: 3
+      nodeSelector:
+          node-role.kubernetes.io/infra: ''
+      storage:
+        storageClassName: "local-blk"
+        size: 50G
+      redundancyPolicy: "MultipleRedundancy"
+  visualization:
+    type: "kibana"
+    kibana:
+      nodeSelector:
+          node-role.kubernetes.io/infra: ''
+      replicas: 1
+  collection:
+    logs:
+      type: "fluentd"
+      fluentd: {}
+NOTE
+All of the components target dedicated infrastructure nodes.
+
+Confirm the cluster logging components statuses using the command oc get clusterlogging -n openshift-logging instance -o yaml.
+
+[user@host ~]$ oc get clusterlogging -n openshift-logging instance -o yaml
+apiVersion: logging.openshift.io/v1
+kind: ClusterLogging
+...output omitted...
+status:
+  collection:
+    logs:
+      fluentdStatus:
+        daemonSet: fluentd
+        ...output omitted...
+        pods:
+          failed: []
+          notReady: []
+          ready:
+          - fluentd-b7xqq
+          - fluentd-l6dzb
+          - fluentd-lkd98
+          - fluentd-pfpqn
+          - fluentd-sz8rs
+          - fluentd-x6lbh
+          - fluentd-xlclg
+          - fluentd-xlmfd
+          - fluentd-zjplq
+  curation: {}
+  logStore:
+    elasticsearchStatus:
+    - cluster:
+        activePrimaryShards: 8
+        activeShards: 10
+        initializingShards: 0
+        numDataNodes: 2
+        numNodes: 2
+        pendingTasks: 0
+        relocatingShards: 0
+        status: green
+        unassignedShards: 0
+        ...output omitted...
+      pods:
+        client:
+          failed: []
+          notReady: []
+          ready:
+          - elasticsearch-cdm-ua6ezqs6-1-c7b8cdff4-44mx5
+          - elasticsearch-cdm-ua6ezqs6-2-7fb79c755c-gnr4f
+        data:
+          failed: []
+          notReady: []
+          ready:
+          - elasticsearch-cdm-ua6ezqs6-1-c7b8cdff4-44mx5
+          - elasticsearch-cdm-ua6ezqs6-2-7fb79c755c-gnr4f
+        master:
+          failed: []
+          notReady: []
+          ready:
+          - elasticsearch-cdm-ua6ezqs6-1-c7b8cdff4-44mx5
+          - elasticsearch-cdm-ua6ezqs6-2-7fb79c755c-gnr4f
+      shardAllocationEnabled: all
+  visualization:
+    kibanaStatus:
+    - deployment: kibana
+      pods:
+        failed: []
+        notReady: []
+        ready:
+        - kibana-969c74586-flf5z
+      replicaSets:
+      - kibana-969c74586
+      replicas: 1
+Installing the Event Router
+By default, Kubernetes events are saved in the cluster etcd instance. The Event Router monitors the events API and prints events to standard output so Fluentd can collect them and send them to Elasticsearch. Elasticsearch stores the events in the infra index.
+
+The OpenShift documentation provides a template that you use to install the Event Router. The template defines a service account, deployment, and other RBAC resources for the Event Router.
+
+kind: Template
+apiVersion: v1
+metadata:
+  name: eventrouter-template
+  annotations:
+    description: "A pod forwarding kubernetes events to cluster logging stack."
+    tags: "events,EFK,logging,cluster-logging"
+objects:
+  - kind: ServiceAccount
+    ...output omitted...
+  - kind: ClusterRole
+    ...output omitted...
+  - kind: ClusterRoleBinding
+    ...output omitted...
+  - kind: ConfigMap
+    ...output omitted...
+  - kind: Deployment
+    ...output omitted...
+parameters:
+  ...output omitted...
+To install the Event Router:
+
+Download the template from OpenShift Container Platform documentation.
+
+Use the oc process command to create a manifest file for the Event Router.
+
+Use the oc apply command to apply the manifest resources to the OpenShift cluster.
+
+Creating Kibana Index Patterns
+Every log message is converted into a JSON document that Elasticsearch stores in an index. Elasticsearch uses indexes to organize related documents. Elasticsearch applies role-based access control (RBAC) rules to indexes based on OpenShift project permissions. Beginning in OpenShift Container Platform 4.5, log message documents are stored in an index with one of the following prefixes:
+
+infra-
+An index with this prefix stores pod log messages for infrastructure projects. An infrastructure project includes project names that have a openshift- or kube- prefix.
+
+app-
+An index with this prefix stores pod log messages for all projects except infrastructure projects.
+
+audit-
+An index with this prefix stores audit log messages. Audit logs allow you to review the OpenShift API activity of a user, administrator, or OpenShift component (such as a service account).
+
+To search for log messages in Kibana, you specify an index pattern. An index pattern defines a set of Elasticsearch indexes that you use in a query. An index pattern simplifies an Elasticsearch query because logs might exist in many different indexes.
+
+The first time you log in to Kibana, you must create the Kibana index patterns. Red Hat recommends that you create an index pattern for each of preceding Elasticsearch indexes:
+
+infra
+Create this index pattern to match any of the infra-* Elasticsearch indexes.
+
+app
+Create this index pattern to match any of the app-* Elasticsearch indexes.
+
+audit
+Create this index pattern to match any of the audit-* Elasticsearch indexes.
+
+ 
+REFERENCES

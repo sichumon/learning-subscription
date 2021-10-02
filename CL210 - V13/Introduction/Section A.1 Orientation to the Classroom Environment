@@ -1,0 +1,248 @@
+Introduction
+Orientation to the Classroom Environment
+
+Figure 0.1: Classroom environment
+In this classroom environment, the primary student system for all hands-on activities is workstation. The workstation virtual machine (VM) is the only one with a graphical desktop, required for browser access to remote dashboard and GUI tools. Students are instructed to always first log in directly to the workstation VM. From workstation, use SSH to access all other VMs for command-line use. Use a web browser on workstation to access the Red Hat OpenStack Platform Dashboard web interface and other graphical UI tools.
+
+As seen in Figure 0.1: Classroom environment, all VMs share an external network, 172.25.250.0/24, with a gateway of 172.25.250.254 (workstation). External network DNS services are also provided by workstation. The overcloud virtual machines share an internal network containing multiple VLANs, using various 172.24.X.0/24 addresses.
+
+Additional student VMs used for hands-on exercises include utility, director, and power in the lab.example.com DNS domain, and controller0, compute0, compute1, computehci0, and ceph0 in the overcloud.example.com DNS domain. The overcloud VMs share the provisioning network, 172.25.249.0/24, with the director and power nodes. The undercloud uses the isolated and dedicated provisioning network to deploy the overcloud nodes.
+
+The environment uses the classroom server as a NAT router to the outside network, and as a file server using the URLs content.example.com and materials.example.com, serving course content for certain exercises. The workstation VM is also a router to the classroom network, and must remain running for proper operation of all other VMs.
+
+Table 1. Classroom Machines
+
+Machine name	IP addresses	Role
+workstation.lab.example.com, workstationN.example.com	172.25.250.254 172.25.252.N	Graphical student workstation
+director.lab.example.com	172.25.250.200 172.25.249.200	Standalone undercloud node as director
+power.lab.example.com	172.25.250.100 172.25.249.100 172.25.249.101 172.25.249.102 172.25.249.112 172.25.249.103 172.25.249.106	Handles overcloud node IPMI power management
+utility.lab.example.com	172.25.250.220 172.24.250.220	Identity management server and VLANS for provider networks
+controller0.overcloud.example.com	172.25.250.1 172.25.249.P 172.24.X.1	An unclustered overcloud controller node
+compute0.overcloud.example.com	172.25.250.2 172.25.249.R 172.24.X.2	An overcloud compute node
+compute1.overcloud.example.com	172.25.250.12 172.25.249.S 172.24.X.12	Another overcloud compute node
+computehci0.overcloud.example.com	172.25.250.6 172.25.249.T 172.24.X.6	An overcloud compute node
+ceph0.overcloud.example.com	172.25.250.3 172.25.249.U 172.24.X.3	The overcloud block and object storage node
+classroom.example.com	172.25.254.254 172.25.253.254 172.25.252.254	Classroom materials server
+
+The workstation VM uses a student user with the password student. The director VM uses a default stack user with the password redhat. The root password on most VMs is redhat. These overcloud nodes were preconfigured with a heat-admin account, used by the deployment service to configure these nodes. Access to overcloud nodes is by key-based passwordless SSH access from workstation or director.
+
+Table 2. System and Application Credentials
+
+System Credentials	Username	Password
+Unprivileged shell login (as directed)	student	student
+Privileged shell login (as directed)	root	redhat
+Undercloud node unprivileged access	stack	redhat
+Undercloud node privileged access	root	redhat
+Overcloud node unprivileged access	heat-admin	passwordless SSH
+Overcloud node privileged access	root	Use sudo -i
+
+Table 3. 
+
+Application Credentials	Username	Password
+Red Hat Identity Manager admin	admin	RedHat123^
+Red Hat OpenStack Platform dashboard admin	admin	redhat
+Red Hat OpenStack Platform dashboard user	as directed	redhat
+Red Hat OpenStack Platform director	admin	redhat
+
+Managing OpenStack Overclouds in the Classroom
+Classroom OpenStack overclouds require continuous communication and coordination between the undercloud director node, the power node, and overcloud nodes. This discussion focuses on the classroom procedures only, because production OpenStack installations are highly available, redundant, resilient, and scalable infrastructures that rarely need to be shut down.
+
+This course includes a custom rht-overcloud systemd service installed on the director node, which automatically starts the overcloud nodes in the correct order when the student classroom environment is first started each day. The rht-overcloud is not currently configured to perform a similar service for stopping the overcloud at the end of the day or work session. Instead, students should manage their overcloud using the procedures described here.
+
+Figure 0.2: CL210-RHOSP13 classroom network topology shows the infrastructure design. Classroom components, networks, IP addresses, and interface configuration will be referred to throughout this course, and will be discussed or explained in upcoming chapters. The configuration shown here was pre-built using RHOSP Director using customized TripleO templates. Network interfaces shown here without a connecting network or IP addresses (e.g., eth3 and eth4 on many systems) are extra interfaces used in an upcoming chapter to configure provider networks.
+
+
+Figure 0.2: CL210-RHOSP13 classroom network topology
+Shutting Down the Classroom OpenStack Cluster
+
+The procedure described here is only for use in the classroom environment, because it shuts down the overcloud VMs using an ungraceful, forced technique. The procedure for gracefully shutting down a production overcloud requires stopping services in a logical, dependent order. That proper production procedure is taught in an upcoming chapter in this course.
+
+Unlike a production overcloud, this classroom environment is not intended to remain running continuously throughout the course. The online (ROL) classroom provider automatically shuts down VMs after a user-set timer expiration. Similarly, the physical (ILT) classroom providers typically turn off physical machines overnight. Because proper shutdown procedures are time-consuming in a classroom, we allow less graceful procedures that are not acceptable in a production environment.
+
+Caution
+Stopping overcloud nodes without properly stopping overcloud services first could cause data loss or corruption, and is not a recommended practice. However, since current versions of OpenStack are resilient, using shortcut shutdown procedures rarely causes problems in the classroom environment. Always use the recommended, supported procedures in production.
+
+In the online classroom environment, all classroom VMs shut down when the user-set timer expires. It is not uncommon to forget that the timer is set, or to leave for the day without shutting down. In a physical classroom, shutting down the physical machine without taking any preliminary actions will have the same result. In these cases, the overcloud will be stopped ungracefully. Although not recommended, this forced shutdown rarely causes problems. At next startup, the overcloud typically returns to a normal and working state.
+
+However, students must still remember to delete instances in the overcloud. Deployed instances consume disk resources whether they are running or not. Regardless of how the overcloud was shut down, undeleted instances will remain. By default, instances do not automatically restart when the overcloud is stated, but they continue to use the classroom environment's limited disk space. To avoid exercise failures caused by insufficient resources, always delete unneeded instances, as directed in exercise instructions.
+
+To list all the instances running on the compute nodes, use the following command:
+
+[student@workstation ~]$ source admin-rc
+[student@workstation ~]$ openstack server list --all-projects
++--------------------------------------+-----------+--------+----------+-------+
+| ID                                   | Name      | Status | Networks | Image |
++--------------------------------------+-----------+--------+----------+-------+
+| ac0ddb44-996f-4710-84c0-a78d3261c362 | finance31 | ACTIVE | network1 | rhel7 |
+| 7051e207-99b9-4652-808c-7f50418b4a79 | research1 | ACTIVE | network2 | rhel7 |
+| 895e18e1-40b4-7201-4b4b-6c479823ab4a | consult28 | ACTIVE | network3 | rhel7 |
++--------------------------------------+-----------+--------+----------+-------+
+Remove each instance using the listed server instance IDs:
+
+[student@workstation ~]$ openstack server stop \
+ac0ddb44-996f-4710-84c0-a78d3261c362
+[student@workstation ~]$ openstack server stop \
+7051e207-99b9-4652-808c-7f50418b4a79
+[student@workstation ~]$ openstack server stop \
+895e18e1-40b4-7201-4b4b-6c479823ab4a
+Using the director's undercloud environment, shut down the overcloud using the classroom-only rht-overcloud script.
+
+[student@workstation ~]$ ssh director
+(overcloud) [stack@director ~]$ rht-overcloud.sh stop
+[*] power is up
+[*] node: compute0, state: power on, powering off
+[*] node: compute1, state: power on, powering off
+[*] node: ceph0, state: power on, powering off
+[*] node: computehci0, state: power on, powering off
+[*] node: controller0, state: power on, powering off
+The overcloud is now shut down. The remaining nodes can now be stopped using procedures specific to your classroom environment.
+
+View the online course dashboard and each nodes' status text box. Click SHUTDOWN LAB. When all nodes are STOPPED, the course environment is cleanly shut down.
+
+Starting the Classroom OpenStack Cluster
+
+The classroom environment is configured to start all VMs automatically, including undercloud, overcloud and support VMs. After the support and undercloud VMs start, the rht-overcloud service starts the overcloud VMs. Since it is possible that VMs might be in an unexpected state after an ungraceful shutdown, manual steps may be needed to manage or restart errant nodes.
+
+The following procedures are required only if problems are detected or some nodes do not start.
+
+The rht-overcloud script may be used at any time to start or stop all the overcloud nodes.
+
+[student@workstation ~]$ ssh director
+(overcloud) [stack@director ~]$ rht-overcloud.sh start
+[*] power is up
+[*] node: controller0, state: power off, powering on
+[*] node: ceph0, state: power off, powering on
+[*] node: computehci0, state: power off, powering on
+[*] node: compute0, state: power off, powering on
+[*] node: compute1, state: power off, powering on
+Check the baremetal node power states. Start each node that is not already powered on.
+
+(undercloud) [stack@director ~]$ openstack baremetal node list -c Name -c "Power State"
++-------------+-------------+
+| Name        | Power State |
++-------------+-------------+
+| controller0 | power on    |
+| compute0    | power on    |
+| compute1    | power on    |
+| computehci0 | power on    |
+| ceph0       | power on    |
++-------------+-------------+
+(undercloud) [stack@director ~]$ openstack baremetal node power on  compute1
+Check the nodes' server status. If a server is not running, start it. If you determine that a server is running but has an incorrect status, set the correct status as in the example below.
+
+(undercloud) [stack@director ~]$ openstack server list -c Name -c Status
++-------------+--------+
+| Name        | Status |
++-------------+--------+
+| compute1    | ACTIVE |
+| compute0    | ACTIVE |
+| computehci0 | ACTIVE |
+| controller0 | ACTIVE |
+| ceph0       | ACTIVE |
++-------------+--------+
+(undercloud) [stack@director ~]$ openstack server start compute1
+(undercloud) [stack@director ~]$ openstack server set --state active  compute1
+If a server has difficulty starting, and does not respond satisfactorily to previous commands to start or set status, the following forced reboot is effective for clearing the current issue, as shown in this example.
+
+(undercloud) [stack@director ~]$ openstack server reboot --hard  compute1
+Repeat these procedures for each problematic node. The overcloud should now be fully started. If you experience further difficulties, fully restting the classroom environment will always result in a working overcloud with all VMs running.
+
+Resetting The Classroom Environment
+Critical Concept
+
+When the CL210 coursebook includes instructions to reset virtual machines, the intention is to reset only the overcloud nodes to an initial state. Unless something else is wrong with any physical system or online environment that is deemed irreparable, there is no reason to reset all virtual machines or to provision a new lab environment.
+
+Resetting the Overcloud
+
+Whether you are working in a physical or online environment, certain systems never need to be reset because they remain materially unaffected by exercises and labs. This following lists the systems never to be reset and those intended to be reset as a group during this course:
+
+Never Need To Be Reset
+
+classroom
+
+workstation
+
+power
+
+utility
+
+Only Reset Together As A Group
+
+controller0
+
+compute0
+
+compute1
+
+computehci0
+
+ceph0
+
+director
+
+Technically, the director system is the undercloud. However, in the context of resetting the overcloud, director must be included because its services and databases contain control, management, and monitoring information about the overcloud it is managing. Therefore, resetting the overcloud without resetting director is to load a fresh overcloud while the director retains stale information about the previous overcloud that was just discarded.
+
+[kiosk@foundation ~]$ rht-vmctl reset undercloud
+[kiosk@foundation ~]$ rht-vmctl reset overcloud
+Click ACTION → Reset for only director and the undercloud nodes controller0, compute0, compute1, computehci0, and ceph0.
+
+Caution
+Never reset the power node in the online environment.
+
+If the power node is accidentally reset, it will lose the credentials required to power manage the overcloud nodes. The only consistent solution to recover its function is to reprovision the classroom.
+
+If you are still experiencing problems after performing resets, the remaining option is to reprovision the classroom. Resetting everything takes time, but results in a fresh environment.
+
+In the online environment, click DELETE LAB, wait, then click PROVISION THE LAB.
+
+OpenStack Packages and Documentation
+Repositories suitable for RPM package installation are available locally in your environment at http://content.example.com/rhosp13.0/x86_64/dvd/.
+
+Software documentation is available at http://materials.example.com/docs/, which contains subdirectories for files in PDF and single-page HTML format.
+
+Controlling Your Systems
+Students are assigned remote computers in a Red Hat Online Learning classroom. They are accessed through a web application hosted at rol.redhat.com. Students should log in to this site using their Red Hat Customer Portal user credentials.
+
+Controlling the Virtual Machines
+
+The virtual machines in your classroom environment are controlled through a web page. The state of each virtual machine in the classroom is displayed on the page under the Online Lab tab.
+
+Table 4. Machine States
+
+Virtual Machine State	Description
+STARTING	The virtual machine is in the process of booting.
+STARTED	The virtual machine is running and available (or, when booting, soon will be).
+STOPPING	The virtual machine is in the process of shutting down.
+STOPPED	The virtual machine is completely shut down. Upon starting, the virtual machine boots into the same state as when it was shut down (the disk will have been preserved).
+PUBLISHING	The initial creation of the virtual machine is being performed.
+WAITING_TO_START	The virtual machine is waiting for other virtual machines to start.
+
+Depending on the state of a machine, a selection of the following actions is available.
+
+Table 5. Classroom/Machine Actions
+
+Button or Action	Description
+PROVISION LAB	Create the ROL classroom. Creates all of the virtual machines needed for the classroom and starts them. Can take several minutes to complete.
+DELETE LAB	Delete the ROL classroom. Destroys all virtual machines in the classroom. Caution: Any work generated on the disks is lost.
+START LAB	Start all virtual machines in the classroom.
+SHUTDOWN LAB	Stop all virtual machines in the classroom.
+OPEN CONSOLE	Open a new tab in the browser and connect to the console of the virtual machine. Students can log in directly to the virtual machine and run commands. In most cases, students should log in to the workstation virtual machine and use ssh to connect to the other virtual machines.
+ACTION → Start	Start (power on) the virtual machine.
+ACTION → Shutdown	Gracefully shut down the virtual machine, preserving the contents of its disk.
+ACTION → Power Off	Forcefully shut down the virtual machine, preserving the contents of its disk. This is equivalent to removing the power from a physical machine.
+ACTION → Reset	Forcefully shut down the virtual machine and reset the disk to its initial state. Caution: Any work generated on the disk is lost.
+
+At the start of an exercise, if instructed to reset a single virtual machine node, click ACTION → Reset for only the specific virtual machine.
+
+At the start of an exercise, if instructed to reset all virtual machines, click ACTION → Reset
+
+If you want to return the classroom environment to its original state at the start of the course, you can click DELETE LAB to remove the entire classroom environment. After the lab has been deleted, you can click PROVISION LAB to provision a new set of classroom systems.
+
+WARNING
+The DELETE LAB operation cannot be undone. Any work you have completed in the classroom environment up to that point will be lost.
+
+The Autostop Timer
+
+The Red Hat Online Learning enrollment entitles students to a certain amount of computer time. To help conserve allotted computer time, the ROL classroom has an associated countdown timer, which shuts down the classroom environment when the timer expires.
+
+To adjust the timer, click MODIFY to display the New Autostop Time dialog box. Set the number of hours until the classroom should automatically stop. Click ADJUST TIME to apply this change to the timer settings.

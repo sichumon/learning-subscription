@@ -1,0 +1,202 @@
+
+Guided Exercise: Creating an Application with a Template
+In this exercise, you will deploy the To Do List application in OpenShift Container Platform using a template to define resources your application needs to run.
+
+Outcomes
+
+You should be able to build and deploy an application in OpenShift Container Platform using a provided JSON template.
+
+You must have the To Do List application source code and lab files on workstation. To download the lab files and verify the status of the OpenShift cluster, run the following command in a new terminal window.
+
+[student@workstation ~]$ lab multicontainer-openshift start
+Use the Dockerfile in the images/mysql subdirectory to build the database container. Publish the container image to quay.io with a tag of do180-mysql-57-rhel7.
+
+Build the MySQL database image.
+
+[student@workstation ~]$ cd ~/DO180/labs/multicontainer-openshift/images/mysql
+[student@workstation mysql]$ sudo podman build -t do180-mysql-57-rhel7 .
+STEP 1: FROM rhscl/mysql-57-rhel7
+Getting image source signatures
+Copying blob sha256:e373541...output omitted...
+ 69.66 MB / 69.66 MB [====================================================] 6s
+Copying blob sha256:c5d2e94...output omitted...
+ 1.20 KB / 1.20 KB [======================================================] 0s
+Copying blob sha256:b3949ae...output omitted...
+ 62.03 MB / 62.03 MB [====================================================] 5s
+Writing manifest to image destination
+Storing signatures
+STEP 2: ADD root /
+STEP 3: COMMIT do180-mysql-57-rhel7
+efab36a2d63c2cbad0fee4a8e4858f1655e27ed2d6900748c87dee00bef8d18f
+To make the image available for OpenShift, tag it and push it up to quay.io. To do so, run the following commands in the terminal window.
+
+[student@workstation mysql]$ source /usr/local/etc/ocp4.config
+[student@workstation mysql]$ sudo podman login quay.io -u ${RHT_OCP4_QUAY_USER}
+Password: your_quay_password
+Login Succeeded!
+[student@workstation mysql]$ sudo podman tag \
+> do180-mysql-57-rhel7 quay.io/${RHT_OCP4_QUAY_USER}/do180-mysql-57-rhel7
+[student@workstation mysql]$ sudo podman push \
+> quay.io/${RHT_OCP4_QUAY_USER}/do180-mysql-57-rhel7
+Getting image source signatures
+Copying blob ssha256:04dbae...b21619
+205.17 MB / 205.17 MB [=================================================] 1m19s
+...output omitted...
+Writing manifest to image destination
+Storing signatures
+NOTE
+The config sha256: value in the above output may differ from your output.
+
+WARNING
+Make sure the repository is public in quay.io so OpenShift can get the image from it. Refer to the Repositories Visibility section of the Appendix C to read details about how to change repository visibility.
+
+Build the base image for the To Do List application using the Node.js Dockerfile, located in the exercise subdirectory images/nodejs. Tag the image as do180-nodejs. Do not publish this image to the registry.
+
+[student@workstation mysql]$ cd ~/DO180/labs/multicontainer-openshift
+[student@workstation multicontainer-openshift]$ cd images/nodejs
+[student@workstation nodejs]$ sudo podman build --layers=false -t do180-nodejs .
+STEP 1: ubi7/ubi:7.7
+Getting image source signatures
+Copying blob sha256:5d92fc...1ce84e
+...output omitted...
+Storing signatures
+STEP 2: MAINTAINER username <username@example.com>
+...output omitted...
+STEP 8: CMD  ["echo", "You must create your own container from this one."]
+...output omitted...
+STEP 9: COMMIT ...output omitted...localhost/do180-nodejs:latest
+...output omitted...
+Use the build.sh script in the deploy/nodejs subdirectory to build the To Do List application. Publish the application image to quay.io with an image tag of do180-todonodejs.
+
+Go to the ~/DO180/labs/multicontainer-openshift/deploy/nodejs directory and run the build.sh command to build the child image.
+
+[student@workstation nodejs]$ cd ~/DO180/labs/multicontainer-openshift
+[student@workstation multicontainer-openshift]$ cd deploy/nodejs
+[student@workstation nodejs]$ ./build.sh
+Preparing build folder
+STEP 1: FROM do180-nodejs
+STEP 2: ARG NEXUS_BASE_URL
+STEP 3: MAINTAINER username <username@example.com>
+...output omitted...
+STEP 7: CMD  ["scl","enable","rh-nodejs8","./run.sh"]
+STEP 8: COMMIT do180/todonodejs
+...output omitted...
+Push the image to quay.io.
+
+In order to make the image available for OpenShift to use in the template, tag it and push it to the private registry. To do so, run the following commands in the terminal window.
+
+[student@workstation nodejs]$ sudo podman tag do180/todonodejs \
+> quay.io/${RHT_OCP4_QUAY_USER}/do180-todonodejs
+[student@workstation nodejs]$ sudo podman push \
+> quay.io/${RHT_OCP4_QUAY_USER}/do180-todonodejs
+Getting image source signatures
+Copying blob sha256:24a5c62...output omitted...
+...output omitted...
+Copying blob sha256:5f70bf1...output omitted...
+ 1024 B / 1024 B [=======================================================] 0s
+Copying config sha256:c43306d...output omitted...
+ 7.26 KB / 7.26 KB [=====================================================] 0s
+Writing manifest to image destination
+Copying config sha256:c43306d...output omitted...
+ 0 B / 7.26 KB [---------------------------------------------------------] 0s
+Writing manifest to image destination
+Storing signatures
+WARNING
+Make sure the repository is public in quay.io so OpenShift can get the image from it. Refer to the Repositories Visibility section of the Appendix C to read details about how to change repository visibility.
+
+Create the To Do List application from the provided JSON template.
+
+Log in to OpenShift Container Platform.
+
+[student@workstation nodejs]$ oc login -u ${RHT_OCP4_DEV_USER} \
+>  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+Login successful.
+
+...output omitted...
+
+Using project "default".
+If the oc login command prompts about using insecure connections, answer y (yes).
+
+Create a new project template in OpenShift to use for this exercise. Run the following command to create the template project.
+
+[student@workstation nodejs]$ oc new-project ${RHT_OCP4_DEV_USER}-template
+Now using project ...output omitted...
+Review the template.
+
+Using your preferred editor, open and examine the template located at /home/student/DO180/labs/multicontainer-openshift/todo-template.json. Notice the following resources defined in the template and review their configurations.
+
+The todoapi pod definition defines the Node.js application.
+
+The mysql pod definition defines the MySQL database.
+
+The todoapi service provides connectivity to the Node.js application pod.
+
+The mysql service provides connectivity to the MySQL database pod.
+
+The dbinit persistent volume claim definition defines the MySQL /var/lib/mysql/init volume.
+
+The dbclaim persistent volume claim definition defines the MySQL /var/lib/mysql/data volume.
+
+Process the template and create the application resources.
+
+Use the oc process command to process the template file. This template requires the Quay.io namespace to retrieve the container images, as the RHT_OCP4_QUAY_USER parameter. Use the pipe command to send the result to the oc create command.
+
+Run the following command in the terminal window:
+
+[student@workstation nodejs]$ cd /home/student/DO180/labs/multicontainer-openshift
+[student@workstation multicontainer-openshift]$ oc process \
+> -f todo-template.json -p RHT_OCP4_QUAY_USER=${RHT_OCP4_QUAY_USER} \
+> | oc create -f -
+pod/mysql created
+pod/todoapi created
+service/todoapi created
+service/mysql created
+persistentvolumeclaim/dbinit created
+persistentvolumeclaim/dbclaim created
+Review the deployment.
+
+Review the status of the deployment using the oc get pods command with the -w option to continue to monitor the pod status. Wait until both the containers are running. It may take some time for both pods to start.
+
+[student@workstation multicontainer-openshift]$ oc get pods -w
+NAME      READY     STATUS              RESTARTS   AGE
+mysql     0/1       ContainerCreating   0          27s
+todoapi   1/1       Running             0          27s
+mysql     1/1       Running             0          27s
+Press Ctrl+C to exit the command.
+
+Expose the Service.
+
+To allow the To Do List application to be accessible through the OpenShift router and to be available as a public FQDN, use the oc expose command to expose the todoapi service.
+
+Run the following command in the terminal window.
+
+[student@workstation multicontainer-openshift]$ oc expose service todoapi
+route.route.openshift.io/todoapi exposed
+Test the application.
+
+Find the FQDN of the application by running the oc status command and note the FQDN for the app.
+
+Run the following command in the terminal window.
+
+[student@workstation multicontainer-openshift]$ oc status | grep -o "http:.*com"
+http://todoapi-${RHT_OCP4_QUAY_USER}-template.${RHT_OCP4_WILDCARD_DOMAIN}
+Use curl to test the REST API for the To Do List application.
+
+[student@workstation multicontainer-openshift]$ curl -w "\n" \
+> $(oc status | grep -o "http:.*com")/todo/api/items/1
+{"id":1,"description":"Pick up newspaper","done":false}
+The -w "\n" option with curl command lets the shell prompt appear at the next line rather than merging with the output in the same line.
+
+Open Firefox on workstation and point your browser to http://todoapi-${RHT_OCP4_QUAY_USER}-template.${RHT_OCP4_WILDCARD_DOMAIN}/todo/ and you should see the To Do List application.
+
+NOTE
+The trailing slash in the URL mentioned above is necessary. If you do not include that in the URL, you may encounter issues with the application.
+
+
+Figure 7.4: To Do List application
+Finish
+
+On workstation, run the lab multicontainer-openshift finish script to complete this lab.
+
+[student@workstation ~]$ lab multicontainer-openshift finish
+This concludes the guided exercise.

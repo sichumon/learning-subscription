@@ -1,0 +1,58 @@
+Quiz: Describing the Architecture of OpenShift
+Choose the correct answers to the following questions:
+
+1.	OpenShift is based on which of the following container orchestration technologies?
+
+A	Docker Swarm
+
+B	Rancher
+
+C	Kubernetes
+
+D	Mesosphere Marathon
+
+E	CoreOS Fleet
+
+2.	Which two of the following statements are true of OpenShift Container Platform? (Choose two.)
+
+A	OpenShift provides an OAuth server that authenticates calls to its REST API.
+
+B	OpenShift requires the CRI-O container engine.
+
+C	Kubernetes follows a declarative architecture, but OpenShift follows a more traditional imperative architecture.
+
+D	OpenShift extension APIs run as system services.
+
+3.	Which of the following servers runs Kubernetes API components?
+
+A	Worker nodes
+
+B	Nodes
+
+C	Control plane nodes
+
+4.	Which of the following components does OpenShift add to upstream Kubernetes?
+
+A	The etcd database
+
+B	A container engine
+
+C	A registry server
+
+D	A scheduler
+
+E	The Kubelet
+
+5.	Which of the following sentences is true regarding support for storage with OpenShift?
+
+A	Users can only store persistent data in the etcd database.
+
+B	Users can only deploy on OpenShift cloud-native applications that conform to the Twelve-Factor App methodology.
+
+C	Administrators must configure storage plug-ins appropriate for their cloud providers.
+
+D	Administrators must define persistent volumes before any user can deploy applications that require persistent storage.
+
+E	Users can deploy applications that require persistent storage by relying on the default storage class.
+
+ANSWERS : 1.C 2.A,B 3.C 4.C  5.E

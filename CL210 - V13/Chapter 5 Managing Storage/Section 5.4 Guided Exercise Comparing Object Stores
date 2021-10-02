@@ -1,0 +1,212 @@
+Guided Exercise: Comparing Object Stores
+In this exercise, you will add a second disk to the OpenStack object store. You will also create an object container with a file object in it and find the structure of the object in the back-end disk.
+
+Outcomes
+
+You should be able to:
+
+Create objects in the OpenStack object store and find the actual bits on the disk.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run lab storage-swift setup to verify that OpenStack services are running and the environment is ready for the exercise.
+
+[student@workstation ~]$ lab storage-swift setup
+Verify the health of the Docker containers relevant to OpenStack object store.
+
+Open an SSH session to controller0 as root.
+
+[student@workstation ~]$ ssh root@controller0
+[root@controller0 ~]# 
+Verify the health of the containers relevant to OpenStack object store.
+
+[root@controller0 ~]# docker ps --format="{{.Names}}\t{{.Status}}" | grep swift
+swift_proxy Up About an hour (healthy)
+swift_container_auditor Up About an hour
+swift_object_expirer  Up About an hour
+swift_object_updater  Up About an hour
+swift_container_replicator  Up About an hour
+swift_account_auditor Up About an hour
+swift_account_server  Up About an hour (healthy)
+swift_object_replicator Up About an hour
+swift_container_server  Up About an hour (healthy)
+swift_rsync Restarting (11) 49 minutes ago
+swift_account_reaper  Up About an hour
+swift_account_replicator  Up About an hour
+swift_object_auditor  Up About an hour
+swift_object_server Up About an hour (healthy)
+swift_container_updater Up About an hour
+NOTE
+You can ignore the Restarting state of the swift_rsync container in the preceding output.
+
+Add /srv/node/d2 as an additional device to OpenStack object store. Update the ring files to ensure that each device in the OpenStack object store gets to accommodate a copy of the same object.
+
+NOTE
+Due to the classroom limitations, you are using a directory (/srv/node/d2) in place a disk device to support the OpenStack object store. In practice, you would use an actual disk device, typically formatted with a file system such as XFS.
+
+Verify that there is currently a single device that the OpenStack object store ring files are aware of.
+
+[root@controller0 ~]# cd /var/lib/config-data/puppet-generated/swift/etc/swift/
+[root@controller0 swift]# swift-ring-builder account.ring.gz
+Note: using account.builder instead of account.ring.gz as builder file
+account.builder, build version 2, id 5ef67cb074a0430ebc5d25f1ce51f329
+1024 partitions, 1.000000 replicas, 1 regions, 1 zones, 1 devices, 0.00 balance, 0.00 dispersion
+The minimum number of hours before a partition can be reassigned is 1 (0:00:00 remaining)
+The overload factor is 0.00% (0.000000)
+Ring file account.ring.gz is up-to-date
+Devices:   id region zone ip address:port replication ip:port  name weight partitions balance flags meta
+            0      1    1 172.24.4.1:6002     172.24.4.1:6002    d1 100.00       1024    0.00
+[root@controller0 swift]# swift-ring-builder container.ring.gz
+Note: using container.builder instead of container.ring.gz as builder file
+container.builder, build version 2, id 66dcd204b5f44375b5d4e1dd677a962b
+1024 partitions, 1.000000 replicas, 1 regions, 1 zones, 1 devices, 0.00 balance, 0.00 dispersion
+The minimum number of hours before a partition can be reassigned is 1 (0:00:00 remaining)
+The overload factor is 0.00% (0.000000)
+Ring file container.ring.gz is up-to-date
+Devices:   id region zone ip address:port replication ip:port  name weight partitions balance flags meta
+            0      1    1 172.24.4.1:6001     172.24.4.1:6001    d1 100.00       1024    0.00
+[root@controller0 swift]# swift-ring-builder object.ring.gz
+Note: using object.builder instead of object.ring.gz as builder file
+object.builder, build version 2, id 8a94f604449f4d83aeb2c18b0bd47f79
+1024 partitions, 1.000000 replicas, 1 regions, 1 zones, 1 devices, 0.00 balance, 0.00 dispersion
+The minimum number of hours before a partition can be reassigned is 1 (0:00:00 remaining)
+The overload factor is 0.00% (0.000000)
+Ring file object.ring.gz is up-to-date
+Devices:   id region zone ip address:port replication ip:port  name weight partitions balance flags meta
+            0      1    1 172.24.4.1:6000     172.24.4.1:6000    d1 100.00       1024    0.00
+Update the OpenStack object store ring builder files to add /srv/node/d2 as an additional device. Set the weight of the new device to 100.
+
+[root@controller0 swift]# swift-ring-builder account.builder \
+add z1-172.24.4.1:6002/d2 100
+WARNING: No region specified for z1-172.24.4.1:6002/d2. Defaulting to region 1.
+Device d1r1z1-172.24.4.1:6002R172.24.4.1:6002/d2_"" with 100.0 weight got id 1
+[root@controller0 swift]# swift-ring-builder container.builder \
+add z1-172.24.4.1:6001/d2 100
+WARNING: No region specified for z1-172.24.4.1:6001/d2. Defaulting to region 1.
+Device d1r1z1-172.24.4.1:6001R172.24.4.1:6001/d2_"" with 100.0 weight got id 1
+[root@controller0 swift]# swift-ring-builder object.builder \
+add z1-172.24.4.1:6000/d2 100
+WARNING: No region specified for z1-172.24.4.1:6000/d2. Defaulting to region 1.
+Device d1r1z1-172.24.4.1:6000R172.24.4.1:6000/d2_"" with 100.0 weight got id 1
+Set the replica count to 2 in the ring builder files.
+
+[root@controller0 swift]# swift-ring-builder account.builder set_replicas 2
+The replica count is now 2.000000.
+The change will take effect after the next rebalance.
+[root@controller0 swift]# swift-ring-builder container.builder set_replicas 2
+The replica count is now 2.000000.
+The change will take effect after the next rebalance.
+[root@controller0 swift]# swift-ring-builder object.builder set_replicas 2
+The replica count is now 2.000000.
+The change will take effect after the next rebalance.
+Verify the new device and the replica count in the ring builder files.
+
+[root@controller0 swift]# swift-ring-builder account.builder
+account.builder, build version 3, id 5ef67cb074a0430ebc5d25f1ce51f329
+1024 partitions, 2.000000 replicas, 1 regions, 1 zones, 2 devices, 100.00 balance, 0.00 dispersion
+The minimum number of hours before a partition can be reassigned is 1 (0:00:00 remaining)
+The overload factor is 0.00% (0.000000)
+Ring file account.ring.gz is obsolete
+Devices:   id region zone ip address:port replication ip:port  name weight partitions balance flags meta
+            0      1    1 172.24.4.1:6002     172.24.4.1:6002    d1 100.00       1024    0.00
+            1      1    1 172.24.4.1:6002     172.24.4.1:6002    d2 100.00          0 -100.00
+[root@controller0 swift]# swift-ring-builder container.builder
+container.builder, build version 3, id 66dcd204b5f44375b5d4e1dd677a962b
+1024 partitions, 2.000000 replicas, 1 regions, 1 zones, 2 devices, 100.00 balance, 0.00 dispersion
+The minimum number of hours before a partition can be reassigned is 1 (0:00:00 remaining)
+The overload factor is 0.00% (0.000000)
+Ring file container.ring.gz is obsolete
+Devices:   id region zone ip address:port replication ip:port  name weight partitions balance flags meta
+            0      1    1 172.24.4.1:6001     172.24.4.1:6001    d1 100.00       1024    0.00
+            1      1    1 172.24.4.1:6001     172.24.4.1:6001    d2 100.00          0 -100.00
+[root@controller0 swift]# swift-ring-builder object.builder
+object.builder, build version 3, id 8a94f604449f4d83aeb2c18b0bd47f79
+1024 partitions, 2.000000 replicas, 1 regions, 1 zones, 2 devices, 100.00 balance, 0.00 dispersion
+The minimum number of hours before a partition can be reassigned is 1 (0:00:00 remaining)
+The overload factor is 0.00% (0.000000)
+Ring file object.ring.gz is obsolete
+Devices:   id region zone ip address:port replication ip:port  name weight partitions balance flags meta
+            0      1    1 172.24.4.1:6000     172.24.4.1:6000    d1 100.00       1024    0.00
+            1      1    1 172.24.4.1:6000     172.24.4.1:6000    d2 100.00          0 -100.00
+Rebalance the OpenStack object store ring files.
+
+[root@controller0 swift]# swift-ring-builder account.builder rebalance
+Reassigned 1024 (100.00%) partitions. Balance is now 0.00.  Dispersion is now 0.00
+[root@controller0 swift]# swift-ring-builder container.builder rebalance
+Reassigned 1024 (100.00%) partitions. Balance is now 0.00.  Dispersion is now 0.00
+[root@controller0 swift]# swift-ring-builder object.builder rebalance
+Reassigned 1024 (100.00%) partitions. Balance is now 0.00.  Dispersion is now 0.00
+Restart the swift_proxy, swift_account_server, swift_container_server, and swift_object_server containers.
+
+[root@controller0 swift]# docker restart \
+swift_proxy swift_account_server \
+swift_container_server swift_object_server
+swift_proxy
+swift_account_server
+swift_container_server
+swift_object_server
+Log off from controller0.
+
+[root@controller0 swift]# logout
+Connection to controller0 closed.
+[student@workstation ~]$ 
+Create the object container finance-container1 in the finance project. Upload /home/student/finance-object1 to finance-container1 as the finance-object1 object. Locate the file representing the finance-object1 object in the back-end storage devices of the OpenStack object store.
+
+As developer1, create the object container finance-container1.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ openstack container create \
+finance-container1
++------------------+--------------------+----------------+
+| account          | container          | x-trans-id     |
++------------------+--------------------+----------------+
+| AUTH_3c00...953c | finance-container1 | txe0c6b...30a9 |
++------------------+--------------------+----------------+
+Upload /home/student/finance-object1 to finance-container1.
+
+[student@workstation ~(developer1-finance)]$ openstack object create \
+finance-container1 finance-object1
++-----------------+--------------------+----------------------------------+
+| object          | container          | etag                             |
++-----------------+--------------------+----------------------------------+
+| finance-object1 | finance-container1 | 740580d95587be0197cf16e2d96f4931 |
++-----------------+--------------------+----------------------------------+
+Locate finance-object1 in the back-end storage devices of the OpenStack object store.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+find /srv/node -iname *.data
+/srv/node/d1/objects/211/7d6/34cd...b7d6/1541157229.63432.data
+/srv/node/d2/objects/211/7d6/34cd...b7d6/1541157229.63432.data
+Notice the two copies of the data file under each of the /srv/node/d1 and /srv/node/d2 directories that pose as storage devices to the OpenStack object store in the classroom environment. These data files back the finance-object1 object in the finance-container1 object container.
+
+Confirm that the content of the data files as shown in the preceding output matches that of the finance-object1 object.
+
+[student@workstation ~(developer1-finance)]$ cat finance-object1
+This is to test the OpenStack Object Store service
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+'find /srv/node -iname *.data -exec cat {} \;'
+This is to test the OpenStack Object Store service
+This is to test the OpenStack Object Store service
+Upload another object, /home/student/finance-object2, to finance-container1 as finance-object2. Trace the back-end data files to verify the copies of the object. Determine the appropriate replicas for each object.
+
+Upload /home/student/finance-object2 to finance-container1.
+
+[student@workstation ~(developer1-finance)]$ openstack object create \
+finance-container1 finance-object2
+...output omitted...
+Trace the back-end data files and confirm that each of the /srv/node/d1 and /srv/node/d2 storage devices contain a copy of the objects.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0 \
+find /srv/node -iname *.data
+/srv/node/d1/objects/211/7d6/34cd...b7d6/1541494418.07269.data
+/srv/node/d1/objects/150/f97/25ac...0f97/1541494485.92954.data
+/srv/node/d2/objects/211/7d6/34cd...b7d6/1541494418.07269.data
+/srv/node/d2/objects/150/f97/25ac...f97/1541494485.92954.data
+Notice the similarity in the hierarchy of each pair of the data files, spanning across both the storage devices. This similarity helps determine the data files that belong to the same object. For example, both /srv/node/d1/ and /srv/node/d2/ have a copy of the 1541494418.07269.data data file under the same objects/211/7d6/34cd...b7d6/ hierarchy stating that the data files are the replicas of the same object.
+
+Cleanup
+
+On workstation, run the lab storage-swift cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab storage-swift cleanup
+This concludes the guided exercise.

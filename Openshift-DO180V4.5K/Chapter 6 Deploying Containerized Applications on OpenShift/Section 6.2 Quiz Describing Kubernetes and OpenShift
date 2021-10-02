@@ -1,0 +1,82 @@
+Quiz: Describing Kubernetes and OpenShift
+Choose the correct answers to the following questions:
+
+1.		
+Which two sentences are correct regarding Kubernetes architecture? (Choose two.)
+
+A		
+Kubernetes nodes can be managed without a master.
+
+B		
+Kubernetes masters manage pod scaling.
+
+C		
+Kubernetes masters schedule pods to specific nodes.
+
+D		
+Kubernetes tools cannot be used to manage resources in an OpenShift cluster.
+
+E		
+Containers created from Kubernetes pods cannot be managed using standalone tools such as Podman.
+
+2.		
+Which two sentences are correct regarding Kubernetes and OpenShift resource types? (Choose two.)
+
+A		
+A pod is responsible for provisioning its own persistent storage.
+
+B		
+All pods generated from the same replication controller have to run in the same node.
+
+C		
+A route is responsible for providing IP addresses for external access to pods.
+
+D		
+A replication controller is responsible for monitoring and maintaining the number of pods for a particular application.
+
+3.		
+Which two statements are true regarding Kubernetes and OpenShift networking? (Choose two.)
+
+A		
+A Kubernetes service can provide an IP address to access a set of pods.
+
+B		
+Kubernetes is responsible for providing a fully qualified domain name for a pod.
+
+C		
+A replication controller is responsible for routing external requests to the pods.
+
+D		
+A route is responsible for providing DNS names for external access.
+
+4.		
+Which statement is correct regarding persistent storage in OpenShift and Kubernetes?
+
+A		
+A PVC represents a storage area that a pod can use to store data and is provisioned by the application developer.
+
+B		
+A PVC represents a storage area that can be requested by a pod to store data but is provisioned by the cluster administrator.
+
+C		
+A PVC represents the amount of memory that can be allocated to a node, so that a developer can state how much memory he requires for his application to run.
+
+D		
+A PVC represents the number of CPU processing units that can be allocated to an application pod, subject to a limit managed by the cluster administrator.
+
+5.		
+Which statement is correct regarding OpenShift additions to Kubernetes?
+
+A		
+OpenShift adds features to simplify Kubernetes configuration of many real-world use cases.
+
+B		
+Container images created for OpenShift cannot be used with plain Kubernetes.
+
+C		
+Red Hat maintains forked versions of Kubernetes internal to the RHOCP product.
+
+D		
+Doing continuous integration and continuous deployment with RHOCP requires external tools.
+
+1. B,C 2.C,D 3.A,D  4.B  5.A

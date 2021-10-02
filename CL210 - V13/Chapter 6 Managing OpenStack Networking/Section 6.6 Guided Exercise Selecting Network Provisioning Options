@@ -1,0 +1,156 @@
+
+Guided Exercise: Selecting Network Provisioning Options
+In this exercise, you will create a provider network, and then verify the components involved.
+
+Outcomes
+
+You should be able to:
+
+Create a VLAN provider network.
+
+Describe the components and configuration required to support a VLAN provider network.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab networking-provisioning setup command. This script creates any resources required to perform the exercise.
+
+[student@workstation ~]$ lab networking-provisioning setup
+Log in to controller0 and determine the available physical networks where you can create provider networks.
+
+From workstation, log in to controller0 and change to the root user.
+
+[student@workstation ~]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+Use the ovs-vsctl command to display the ovn-bridge-mappings configuration. This output lists which bridges are mapped to physical interfaces and are available for use as provider networks.
+
+[root@controller0 ~]# ovs-vsctl get open . external-ids:ovn-bridge-mappings
+"datacentre:br-ex,vlanprovider1:br-eth3,vlanprovider2:br-eth4,storage:br-trunk"
+The datacentre mapping is already in use to provide the flat external network. The storage mapping allows instances to mount CephFS volumes. This leaves vlanprovider1 and vlanprovider2 available for provider networks.
+
+Use the ovs-vsctl command to display the br-eth3 and br-eth4 bridges.
+
+[root@controller0 ~]# ovs-vsctl show
+...output omitted...
+    Bridge "br-eth4"
+        fail_mode: standalone
+        Port "eth4"
+            Interface "eth4"
+        Port "br-eth4"
+            Interface "br-eth4"
+                type: internal
+    Bridge "br-eth3"
+        fail_mode: standalone
+        Port "eth3"
+            Interface "eth3"
+        Port "br-eth3"
+            Interface "br-eth3"
+                type: internal
+...output omitted...
+Note that these bridges have no connection other than the physical interfaces.
+
+Determine whether VLAN ID ranges have been defined for any of the bridge mappings, then log out of controller0.
+
+[root@controller0 ~]# grep ^network_vlan_ranges \
+/var/lib/config-data/puppet-generated/neutron/etc/neutron/plugins/ml2/ml2_conf.ini
+network_vlan_ranges=datacentre:1:1000,vlanprovider1:101:104,vlanprovider2:101:104,
+storage:30:30
+[root@controller0 ~]# logout
+[heat-admin@controller0 ~]$ logout
+[student@workstation ~]$ 
+This means that provider networks can be created using the VLAN IDs from 101 to 104 inclusive.
+
+Create a VLAN provider network named provider1-103 with a matching subnet named subnet1-103 using the following table.
+
+Option	Value
+--external	 
+--share	 
+--provider-network-type	vlan
+--provider-physical-network	vlanprovider1
+--provider-segment	103
+--dhcp	 
+--subnet-range	10.0.103.0/24
+--allocation-pool	start=10.0.103.100,end=10.0.103.149
+On workstation source the /home/student/admin-rc user environment file.
+
+[student@workstation ~]$ source ~/admin-rc
+Create the provider1-103 provider network.
+
+[student@workstation ~]$ openstack network create \
+--external \
+--share \
+--provider-network-type vlan \
+--provider-physical-network vlanprovider1 \
+--provider-segment 103 \
+provider1-103
+...output omitted...
+| mtu                       | 1500                                 |
+| name                      | provider1-103                        |
+| port_security_enabled     | True                                 |
+| project_id                | 42eecbfbaf684f909abfe5304434fc77     |
+| provider:network_type     | vlan                                 |
+| provider:physical_network | vlanprovider1                        |
+| provider:segmentation_id  | 103                                  |
+| qos_policy_id             | None                                 |
+| revision_number           | 6                                    |
+| router:external           | External                             |
+...output omitted...
+Create the subnet1-103 subnet.
+
+[student@workstation ~]$ openstack subnet create \
+--dhcp \
+--subnet-range=10.0.103.0/24 \
+--allocation-pool=start=10.0.103.100,end=10.0.103.149 \
+--network provider1-103 \
+subnet1-103
++-------------------+--------------------------------------+
+| Field             | Value                                |
++-------------------+--------------------------------------+
+| allocation_pools  | 10.0.103.100-10.0.103.149            |
+| cidr              | 10.0.103.0/24                        |
+| created_at        | 2018-10-25T03:19:21Z                 |
+| description       |                                      |
+| dns_nameservers   |                                      |
+| enable_dhcp       | True                                 |
+| gateway_ip        | 10.0.103.1                           |
+...output omitted...
+Deploy an instance attached to the provider1-103 network.
+
+Source the /home/student/developer1-finance-rc user environment file.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ 
+Create an instance named finance-server1 using the following values.
+
+Option	Value
+--flavor	default
+--image	rhel7
+--key-name	example-keypair
+--network	provider1-103
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--network provider1-103 \
+--wait \
+finance-server1
+...output omitted...
+| addresses           | provider1-103=10.0.103.109      |
+...output omitted...
+From utility, use the ping command to test that finance-server1 is reachable on the provider1-103 network from outside of OpenStack.
+
+[student@workstation ~(developer1-finance)]$ ssh utility ping -c3 10.0.103.109
+PING 10.0.103.109 (10.0.103.109) 56(84) bytes of data.
+64 bytes from 10.0.103.109: icmp_seq=1 ttl=64 time=1.31 ms
+64 bytes from 10.0.103.109: icmp_seq=2 ttl=64 time=0.920 ms
+64 bytes from 10.0.103.109: icmp_seq=3 ttl=64 time=0.545 ms
+
+--- 10.0.103.109 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.545/0.926/1.313/0.313 ms
+Cleanup
+
+On workstation, run the lab networking-provisioning cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab networking-provisioning cleanup
+This concludes the guided exercise.

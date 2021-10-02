@@ -1,0 +1,344 @@
+
+Lab: Building a Custom Image
+Performance Checklist
+
+In this review, you will build a custom image and launch an instance using the custom image.
+
+Outcomes
+
+You should be able to:
+
+Prepare to launch an instance.
+
+Build an image with customizations.
+
+Create an SSH key pair to access instances.
+
+Launch an instance using the new image.
+
+Associate a floating IP address to the instance.
+
+Create security group rules to allow FTP traffic to and from the instance.
+
+WARNING
+Before starting the following exercises, you must reset your workstation, director, and overcloud virtual machines. This will destroy any data stored on those machines from previous exercises. If you want to keep any data from the lab environment, save it before resetting your machines. You must reset all machines in the lab environment for the following exercises to work as expected.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab image-cr setup command. This command ensures that the OpenStack services are running and the environment is appropriately configured for the lab.
+
+[studentworkstation ~]$ lab image-cr setup
+Instructions
+
+Use the following instructions to build an image with customizations and launch an instance using the customized image.
+
+Confirm that the user, project, network, router, flavor, and security group required to launch the instance exist. Use the architect1, and developer1 users' credential stored in the /home/student/architect1-rc, and /home/student/developer1-rc files respectively.
+
+Table 10.1. Lab Resources
+
+Resource type	Resource name
+Project	marketing
+User	developer1, architect1
+Private network	marketing-network1
+Router	marketing-router1
+Flavor	marketing-flavor
+Security group	marketing-secgroup
+
+On workstation, retrieve the http://materials.example.com/osp-small.qcow2 disk image and save it under /home/student/.
+
+Create a copy of the /usr/share/diskimage-builder/elements directory to work with under /home/student/.
+
+Create a post-install.d directory under the working copy of the rhel7 element.
+
+Create two scripts under the rhel7 element of the post-install.d phase directory to enable the vsftpd service and configure it such that anonymous FTP users can upload files to the FTP server.
+
+Set the executable permission on the scripts.
+
+Export the required environment variables for the disk-image-create command to successfully build the custom image.
+
+Build the marketing-rhel-ftp.qcow2 disk image and include the vsftpd package. The scripts created earlier are automatically integrated. Enter student as the password for the student user when prompted.
+
+Use the guestfish command to update the /etc/motd file of the marketing-rhel-ftp.qcow2 image file to include a custom message.
+
+As the developer1 OpenStack user, upload the marketing-rhel-ftp.qcow2 disk image to the OpenStack image service as marketing-rhel-ftp, with a minimum disk requirement of 10 GiB, and a minimum RAM requirement of 2 GiB.
+
+As developer1, create a new SSH key pair named marketing-keypair in the marketing project. Save the private key component of the key pair to /home/student/.ssh/marketing-keypair.pem.
+
+Associate an available floating IP address to the marketing-ftp-server instance.
+
+Add the new security group rules to the existing marketing-secgroup security group that allow FTP connection requests and data traffic to the marketing-ftp-server instance.
+
+Verify the FTP service and the custom message of the day configured in the instance.
+
+Confirm that the user, project, network, router, flavor, and security group required to launch the instance exist.
+
+As architect1, verify the role assignment of the developer1 user. Use Example as the user domain.
+
+[student@workstation ~]$ source architect1-marketing-rc
+[student@workstation ~(architect1-marketing)]$ openstack role assignment list \
+--name --user developer1 \
+--user-domain Example
++----------+--------------------+-------+-------------------+--------+-----------+
+| Role     | User               | Group | Project           | Domain | Inherited |
++----------+--------------------+-------+-------------------+--------+-----------+
+| _member_ | developer1@Example |       | marketing@Default |        | False     |
++----------+--------------------+-------+-------------------+--------+-----------+
+The preceding output shows that the user developer1 belongs to the marketing project with the _member_ role.
+
+As developer1, verify that the marketing-network network exists.
+
+[student@workstation ~(architect1-marketing)]$ source developer1-marketing-rc
+[student@workstation ~(developer1-marketing)]$ openstack network list
++-------------+---------------------+-------------+
+| ID          | Name                | Subnets     |
++-------------+---------------------+-------------+
+| 8fda...4666 | marketing-network1  | 5dc9...c143 |
+| d55f...a220 | provider-storage    | 6e5a...1d11 |
+| fc54...efb3 | provider-datacentre | 30c0...33f1 |
++-------------+---------------------+-------------+
+Verify that the marketing-router1 router exists.
+
+[student@workstation ~(developer1-marketing)]$ openstack router list -c Name
++-------------------+
+| Name              |
++-------------------+
+| marketing-router1 |
++-------------------+
+Verify that the marketing-flavor1 flavor exists.
+
+[student@workstation ~(developer1-marketing)]$ openstack flavor list -c Name
++--------------------+
+| Name               |
++--------------------+
+| default-extra-disk |
+| default            |
+| default-swap       |
+| marketing-flavor   |
++--------------------+
+Verify that the marketing-secgroup security group exists.
+
+[student@workstation ~(developer1-marketing)]$ openstack security group list \
+-c Name
++--------------------+
+| Name               |
++--------------------+
+| default            |
+| marketing-secgroup |
++--------------------+
+On workstation, retrieve the http://materials.example.com/osp-small.qcow2 disk image and save it under /home/student/.
+
+[student@workstation ~(developer1-marketing)]$ wget \
+http://materials.example.com/osp-small.qcow2
+--2018-11-22 08:40:58--  http://materials.example.com/osp-small.qcow2
+Resolving materials.example.com (materials.example.com)... 172.25.254.254
+Connecting to materials.example.com (materials.example.com)|172.25.254.254|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 1632174080 (1.5G)
+Saving to: ‘osp-small.qcow2’
+
+100%[===========================================>] 1,632,174,080 40.5MB/s   in 28s
+
+2018-11-22 08:41:26 (55.6 MB/s) - ‘osp-small.qcow2’ saved [1632174080/1632174080]
+Create a copy of the /usr/share/diskimage-builder/elements directory to work with under /home/student/.
+
+[student@workstation ~(developer1-marketing)]$ cp -a \
+/usr/share/diskimage-builder/elements /home/student/
+Create a post-install.d directory under the working copy of the rhel7 element.
+
+[student@workstation ~(developer1-marketing)]$ mkdir -p \
+/home/student/elements/rhel7/post-install.d
+Create two scripts under the rhel7 element of the post-install.d phase directory to enable the vsftpd service and configure it such that anonymous FTP users can upload files to the FTP server.
+
+Create the first script (/home/student/elements/rhel7/post-install.d/01-enable-vsftpd) with the following content:
+
+#!/bin/bash
+systemctl enable vsftpd
+Create the second script (/home/student/elements/rhel7/post-install.d/02-configure-vsftpd) with the following content:
+
+#!/bin/bash
+
+# Enable upload access for the anonymous users
+sed -i -e 's/.*anon_upload_enable=.*/anon_upload_enable=YES/' \
+/etc/vsftpd/vsftpd.conf
+
+# Create upload directory
+mkdir /var/ftp/upload
+
+# Adjust ownership and permissions
+chgrp ftp /var/ftp/upload/
+chmod g+w /var/ftp/upload/
+Change to the /home/student directory and set the executable permission on the scripts.
+
+[student@workstation post-install.d(developer1-marketing)]$ cd
+[student@workstation ~(developer1-marketing)]$ chmod +x \
+/home/student/elements/rhel7/post-install.d/*
+Export the following environment variables, which diskimage-builder requires.
+
+Table 10.2. Environment Variables
+
+Variable	Content
+DIB_LOCAL_IMAGE	/home/student/osp-small.qcow2
+DIB_YUM_REPO_CONF	/etc/yum.repos.d/openstack.repo
+ELEMENTS_PATH	/home/student/elements
+DIB_NO_TMPFS	1
+
+[student@workstation ~(developer1-marketing)]$ export \
+DIB_LOCAL_IMAGE=/home/student/osp-small.qcow2
+[student@workstation ~(developer1-marketing)]$ export \
+DIB_YUM_REPO_CONF=/etc/yum.repos.d/openstack.repo
+[student@workstation ~(developer1-marketing)]$ export \
+ELEMENTS_PATH=/home/student/elements
+[student@workstation ~]$ export DIB_NO_TMPFS=1
+Build the marketing-rhel-ftp.qcow2 disk image and include the vsftpd package. The scripts created earlier are automatically integrated. Enter student as the password for the student user when prompted.
+
+[student@workstation ~(developer1-marketing)]$ disk-image-create vm rhel7 \
+-t qcow2 \
+-p vsftpd \
+-o marketing-rhel-ftp.qcow2
+...output omitted...
+Use the guestfish command to update the /etc/motd file of the marketing-rhel-ftp.qcow2 image file to include a custom message.
+
+[student@workstation ~(developer1-marketing)]$ guestfish -i -a \
+~/marketing-rhel-ftp.qcow2
+
+Welcome to guestfish, the guest filesystem shell for
+editing virtual machine filesystems and disk images.
+
+Type: 'help' for help on commands
+      'man' to read the manual
+      'quit' to quit the shell
+
+Operating system: Red Hat Enterprise Linux Server 7.5 (Maipo)
+/dev/sda1 mounted on /
+
+><fs> write /etc/motd "Hello World"
+><fs> cat /etc/motd
+Hello World
+><fs> selinux-relabel /etc/selinux/targeted/contexts/files/file_contexts /
+><fs> exit
+IMPORTANT
+The preceding selinux-relabel command applies the appropriate SELinux file contexts to the root file system recursively.
+
+As the developer1 OpenStack user, upload the marketing-rhel-ftp.qcow2 disk image to the OpenStack Image service as marketing-rhel-ftp, with a minimum disk requirement of 10 GiB, and a minimum RAM requirement of 2 GiB.
+
+As developer1, use the openstack command to upload the disk image marketing-rhel-ftp.qcow2 into the OpenStack Image service.
+
+[student@workstation ~(developer1-marketing)]$ openstack image create \
+--disk-format qcow2 \
+--min-disk 10 \
+--min-ram 2048 \
+--file ~/marketing-rhel-ftp.qcow2 \
+marketing-rhel-ftp
+...output omitted...
+As developer1, create a new SSH key pair named marketing-keypair in the marketing project. Save the private key component of the key pair to /home/student/.ssh/marketing-keypair.pem. Set 600 as the file permissions for /home/student/.ssh/marketing-keypair.pem.
+
+[student@workstation ~(developer1-marketing)]$ openstack keypair create \
+marketing-keypair > /home/student/.ssh/marketing-keypair.pem
+[student@workstation ~(developer1-marketing)]$ chmod 600 \
+~/.ssh/marketing-keypair.pem
+Launch an instance in the environment using the following attributes. Use the user-data file /home/student/cr1-user-data to customize the SELinux settings of the marketing-ftp-server instance.
+
+Table 10.3. Instance Attributes
+
+Attribute	Value
+flavor	marketing-flavor
+key pair	marketing-keypair
+network	marketing-network1
+image	marketing-rhel-ftp
+security group	marketing-secgroup
+user data file	/home/student/cr1-user-data
+name	marketing-ftp-server
+
+[student@workstation ~(developer1-marketing)]$ openstack server create \
+--flavor marketing-flavor \
+--key-name marketing-keypair \
+--nic net-id=marketing-network1 \
+--image marketing-rhel-ftp \
+--security-group marketing-secgroup \
+--user-data cr1-user-data \
+--wait marketing-ftp-server
+...output omitted...
+List the available floating IP addresses, and then allocate one to marketing-ftp-server.
+
+List the available floating IP addresses. The floating IP addresses available on your system may differ from those shown below.
+
+[student@workstation ~(developer1-marketing)]$ openstack floating ip list \
+-c "Floating IP Address" -c Port
++---------------------+------+
+| Floating IP Address | Port |
++---------------------+------+
+| 172.25.250.101      | None |
++---------------------+------+
+Associate an available floating IP address to the marketing-ftp-server instance.
+
+[student@workstation ~(developer1-marketing)]$ openstack server add floating \
+ip marketing-ftp-server 172.25.250.101
+Add the new security group rules to the existing marketing-secgroup security group that allow FTP connection requests and data traffic to the marketing-ftp-server instance.
+
+[student@workstation ~(developer1-marketing)]$ openstack security group \
+rule create \
+--dst-port 21:21 \
+--protocol tcp \
+marketing-secgroup
+...output omitted...
+[student@workstation ~(developer1-marketing)]$ openstack security group \
+rule create \
+--dst-port 20:20 \
+--protocol tcp \
+marketing-secgroup
+...output omitted...
+If the image build and customization were successful, the instance created using this image will have the FTP service activated for anonymous FTP users to upload files.
+
+Use the ftp command to connect to the FTP service in the marketing-ftp-server instance and upload the /home/student/developer1-marketing-rc file to the FTP server as the ftp anonymous user.
+
+[student@workstation ~(developer1-marketing)]$ ftp -A 172.25.250.101
+Connected to 172.25.250.101 (172.25.250.101).
+220 (vsFTPd 3.0.2)
+Name (172.25.250.101:student): ftp
+331 Please specify the password.
+Password: Enter
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> cd upload
+250 Directory successfully changed.
+ftp> pwd
+257 "/upload"
+ftp> put developer1-marketing-rc
+local: developer1-marketing-rc remote: developer1-marketing-rc
+200 PORT command successful. Consider using PASV.
+150 Ok to send data.
+226 Transfer complete.
+347 bytes sent in 3.9e-05 secs (8897.44 Kbytes/sec)
+ftp> ls
+200 PORT command successful. Consider using PASV.
+150 Here comes the directory listing.
+-rw-------    1 14       50            347 Nov 22 12:34 developer1-marketing-rc
+226 Directory send OK.
+ftp> exit
+221 Goodbye.
+The -A option in the preceding ftp command causes the FTP client to run in active mode rather than passive mode.
+
+Verify the custom message set in the /etc/motd file of the instance.
+
+[student@workstation ~(developer1-marketing)]$ ssh -i \
+~/.ssh/marketing-keypair.pem cloud-user@172.25.250.101
+Last login: Thu Nov 22 12:12:57 2018 from workstation.lab.example.com
+Hello World
+[cloud-user@marketing-ftp-server ~]$ 
+Notice the custom message in the preceding output that appears right after the successful SSH authentication.
+
+Log off from the marketing-ftp-server instance.
+
+[cloud-user@marketing-ftp-server ~]$ logout
+Evaluation
+
+On workstation, run the lab image-cr grade command to confirm success of this exercise. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~(developer1-marketing)]$ lab image-cr grade
+Cleanup
+
+On workstation, run the lab image-cr cleanup command to clean up this exercise.
+
+[student@workstation ~(developer1-marketing)]$ lab image-cr cleanup
+This concludes the lab.

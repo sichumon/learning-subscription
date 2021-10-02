@@ -1,0 +1,414 @@
+Guided Exercise: Implementing Open Virtual Networks (OVN)
+In this exercise, you will manage OVN and security groups, look at OpenFlow flows, and review the DHCP configuration and the routing tables.
+
+Outcomes
+
+You should be able to:
+
+Deploy an instance with public access.
+
+Create security group rules and review OpenFlow flows for security policies.
+
+Review the OpenFlow rules for DHCP.
+
+Review the routing tables in OpenFlow.
+
+Log in to workstation as student using student as the password.
+
+Run the lab networking-ovn setup command. This script ensures that OpenStack services are running and the environment is properly configured for the exercise.
+
+[student@workstation ~]$ lab networking-ovn setup
+As the developer1 user, confirm that the finance-network1 network exists and review the security group rules for the network.
+
+On workstation, source the /home/student/developer1-rc identity environment file to provide access to OpenStack services for the developer1 user.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ 
+Use the openstack network list command to list the available networks. Note the ID of finance-network1.
+
+[student@workstation ~(developer1-finance)]$ openstack network list -c ID -c Name
++--------------------------------------+---------------------+
+| ID                                   | Name                |
++--------------------------------------+---------------------+
+| 7ad21970-5986-42e0-9b48-64ab414bb0b1 | finance-network1    |
+| d55f6d1e-c29e-4825-8de4-01dd95f8a220 | provider-storage    |
+| f8366a5d-9cf9-4d38-9760-9cf9df4eceaa | provider-datacentre |
++--------------------------------------+---------------------+
+Open another terminal. From workstation, log in to the controller0 node as the heat-admin user. Use the sudo -i command to gain root privileges.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]#
+On controller0, use the ovs-vsctl list open command to find the IP address of the Northbound and Southbound databases. The IP address is in the ovn-remote parameter. Set the environment variables for the OVN databases.
+
+[root@controller0 ~]# ovs-vsctl list open
+...output omitted...
+external_ids        : {hostname="controller0.overcloud.example.com", ovn-bridge=br-int, ovn-bridge-mappings="datacentre:br-ex", ovn-cms-options=enable-chassis-as-gw, ovn-encap-ip="172.24.2.1", ovn-encap-type=geneve, ovn-remote="tcp:172.24.1.50:6642", rundir="/var/run/openvswitch", system-id="698c1e91-b2c0-455a-becb-0baa27d275ad"}
+...output omitted...
+[root@controller0 ~]# export OVN_SB_DB=tcp:172.24.1.50:6642
+[root@controller0 ~]# export OVN_NB_DB=tcp:172.24.1.50:6641
+Use the ovn-nbctl ls-list command to list all existing switches. Using the ovn-nbctl acl-list neutron-switch_ID command, list the security rules for the network switch. The switch_ID matches the ID of the finance-network1 network. Notice that there are currently no security rules assigned to the network switch.
+
+[root@controller0 ~]# ovn-nbctl ls-list
+...output omitted...
+bed0...4def (neutron-7ad21970-5986-42e0-9b48-64ab414bb0b1)
+...output omitted...
+[root@controller0 ~]# ovn-nbctl acl-list \ 
+neutron-7ad21970-5986-42e0-9b48-64ab414bb0b1
+[root@controller0 ~]# 
+On the workstation terminal, as the developer1 user, create a new instance called finance-server1. Use the rhel7 image, the default flavor, the default security group, and the finance-network1 network.
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--image rhel7 \
+--flavor default \
+--nic net-id=finance-network1 \
+--security-group default \
+--wait finance-server1
++-----------------------------+---------------------------------+
+| Field                       | Value                           |
++-----------------------------+---------------------------------+
+| OS-DCF:diskConfig           | MANUAL                          |
+| OS-EXT-AZ:availability_zone | nova                            |
+| OS-EXT-STS:power_state      | Running                         |
+| OS-EXT-STS:task_state       | None                            |
+| OS-EXT-STS:vm_state         | active                          |
+| OS-SRV-USG:launched_at      | 2018-09-26T13:33:49.000000      |
+| OS-SRV-USG:terminated_at    | None                            |
+| accessIPv4                  |                                 |
+| accessIPv6                  |                                 |
+| addresses                   | finance-network1=192.168.1.10   |
+| adminPass                   | hyP4Dn3Dvse6                    |
+| config_drive                |                                 |
+| created                     | 2018-09-26T13:33:14Z            |
+| flavor                      | default (71eb...a769)           |
+| hostId                      | deb5...932f                     |
+| id                          | e417...5720                     |
+| image                       | rhel7 (ec201...e840)            |
+| key_name                    | None                            |
+| name                        | finance-server1                 |
+| progress                    | 0                               |
+| project_id                  | 0baea8e7fc5b4720bc418c0172ee6ae5|
+| properties                  |                                 |
+| security_groups             | name='default'                  |
+| status                      | ACTIVE                          |
+| updated                     | 2018-09-26T13:33:49Z            |
+| user_id                     | 92f5297388884088b72f01b0f2787127|
+| volumes_attached            |                                 |
++-----------------------------+---------------------------------+
+On controller0, recheck the security policies for the finance-network1 network switch. On workstation, list the security group rules for the default security group. Match the OpenFlow flows to the security group rules. Match the inport and outport parameters to their respective OpenStack entity.
+
+On controller0 use the ovn-nbctl acl-list neutron-switch_ID command to recheck the security group policies for the finance-network1 network switch.
+
+[root@controller0 ~]# ovn-nbctl acl-list \
+neutron-7ad21970-5986-42e0-9b48-64ab414bb0b1
+from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4) allow-related
+from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.dst == {255.255.255.255, 192.168.1.0/24} && udp && udp.src == 68 && udp.dst == 67) allow
+from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip6) allow-related
+from-lport  1001 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip) drop
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == $as_ip4_feef8ea8_b579_4e8f_bda3_b880af1a468e) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && icmp4) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 22) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 443) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 80) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip6 && ip6.src == $as_ip6_feef8ea8_b579_4e8f_bda3_b880af1a468e) allow-related
+  to-lport  1001 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip) drop
+On workstation, use the openstack security group show default command to show the configuration of the default security group. Notice that the OpenFlow flows in the previous step match the security group rules in OpenStack. Also notice that the last action is drop.
+
+[student@workstation ~(developer1-finance)]$ openstack security group \
+rule list default --long -f json
+[
+  {
+    "IP Range": "0.0.0.0/0",
+    "Direction": "ingress",
+    "Ethertype": "IPv4",
+    "Port Range": "22:22",
+    "IP Protocol": "tcp",
+    "Remote Security Group": null,
+    "ID": "b67c8063-28ac-4dc2-a734-3cb6b2de2e42"
+  },
+  {
+    "IP Range": null,
+    "Direction": "egress",
+    "Ethertype": "IPv4",
+    "Port Range": "",
+    "IP Protocol": null,
+    "Remote Security Group": null,
+    "ID": "bbc68ba4-89ea-4b34-8ca7-8e8cd5cc2a4f"
+  },
+  {
+    "IP Range": null,
+    "Direction": "ingress",
+    "Ethertype": "IPv4",
+    "Port Range": "",
+    "IP Protocol": null,
+    "Remote Security Group": "feef8ea8-b579-4e8f-bda3-b880af1a468e",
+    "ID": "717925c3-fb1f-4e87-b8f2-4b6a0127d648"
+  },
+  {
+    "IP Range": "0.0.0.0/0",
+    "Direction": "ingress",
+    "Ethertype": "IPv4",
+    "Port Range": "443:443",
+    "IP Protocol": "tcp",
+    "Remote Security Group": null,
+    "ID": "6b8aa744-cd3a-449f-bdca-dc75d70b1621"
+  },
+  {
+    "IP Range": "0.0.0.0/0",
+    "Direction": "ingress",
+    "Ethertype": "IPv4",
+    "Port Range": "80:80",
+    "IP Protocol": "tcp",
+    "Remote Security Group": null,
+    "ID": "6de5bdd1-dc72-4c1c-af07-cd900c96ffa8"
+  },
+  {
+    "IP Range": null,
+    "Direction": "ingress",
+    "Ethertype": "IPv6",
+    "Port Range": "",
+    "IP Protocol": null,
+    "Remote Security Group": "feef8ea8-b579-4e8f-bda3-b880af1a468e",
+    "ID": "361e6de4-c1b7-47e3-887d-0ff475464c05"
+  },
+  {
+    "IP Range": null,
+    "Direction": "egress",
+    "Ethertype": "IPv6",
+    "Port Range": "",
+    "IP Protocol": null,
+    "Remote Security Group": null,
+    "ID": "8659559d-4024-4083-8cda-38acf9d3f97e"
+  },
+  {
+    "IP Range": "0.0.0.0/0",
+    "Direction": "ingress",
+    "Ethertype": "IPv4",
+    "Port Range": "",
+    "IP Protocol": "icmp",
+    "Remote Security Group": null,
+    "ID": "cdf56956-a6f2-4ba5-8974-eb5c60afd82f"
+  }
+]
+On workstation, use the openstack port list command to list the OpenStack ports. Notice that the port for the finance-server1 instance matches the inport and the outport parameters.
+
+[student@workstation ~(developer1-finance)]$ openstack port list \
+-c ID -c "Fixed IP Addresses"
++-------------+----------------------------------------------------+
+| ID          | Fixed IP Addresses                                 |
++-------------+----------------------------------------------------+
+| 12c7...00d5 | ip_address='192.168.1.1', subnet_id='849b...9ab9'  |
+| a557...1106a| ip_address='192.168.1.10', subnet_id='849...79ab9' |
+| e56f...2b89 | ip_address='192.168.1.2', subnet_id='849b...9ab9'  |
++-------------+----------------------------------------------------+
+from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4) allow-related
+   from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.dst == {255.255.255.255, 192.168.1.0/24} && udp && udp.src == 68 && udp.dst == 67) allow
+...output omitted...
+to-lport 1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 &&
+ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 22) allow-related
+Create a second instance on the finance-network1 network. On the controller0 node, list the security rule flows.
+
+On workstation, as the developer1 user, create a new instance called finance-server2. Use the rhel7 image, the default flavor, and the finance-network1 network. Notice that although no security group was defined, the default security group was assigned to the instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--image rhel7 \
+--flavor default \
+--nic net-id=finance-network1 \
+--wait finance-server2
++-----------------------------+---------------------------------+
+| Field                       | Value                           |
++-----------------------------+---------------------------------+
+| OS-DCF:diskConfig           | MANUAL                          |
+| OS-EXT-AZ:availability_zone | nova                            |
+| OS-EXT-STS:power_state      | Running                         |
+| OS-EXT-STS:task_state       | None                            |
+| OS-EXT-STS:vm_state         | active                          |
+| OS-SRV-USG:launched_at      | 2018-09-26T17:15:05.000000      |
+| OS-SRV-USG:terminated_at    | None                            |
+| accessIPv4                  |                                 |
+| accessIPv6                  |                                 |
+| addresses                   | finance-network1=192.168.1.12   |
+| adminPass                   | KJ6jneM5sxeW                    |
+| config_drive                |                                 |
+| created                     | 2018-09-26T17:14:18Z            |
+| flavor                      | default (71eb...a769)           |
+| hostId                      | 445c..81cc                      |
+| id                          | 4dfa...e4b9                     |
+| image                       | rhel7 (ec20...e840)             |
+| key_name                    | None                            |
+| name                        | finance-server2                 |
+| progress                    | 0                               |
+| project_id                  | 0baea8e7fc5b4720bc418c0172ee6ae5|
+| properties                  |                                 |
+| security_groups             | name='default'                  |
+| status                      | ACTIVE                          |
+| updated                     | 2018-09-26T17:15:05Z            |
+| user_id                     | 92f5297388884088b72f01b0f2787127|
+| volumes_attached            |                                 |
++-----------------------------+---------------------------------+
+On controller0 check the security policies for the finance-network network switch. Notice the new OpenFlow flows. Also notice that the last rule for each instance is the drop rule.
+
+[root@controller0 ~]# ovn-nbctl acl-list \
+neutron-7ad21970-5986-42e0-9b48-64ab414bb0b1
+from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4) allow-related
+from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.dst == {255.255.255.255, 192.168.1.0/24} && udp && udp.src == 68 && udp.dst == 67) allow
+from-lport  1002 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip6) allow-related
+from-lport  1002 (inport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip4) allow-related
+from-lport  1002 (inport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip4 && ip4.dst == {255.255.255.255, 192.168.1.0/24} && udp && udp.src == 68 && udp.dst == 67) allow
+from-lport  1002 (inport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip6) allow-related
+from-lport  1001 (inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip) drop
+from-lport  1001 (inport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip) drop
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == $as_ip4_feef8ea8_b579_4e8f_bda3_b880af1a468e) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && icmp4) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 22) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 443) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 80) allow-related
+  to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip6 && ip6.src == $as_ip6_feef8ea8_b579_4e8f_bda3_b880af1a468e) allow-related
+  to-lport  1002 (outport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip4 && ip4.src == $as_ip4_feef8ea8_b579_4e8f_bda3_b880af1a468e) allow-related
+  to-lport  1002 (outport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip4 && ip4.src == 0.0.0.0/0 && icmp4) allow-related
+  to-lport  1002 (outport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 22) allow-related
+  to-lport  1002 (outport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 443) allow-related
+  to-lport  1002 (outport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 80) allow-related
+  to-lport  1002 (outport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip6 && ip6.src == $as_ip6_feef8ea8_b579_4e8f_bda3_b880af1a468e) allow-related
+  to-lport  1001 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip) drop
+  to-lport  1001 (outport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip) drop
+On workstation, list the OpenStack ports. Look at the security group OpenFlow flows again, and notice the flows allowing traffic to flow between the instances. In the following example, the inport is the new instance finance-server2. The outport is the instance created previously, finance-server1. The two rules are icmp and tcp.
+
+[student@workstation ~(developer1-finance)]$ openstack port list \
+-c ID -c "Fixed IP Addresses"
++-------------+----------------------------------------------------+
+| ID          | Fixed IP Addresses                                 |
++-------------+----------------------------------------------------+
+| 12c7...00d5 | ip_address='192.168.1.1', subnet_id='849b...9ab9'  |
+| a557...106a | ip_address='192.168.1.10', subnet_id='849b...9ab9' |
+| b3e3...7702 | ip_address='192.168.1.12', subnet_id='849b...9ab9' |
+| e56f...2b89 | ip_address='192.168.1.2', subnet_id='849b...9ab9'  |
++-------------+----------------------------------------------------+
+from-lport  1001 (inport == "b3e37780-7fe3-471a-bcdd-73bdcb957702" && ip) drop
+    to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src ==                               $as_ip4_feef8ea8_b579_4e8f_bda3_b880af1a468e) allow-related
+    to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && icmp4) allow-related
+    to-lport  1002 (outport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 22) allow-related
+On workstation, create a floating IP address on the provider-datacentre external network. Attach the floating IP to finance-server1. Use the openstack server list command to verify the addition of the floating IP address.
+
+[student@workstation ~(developer1-finance)]$ openstack floating ip create \
+provider-datacentre
++---------------------+--------------------------------------+
+| Field               | Value                                |
++---------------------+--------------------------------------+
+| created_at          | 2018-09-27T08:22:32Z                 |
+| description         |                                      |
+| fixed_ip_address    | None                                 |
+| floating_ip_address | 172.25.250.108                       |
+| floating_network_id | f8366a5d-9cf9-4d38-9760-9cf9df4eceaa |
+| id                  | c4416eaa-35a3-47e6-9546-e8256981c069 |
+| name                | 172.25.250.110                       |
+| port_id             | None                                 |
+| project_id          | 0baea8e7fc5b4720bc418c0172ee6ae5     |
+| qos_policy_id       | None                                 |
+| revision_number     | 0                                    |
+| router_id           | None                                 |
+| status              | DOWN                                 |
+| subnet_id           | None                                 |
+| updated_at          | 2018-09-27T08:22:32Z                 |
++---------------------+--------------------------------------+
+[student@workstation ~(developer1-finance)]$ openstack server add \
+floating ip finance-server1 172.25.250.108
+[student@workstation ~(developer1-finance)]$ openstack server list \
+-c ID -c Name -c Networks
++-------------+-----------------+-----------------------------------------------+
+| ID          | Name            | Networks                                      |
++-------------+-----------------+-----------------------------------------------+
+| 4dfa...e4b9 | finance-server2 | finance-network1=192.168.1.12                 |
+| e417...5720 | finance-server1 | finance-network1=192.168.1.10, 172.25.250.108 |
++-------------+-----------------+-----------------------------------------------+
+On controller0, list the OpenFlow flows for routing and look at the routing table for the finance-network1 network switch. On controller0, use the ovn-nbctl show command to show a brief overview of the contents of the Northbound database.
+
+On controller0, use the ovn-sbctl lflow-list command to list the flows. Find the SNAT and DNAT flows for finance-server1. The easiest way to find the routing flows is to redirect the output of the ovn-sbctl command to a file. Open the file and use the search functionality. Notice that there are OpenFlow rules for both the floating IP address and the internal IP address.
+
+[root@controller0 ~]# ovn-sbctl lflow-list > flow.txt
+[root@controller0 ~]# view flow.txt
+...output omitted...
+  table=3 (lr_in_unsnat       ), priority=100  , match=(ip && ip4.dst == 172.25.250.108 && inport == "lrp-8905aec6-0db1-475f-8e38-0dfd4b4fe4fc"), action=(ct_snat;)
+...output omitted...
+  table=3 (lr_in_unsnat       ), priority=50   , match=(ip && ip4.dst == 172.25.250.108), action=(reg9[0] = 1; next;)
+...output omitted
+  table=1 (lr_out_snat        ), priority=33   , match=(ip && ip4.src == 192.168.1.10 && outport == "lrp-8905aec6-0db1-475f-8e38-0dfd4b4fe4fc"), action=(eth.src = fa:16:3e:76:a8:89; ct_snat(172.25.250.108);)
+...output omitted...
+  table=4 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.25.250.108 && inport == "lrp-8905aec6-0db1-475f-8e38-0dfd4b4fe4fc"), action=(ct_dnat(192.168.1.10);)
+  table=4 (lr_in_dnat         ), priority=50   , match=(ip && ip4.dst == 172.25.250.108), action=(reg9[0] = 1; next;)
+  table=4 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+...output omitted...
+  table=0 (lr_out_undnat      ), priority=100  , match=(ip && ip4.src == 192.168.1.10 && outport == "lrp-8905aec6-0db1-475f-8e38-0dfd4b4fe4fc"), action=(eth.src = fa:16:3e:76:a8:89; ct_dnat;)
+...output omitted...
+From the SNAT or DNAT extract used in the previous step, note the lrp inport and outport used by finance-server1. On controller0, use the ovn-nbctl show command to list the contents of the Northbound database.
+
+[root@controller0 ~]# ovn-nbctl show
+...output omitted...
+switch ce4e7293-9bed-4504-9272-1fc698393048 (neutron-f8366a5d-9cf9-4d38-9760-9cf9df4eceaa) (aka provider-datacentre)
+  port provnet-f8366a5d-9cf9-4d38-9760-9cf9df4eceaa
+     type: localnet
+     addresses: ["unknown"]
+  port 059d906d-fb1d-4120-8c74-5cd9de12f832
+     type: localport
+     addresses: ["fa:16:3e:e6:57:f1"]
+  port 8905aec6-0db1-475f-8e38-0dfd4b4fe4fc
+     type: router
+     router-port: lrp-8905aec6-0db1-475f-8e38-0dfd4b4fe4fc
+  port 8e0a4263-3b98-49cc-81a9-499fec769040
+     type: router
+     router-port: lrp-8e0a4263-3b98-49cc-81a9-499fec769040
+...output omitted...
+Notice that the lrp inport and outport are router ports for the provider-datacentre external network.
+
+Show the routing table for finance-router1.
+
+On workstation, use the openstack router list command to list the OpenStack routers.
+
+[student@workstation ~(developer1-finance)]$ openstack router list -c ID -c Name
++--------------------------------------+-----------------+
+| ID                                   | Name            |
++--------------------------------------+-----------------+
+| 54a04000-17ea-44df-8c79-d18164e6a1f2 | finance-router1 |
++--------------------------------------+-----------------+
+On controller0, use the ovn-nbctl lr-list command to list all existing routers.
+
+[root@controller0 ~]# ovn-nbctl lr-list
+df2df96e-d19f-48e9-8204-391e22b35efd (neutron-54a04000-17ea-44df-8c79-d18164e6a1f2)
+1baf78f6-b8cc-468c-bd7e-4f01d363c5b5 (neutron-6e39ddfe-1a26-46f7-b602-15373b615a1e)
+On controller0, use the ovn-nbctl lr-nat-list command to show the routing table for finance-router1.
+
+[root@controller0 ~]# ovn-nbctl lr-nat-list \
+neutron-54a04000-17ea-44df-8c79-d18164e6a1f2
+TYPE           EXTERNAL_IP    LOGICAL_IP   EXTERNAL_MAC      LOGICAL_PORT
+dnat_and_snat  172.25.250.108 192.168.1.10 fa:16:3e:76:a8:89 a557...106a
+snat           172.25.250.102 192.168.1.0/24
+On workstation, use the openstack port list command to list the OpenStack ports.
+
+Look at the routing table in the previous step. Notice that the OpenStack port ID for IP address 192.168.1.10 matches the Logical Port option in the OVN routing table. Also notice that there are no SNAT or DNAT rules for IP address 192.168.1.12. finance-server2 has no floating IP address attached to it, and therefore there are no routing flows for that instance.
+
+[student@workstation ~(developer1-finance)]$ openstack port list \
+-c ID -c "Fixed IP Addresses"
++-------------+----------------------------------------------------+
+| ID          | Fixed IP Addresses                                 |
++-------------+----------------------------------------------------+
+| 12c7...00d5 | ip_address='192.168.1.1', subnet_id='849b...9ab9'  |
+| a557...106a | ip_address='192.168.1.10', subnet_id='849b...9ab9' |
+| b3e3...7702 | ip_address='192.168.1.12', subnet_id='849b...9ab9' |
+| e56f...2b89 | ip_address='192.168.1.2', subnet_id='849b...9ab9'  |
++-------------+----------------------------------------------------+
+On controller0, use the ovn-sbctl command to list the logical flows. Redirect the output to a file called dhcp.txt In the dhcp.txt file, find the ls_in_dhcp_options, the ls_in_dhcp_response, and put_dhcp_opts options for the finance-server1.
+
+[root@controller0 ~]# ovn-sbctl lflow-list > dhcp.txt
+[root@controller0 ~]# view dhcp.txt
+
+table=12(ls_in_dhcp_options ), priority=100  , match=(inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && eth.src == fa:16:3e:eb:a3:bc && ip4.src == 0.0.0.0 && ip4.dst == 255.255.255.255 && udp.src == 68 && udp.dst == 67), action=(reg0[3] = put_dhcp_opts(offerip = 192.168.1.10, classless_static_route = {169.254.169.254/32,192.168.1.2, 0.0.0.0/0,192.168.1.1}, dns_server = {172.25.250.254}, lease_time = 43200, mtu = 1442, netmask = 255.255.255.0, router = 192.168.1.1, server_id = 192.168.1.1); next;)
+
+  table=13(ls_in_dhcp_response), priority=100  , match=(inport == "a557dbb8-3d1b-4780-9ca7-d343d3d1106a" && eth.src == fa:16:3e:eb:a3:bc && ip4 && udp.src == 68 && udp.dst == 67 && reg0[3]), action=(eth.dst = eth.src; eth.src = fa:16:3e:d0:10:a8; ip4.dst = 192.168.1.10; ip4.src = 192.168.1.1; udp.src = 67; udp.dst = 68; outport = inport; flags.loopback = 1; output;)
+Close the terminal windows used in this exercise.
+
+Cleanup
+
+On workstation, run the lab networking-ovn cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab networking-ovn cleanup
+This concludes the guided exercise.

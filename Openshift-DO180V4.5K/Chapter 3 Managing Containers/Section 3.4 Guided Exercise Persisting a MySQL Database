@@ -1,0 +1,70 @@
+Guided Exercise: Persisting a MySQL Database
+In this exercise, you will create a container that stores the MySQL database data into a host directory.
+
+Outcomes
+
+You should be able to deploy container with a persistent database.
+
+The workstation should not have any container images running. Run the following command on workstation:
+
+[student@workstation ~]$ lab manage-storage start
+Create the /var/local/mysql directory with the correct SELinux context and permissions.
+
+Create the /var/local/mysql directory.
+
+[student@workstation ~]$ sudo mkdir -pv /var/local/mysql
+mkdir: created directory ‘/var/local/mysql’
+Add the appropriate SELinux context for the /var/local/mysql directory and its contents.
+
+[student@workstation ~]$ sudo semanage fcontext -a \
+> -t container_file_t '/var/local/mysql(/.*)?'
+Apply the SELinux policy to the newly created directory.
+
+[student@workstation ~]$ sudo restorecon -R /var/local/mysql
+Verify that the SELinux context type for the /var/local/mysql directory is container_file_t.
+
+[student@workstation ~]$ ls -ldZ /var/local/mysql
+drwxr-xr-x. root root unconfined_u:object_r:container_file_t:s0 /var/local/mysql
+Change the owner of the /var/local/mysql directory to the mysql user and mysql group:
+
+[student@workstation ~]$ sudo chown -Rv 27:27 /var/local/mysql
+changed ownership of ‘/var/local/mysql’ from root:root to 27:27
+NOTE
+The user running processes in the container must be capable of writing files to the directory. If the host machine does not have exactly the same user defined, the permission should be defined with the numeric user ID (UID) from the container. For the MySQL service provided by Red Hat, the UID is 27.
+
+Create a MySQL container instance with persistent storage.
+
+Pull the MySQL container image:
+
+[student@workstation ~]$ sudo podman pull rhscl/mysql-57-rhel7
+Trying to pull ...output omitted...rhscl/mysql-57-rhel7...output omitted...
+...output omitted...
+Writing manifest to image destination
+Storing signatures
+4ae3a3f4f409a8912cab9fbf71d3564d011ed2e68f926d50f88f2a3a72c809c5
+Create a new container specifying the mount point to store the MySQL database data:
+
+[student@workstation ~]$ sudo podman run --name persist-db \ 
+> -d -v /var/local/mysql:/var/lib/mysql/data \
+> -e MYSQL_USER=user1 -e MYSQL_PASSWORD=mypa55 \
+> -e MYSQL_DATABASE=items -e MYSQL_ROOT_PASSWORD=r00tpa55 \
+> rhscl/mysql-57-rhel7
+6e0ef134315b510042ca757faf869f2ba19df27790c601f95ec2fd9d3c44b95d
+This command mounts the /var/local/mysql directory from the host to the /var/lib/mysql/data directory in the container. By default, the MySQL database stores data in the /var/lib/mysql/data directory.
+
+Verify that the container started correctly.
+
+[student@workstation ~]$ sudo podman ps --format="{{.ID}} {{.Names}} {{.Status}}"
+6e0ef134315b   persist-db  Up 3 minutes ago
+Verify that the /var/local/mysql directory contains the items directory:
+
+[student@workstation ~]$ ls -ld /var/local/mysql/items
+drwxr-x---. 2 27 27 20 Nov 13 12:55 /var/local/mysql/items
+The items directory stores data related to the items database that was created by this container. If the items directory does not exist, then the mount point was not defined correctly during container creation.
+
+Finish
+
+On workstation, run the lab manage-storage finish script to complete this lab.
+
+[student@workstation ~]$ lab manage-storage finish
+This concludes the exercise.

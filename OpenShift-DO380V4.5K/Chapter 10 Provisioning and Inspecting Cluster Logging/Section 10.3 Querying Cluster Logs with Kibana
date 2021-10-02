@@ -1,0 +1,123 @@
+
+Querying Cluster Logs with Kibana
+Objectives
+After completing this section, you should be able to inspect OpenShift and application logs using Lucene queries in the Kibana user interface (UI).
+
+Introducing the Kibana UI
+There are two ways to navigate to Kibana:
+
+Use the oc command to discover the route: oc get routes -n openshift-logging.
+
+Click the Application Launcher, and then select Monitoring → Logging.
+
+
+Figure 10.2: Accessing Kibana from the OpenShift Web Console
+After logging in, the Discover page displays. Use this page to query Elasticsearch for logs.
+
+
+1
+
+Search the logs using a Lucene query.
+
+2
+
+Add a filter to narrow the search based on the existence or value of a field.
+
+3
+
+Select the index pattern to filter the query by project.
+
+4
+
+Set the time range to a relative range, such as Last 15 minutes, or an absolute time range.
+
+5
+
+A time series chart displaying a count of the log records that match the search query.
+
+6
+
+Table of log records that match the search query.
+
+Selecting Indexes
+To query for logs in Kibana, first select the correct index pattern for your query. An index pattern specifies a set of Elasticsearch indexes to search. For example, the app index pattern searches for messages in any app-* Elasticsearch index.
+
+Selecting Table Fields
+Elasticsearch stores OpenShift logs as JSON documents. A JSON document is similar to a record in a relational database table. Each log record defines a set of fields and the associated value for each field.
+
+The default Kibana Discover view displays a table of logs with Time and _source fields. The Time field defines a time stamp for the log message. The _source field contains the JSON document string for the record.
+
+You can display other fields in the table by either:
+
+
+1
+
+Clicking add next to an entry in the Available Fields list, or
+
+2
+
+Expanding a log record by clicking the arrow next to it, and then clicking the table icon next to the field to add.
+
+Querying Logs
+Elasticsearch is based on the Lucene search engine. To search for log messages in Elasticsearch, you must use Lucene syntax to execute queries.
+
+Introducing Lucene Queries
+In Lucene, a set of terms forms a basic query within the selected index pattern.
+
+The following examples demonstrate basic Lucene queries: * dns finds all records that contain the dns text string in any of the indexed text fields. * dns dig finds all records that a contains either the dns or dig term in any of the indexed fields. A record must contain only one of the terms, not all of the them.
+
+Use double-quotes to create a single term from one more terms. For example, the "openshift api" query finds records with the phrase openshift api in any indexed text field.
+
+Similarly, use double-quotes to wrap terms that contain symbols, such as -. For example, to search for the phrase openshift-apiserver-operator in any indexed text field, you must use a Lucene query of "openshift-apiserver-operator".
+
+If a query contains multiple terms, then you can use the + symbol to identify terms that must match the record. Similarly, you can use the - symbol to identify terms that must not match the record. For example, the +dns -api query searches for all records that contain the term dns but not the term api.
+
+Filtering Queries
+Fluentd adds OpenShift metadata to pod logs to provide fields for querying and filtering. Some of the fields include the following:
+
+hostname
+The host name of the of the OpenShift node for the pod that generated the message.
+
+kubernetes.flat_labels
+The field contains key/value pairs in the form of key=value. Each key/value pair corresponds to a label for the pod that generated the log message.
+
+kubernetes.container_name
+The name of the container that generated the log message.
+
+kubernetes.namespace_name
+The name of the pod project for the pod that generated the log message.
+
+kubernetes.pod_name
+The name of the pod that generated the log message.
+
+level
+The log level of the message.
+
+message
+The actual log message, which corresponds to a single line of output from a pod.
+
+To restrict a term search to specific field, specify the field and term together, separated by a colon (:) character. For example, a level:info Lucene query returns records that have contain a info text string in the value of the level field.
+
+For example, enter the following query to search for all messages that contain the term elected in the openshift-etcd namespace.
+
++kubernetes.namespace_name:"openshift-etcd" +message:elected
+Optionally, click Add a filter to filter the results of a query. A form to filter based on values or the existence of fields displays.
+
+Finding OpenShift Event Logs
+The Event Router pod watches OpenShift and sends events to the cluster logging system. Event records are stored in the Elasticsearch infra index. You can find event records using the following query under the infra index: kubernetes.event:*.
+
+Event records define several fields that contain event metadata. These fields begin with kubernetes.event.. You can use these fields in queries and filters to retrieve events from event metadata.
+
+Examples of the event fields that you can use include:
+
+kubernetes.event.involvedObject.name
+This field contains the name of the OpenShift resource associated with the event. A common pattern to deploy an application is to use the same name for all the resources. Using this field, you can find any event that matches a resource name without regard to the resource type.
+
+kubernetes.event.involvedObject.namespace
+This field contains the project name that corresponds to the OpenShift resource for the event. Use this field to query for any events from a specific project.
+
+kubernetes.event.reason
+This field contains a string that represents the reason for the event. The values in this field correspond to the values in the REASON column that displays in the output of the oc get events command.
+
+kubernetes.event.type
+This field contains the type of message. For example, the kubernetes.event.type:warning Lucene query finds warning events.

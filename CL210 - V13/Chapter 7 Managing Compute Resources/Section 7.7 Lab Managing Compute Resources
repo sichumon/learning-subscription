@@ -1,0 +1,326 @@
+Lab: Managing Compute Resources
+Performance Checklist
+
+In this lab, you will manage compute resources.
+
+Outcomes
+
+You should be able to:
+
+Deploy an instance to the HCI node.
+
+Perform an evacuation.
+
+Perform a block migration.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab computeresources-review setup command. This script creates the resources required to perform the exercise.
+
+[student@workstation ~]$ lab computeresources-review setup
+One of the compute nodes is currently powered off. Find the powered off compute node and evacuate the instances to another node. Power on the compute node.
+
+From workstation log in to director as the stack user. Use the openstack baremetal node list command to list the bare-metal nodes to discover which node is powered off.
+
+[student@workstation ~]$ ssh stack@director
+(undercloud) [stack@director ~]$ openstack baremetal node list \
+-c Name -c "Power State"
++-------------+-------------+
+| Name        | Power State |
++-------------+-------------+
+| controller0 | power on    |
+| compute0    | power off   |
+| computehci0 | power on    |
+| compute1    | power on    |
+| ceph0       | power on    |
++-------------+-------------+
+Source the /home/stack/overcloudrc environment identity file. Use the openstack server list command to list the instances on the powered off compute node. Evacuate the instances from the powered off compute node, using the nova host-evacuate command.
+
+(undercloud) [stack@director ~]$ source ~/overcloudrc
+(overcloud) [stack@director ~]$ openstack server list \
+--host compute0.overcloud.example.com --all-projects \
+-c ID -c Name 
++--------------------------------------+--------------------+
+| ID                                   | Name               |
++--------------------------------------+--------------------+
+| 066bf13c-219c-45c6-9525-676befbdd50f | production-server3 |
+| d094a3d6-95fa-4d75-a027-e04f1f37dc60 | production-server2 |
+| 382f9f07-dcb2-4b26-82f2-e38a046de8a4 | production-server1 |
++--------------------------------------+--------------------+
+(overcloud) [stack@director ~]$ nova host-evacuate compute0
++--------------------------------------+-------------------+---------------+
+| Server UUID                          | Evacuate Accepted | Error Message |
++--------------------------------------+-------------------+---------------+
+| 382f9f07-dcb2-4b26-82f2-e38a046de8a4 | True              |               |
+| d094a3d6-95fa-4d75-a027-e04f1f37dc60 | True              |               |
+| 066bf13c-219c-45c6-9525-676befbdd50f | True              |               |
++--------------------------------------+-------------------+---------------+
+Ensure that the instances have been evacuated to another compute node. The migration may take a minute or two.
+
+(overcloud) [stack@director ~]$ openstack server list \
+--host compute0.overcloud.example.com --all-projects \
+-c ID -c Name
+
+(overcloud) [stack@director ~]$ openstack server list \
+--host compute1.overcloud.example.com --all-projects \
+-c ID -c Name -c Status
++--------------------------------------+--------------------+--------+
+| ID                                   | Name               |        |
++--------------------------------------+--------------------+--------+
+| 066bf13c-219c-45c6-9525-676befbdd50f | production-server3 | ACTIVE |
+| d094a3d6-95fa-4d75-a027-e04f1f37dc60 | production-server2 | ACTIVE |
+| 382f9f07-dcb2-4b26-82f2-e38a046de8a4 | production-server1 | ACTIVE |
++--------------------------------------+--------------------+--------+
+Source the /home/stack/stackrc environment identity file. Use the openstack baremetal node command to power up the compute node. Confirm that the compute0 baremetal node is powered on.
+
+(overcloud) [stack@director ~]$ source ~/stackrc
+(undercloud) [stack@director ~]$ openstack baremetal node power on compute0
+(undercloud) [stack@director ~]$ openstack baremetal node list \
+-c Name -c "Power State"
++-------------+-------------+
+| Name        | Power State |
++-------------+-------------+
+| controller0 | power on    |
+| compute0    | power on    |
+| computehci0 | power on    |
+| compute1    | power on    |
+| ceph0       | power on    |
++-------------+-------------+
+The undercloud compute service configuration might prevent it from being aware of node power state changes in virtual environments, such as this classroom. When you use the openstack baremetal command to power on a node, the undercloud compute service may not agree with the baremetal service about the state of the node. Use the openstack server start command to align the undercloud compute service with the baremetal service. This ensures that compute0 will be available to schedule instances on.
+
+(undercloud) [stack@director ~]$ openstack server list -c Name -c Status
++-------------+---------+
+| Name        | Status  |
++-------------+---------+
+| compute1    | ACTIVE  |
+| compute0    | SHUTOFF |
+| computehci0 | ACTIVE  |
+| controller0 | ACTIVE  |
+| ceph0       | ACTIVE  |
++-------------+---------+
+(undercloud) [stack@director ~]$ openstack server start compute0
+(undercloud) [stack@director ~]$ openstack server list -c Name -c Status
++-------------+--------+
+| Name        | Status |
++-------------+--------+
+| compute1    | ACTIVE |
+| compute0    | ACTIVE |
+| computehci0 | ACTIVE |
+| controller0 | ACTIVE |
+| ceph0       | ACTIVE |
++-------------+--------+
+Source the /home/stack/overcloudrc environment file, then use the openstack compute service list command to ensure that the nova_compute service is up on compute0. Exit the director node.
+
+(undercloud) [stack@director ~]$ source ~/overcloudrc
+(overcloud) [stack@director ~]$ openstack compute service \
+list -c Binary -c Host -c State
++------------------+-----------------------------------+-------+
+| Binary           | Host                              | State |
++------------------+-----------------------------------+-------+
+| nova-conductor   | controller0.overcloud.example.com | up    |
+| nova-compute     | compute1.overcloud.example.com    | up    |
+| nova-compute     | computehci0.overcloud.example.com | up    |
+| nova-compute     | compute0.overcloud.example.com    | up    |
+| nova-consoleauth | controller0.overcloud.example.com | up    |
+| nova-scheduler   | controller0.overcloud.example.com | up    |
++------------------+-----------------------------------+-------+
+(overcloud) [stack@director ~]$ exit
+logout
+Connection to director closed.
+[student@workstation ~]$ 
+As the architect1 user, create a new aggregate called hci-aggregate. Add the computehci0 node to the hci-aggregate aggregate. Set the metadata for the hci-aggregate aggregate. Create a new flavor called default-hci and configure the computehci property. Launch a new instance called hci-server1. Use the default-hci flavor, the hci-image image, and the production-network1 network. Confirm that the instance is launched on the computehci0 compute node.
+
+On workstation, source the /home/student/architect1-production-rc identity environment file to provide administrator access to OpenStack services.
+
+[student@workstation ~]$ source ~/architect1-production-rc
+[student@workstation ~(architect1-production)]$ 
+Use the openstack aggregate create command to create a new aggregate called hci-aggregate.
+
+[student@workstation ~(architect1-production)]$ openstack aggregate create \
+hci-aggregate
++-------------------+----------------------------+
+| Field             | Value                      |
++-------------------+----------------------------+
+| availability_zone | None                       |
+| created_at        | 2018-11-19T15:07:51.605242 |
+| deleted           | False                      |
+| deleted_at        | None                       |
+| id                | 1                          |
+| name              | hci-aggregate              |
+| updated_at        | None                       |
++-------------------+----------------------------+
+Use the openstack aggregate add host command to add the computehci0 node to the hci-aggregate aggregate.
+
+[student@workstation ~(architect1-production)]$ openstack aggregate add host \
+hci-aggregate computehci0.overcloud.example.com
++-------------------+----------------------------------------+
+| Field             | Value                                  |
++-------------------+----------------------------------------+
+| availability_zone | None                                   |
+| created_at        | 2018-11-19T15:07:51.000000             |
+| deleted           | False                                  |
+| deleted_at        | None                                   |
+| hosts             | [u'computehci0.overcloud.example.com'] |
+| id                | 1                                      |
+| metadata          | {}                                     |
+| name              | hci-aggregate                          |
+| updated_at        | None                                   |
++-------------------+----------------------------------------+
+Use the openstack aggregate set command to set the metadata for the hci-aggregate aggregate.
+
+[student@workstation ~(architect1-production)]$ openstack aggregate set \
+--property computehci=true hci-aggregate
+Use the openstack aggregate show command to show the details of the hci-aggregate aggregate.
+
+[student@workstation ~(architect1-production)]$ openstack aggregate show \
+hci-aggregate
++-------------------+----------------------------------------+
+| Field             | Value                                  |
++-------------------+----------------------------------------+
+| availability_zone | None                                   |
+| created_at        | 2018-11-19T15:07:51.000000             |
+| deleted           | False                                  |
+| deleted_at        | None                                   |
+| hosts             | [u'computehci0.overcloud.example.com'] |
+| id                | 1                                      |
+| name              | hci-aggregate                          |
+| properties        | computehci='true'                      |
+| updated_at        | None                                   |
++-------------------+----------------------------------------+
+Use the openstack flavor create command to create a new flavor called default-hci. Configure the flavor to use 1024 MB of RAM, to have a 10 GB disk, and to have two vCPUs. Configure the flavor to be public.
+
+[student@workstation ~(architect1-production)]$ openstack flavor create \
+--ram 1024 --disk 10 --vcpus 2 --public default-hci
++----------------------------+--------------------------------------+
+| Field                      | Value                                |
++----------------------------+--------------------------------------+
+| OS-FLV-DISABLED:disabled   | False                                |
+| OS-FLV-EXT-DATA:ephemeral  | 0                                    |
+| disk                       | 10                                   |
+| id                         | 4f919950-d803-4da4-8a9c-857144498bb7 |
+| name                       | default-hci                          |
+| os-flavor-access:is_public | True                                 |
+| properties                 |                                      |
+| ram                        | 1024                                 |
+| rxtx_factor                | 1.0                                  |
+| swap                       |                                      |
+| vcpus                      | 2                                    |
++----------------------------+--------------------------------------+
+Use the openstack flavor set command to configure the default-hci flavor to use the computehci property.
+
+[student@workstation ~(architect1-production)]$ openstack flavor set \
+default-hci --property computehci=true
+[student@workstation ~(architect1-production)]$ openstack flavor show default-hci
++----------------------------+--------------------------------------+
+| Field                      | Value                                |
++----------------------------+--------------------------------------+
+| OS-FLV-DISABLED:disabled   | False                                |
+| OS-FLV-EXT-DATA:ephemeral  | 0                                    |
+| access_project_ids         | None                                 |
+| disk                       | 10                                   |
+| id                         | 4f919950-d803-4da4-8a9c-857144498bb7 |
+| name                       | default-hci                          |
+| os-flavor-access:is_public | True                                 |
+| properties                 | computehci='true'                    |
+| ram                        | 1024                                 |
+| rxtx_factor                | 1.0                                  |
+| swap                       |                                      |
+| vcpus                      | 2                                    |
++----------------------------+--------------------------------------+
+Create an instance using the default-hci flavor. Verify that the instance is created on the computehci0 node.
+
+[student@workstation ~(architect1-production)]$ openstack server create \
+--flavor default-hci \
+--image hci-image \
+--nic net-id=production-network1 \
+--wait hci-server1
++-------------------------------------+-------------------------------------+
+| Field                               | Value                               |
++-------------------------------------+-------------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                              |
+| OS-EXT-AZ:availability_zone         | nova                                |
+| OS-EXT-SRV-ATTR:host                | computehci0.overcloud.example.com   |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | computehci0.overcloud.example.com   |
+| OS-EXT-SRV-ATTR:instance_name       | instance-0000000d                   |
+...output omitted...
+Configure nova to use block storage. Restart the nova_compute container on both compute0 and compute1. Confirm the health of the container. As the architect1 user, create an instance on compute0. Use the default flavor, the rhel7 image, and the production-network1 network. Migrate the instance to compute1 using block migration.
+
+On both compute0 and compute1, configure nova to use block storage. Use the sudo -i command to change to the root user. In the /var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/nova.conf file, comment out the images_type=rbd line.
+
+[student@workstation ~(architect1-production)]$ ssh compute0
+[heat-admin@compute0 ~]$ sudo -i
+[root@compute0 ~]# 
+[root@compute0 ~]# vim \
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/nova.conf
+#images_type=rbd
+[root@compute0 ~]# docker restart nova_compute
+nova_compute
+[root@compute0 ~]# docker ps --format="{{.Names}}\t{{.Status}}" \
+| grep nova_compute
+nova_compute    Up 55 seconds (healthy)
+[root@compute0 ~]# exit
+[heat-admin@compute0 ~]$ exit
+logout
+Connection to compute0 closed.
+[student@workstation ~(architect1-production)]$ 
+Repeat the above steps on compute1.
+
+[student@workstation ~(architect1-production)]$ ssh compute1
+Warning: Permanently added 'compute1,172.25.250.12' (ECDSA) to the list of known hosts.
+[heat-admin@compute1 ~]$ sudo -i
+[root@compute1 ~]# 
+[root@compute1 ~]# vim \
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/nova.conf
+#images_type=rbd
+[root@compute1 ~]# docker restart nova_compute
+nova_compute
+[root@compute1 ~]# docker ps --format="{{.Names}}\t{{.Status}}" \
+| grep nova_compute
+nova_compute    Up 55 seconds (healthy)
+[root@compute1 ~]# exit
+[heat-admin@compute1 ~]$ exit
+logout
+Connection to compute1 closed.
+[student@workstation ~(architect1-production)]$ 
+Create an instance called production-server10 on compute1. Use the default flavor, the rhel7 image, and the production-network1 network.
+
+[student@workstation ~(architect1-production)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--nic net-id=production-network1 \
+--availability-zone nova:compute1.overcloud.example.com \
+--wait production-server10 
++-------------------------------------+---------------------------------+
+| Field                               | Value                           |
++-------------------------------------+---------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                          |
+| OS-EXT-AZ:availability_zone         | nova                            |
+| OS-EXT-SRV-ATTR:host                | compute1.overcloud.example.com  |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | compute1.overcloud.example.com  |
+...output omitted...
+Use the openstack server migrate command to migrate production-server10 to compute0.
+
+[student@workstation ~(architect1-production)]$ openstack server migrate \
+--live compute0.overcloud.example.com \ 
+--block-migration production-server10
+[student@workstation ~(architect1-production)]$ openstack server show \
+production-server10
++-------------------------------------+----------------------------------------+
+| Field                               | Value                                  |
++-------------------------------------+----------------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                                 |
+| OS-EXT-AZ:availability_zone         | nova                                   |
+| OS-EXT-SRV-ATTR:host                | compute0.overcloud.example.com         |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | compute0.overcloud.example.com         |
+...output omitted...
+Evaluation
+
+On workstation, run the lab computeresources-review grade command to confirm success of this exercise.
+
+[student@workstation ~]$ lab computeresources-review grade
+Cleanup
+
+On workstation, run the lab computeresources-review cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab computeresources-review cleanup
+This concludes the lab.

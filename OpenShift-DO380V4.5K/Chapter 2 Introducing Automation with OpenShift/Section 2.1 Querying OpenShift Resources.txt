@@ -1,0 +1,247 @@
+Chapter 2. Introducing Automation with OpenShift
+Querying OpenShift Resources
+Guided Exercise: Querying OpenShift Resources
+Deploying Scripts on OpenShift
+Guided Exercise: Deploying Scripts on OpenShift
+Navigating the OpenShift REST API
+Guided Exercise: Navigating the OpenShift REST API
+Writing Ansible Playbooks to Manage OpenShift Resources
+Guided Exercise: Writing Ansible Playbooks to Manage OpenShift Resources
+Summary
+Abstract
+
+Goal	Automate OpenShift using scripts and Ansible Playbooks.
+Objectives	
+Extract resource information from OpenShift using JSONPath.
+
+Execute cluster operation scripts from inside and outside of OpenShift.
+
+Navigate the OpenShift REST API.
+
+Automate creation and modification of OpenShift resources using the Ansible k8s modules.
+
+Sections	
+Querying OpenShift Resources (and Guided Exercise)
+
+Deploying Scripts on OpenShift (and Guided Exercise)
+
+Navigating the OpenShift REST API (and Guided Exercise)
+
+Writing Ansible Playbooks to Manage OpenShift Resources (and Guided Exercise)
+
+Querying OpenShift Resources
+Objectives
+After completing this section, you should be able to extract resource information from OpenShift using JSONPath.
+
+Describing Kubernetes Resources
+The desired persistent state of a Kubernetes cluster is encoded using resources, such as pods and services. Resources typically have a spec (desired status) and a status (current status). Resources are exposed uniformly by the API.
+
+Extracting Information from Resources
+The following example command demonstrates how to list resources of a specific type located within a namespace using the command oc get type -n namespace -o json:
+
+[user@demo ~]$ oc get deployment -n openshift-cluster-samples-operator -o json
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        ...output omitted...
+      },
+      "spec": {
+        ...output omitted...
+      },
+      "status": {
+        ...output omitted...
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    ...output omitted...
+  }
+}
+The JSON output is a list of items. Each item has metadata, spec, and status fields.
+
+The following command demonstrates how to get information about the "schema" of an object or its properties:
+
+[user@demo ~]$ oc explain deployment.status.replicas
+KIND:     Deployment
+VERSION:  apps/v1
+
+FIELD:    replicas <integer>
+
+DESCRIPTION:
+     Total number of non-terminated pods targeted by this deployment (their
+     labels match the selector).
+Extracting Information from a Single Resource
+Use the command oc get type name -n namespace to retrieve a single object in the specified namespace. Additionally, use JSONPath templates to extract and format the contents of the queried information.
+
+[user@demo ~]$ oc get deployment -n openshift-cluster-samples-operator \
+> cluster-samples-operator -o jsonpath='{.status.availableReplicas}'
+...output omitted...
+{} signals JSONPath code to be evaluated.
+
+.status.availableReplicas accesses properties of an object.
+
+Iterate over lists in the resource using [*]:
+
+[user@demo ~]$ oc get deployment -n openshift-cluster-samples-operator \
+> cluster-samples-operator -o jsonpath='{.status.conditions[*].type}'
+Available Progressing
+The command get -o jsonpath prints results in a single line, separated by spaces. To simplify processing by other tools, put one item per line when piping the output to | tr " " "\n" or a similar command.
+
+Get a specific item in a list using [index]:
+
+[user@demo ~]$ oc get deployment -n openshift-cluster-samples-operator \
+> cluster-samples-operator -o jsonpath='{.spec.template.spec.containers[0].name}'
+cluster-samples-operator
+Filter items in a list using [?(condition)]:
+
+[user@demo ~]$ oc get deployment -n openshift-cluster-samples-operator \
+> cluster-samples-operator \
+> -o jsonpath='{.status.conditions[?(@.type=="Available")].status}'
+Extracting a Single Property from Multiple Resources
+The command oc get returns a JSON object containing an items object, which is a list of all the objects queried.
+
+The following is an example of how to list a single property from many objects:
+
+[user@demo ~]$ oc get route -n openshift-monitoring \
+> -o jsonpath='{.items[*].spec.host}'
+alertmanager-main-openshift-monitoring.apps.ocp4.example.com
+...output omitted...
+Use get -o=custom-columns to print specific properties in a tabular format:
+
+[user@demo ~]$ oc get pod --all-namespaces \
+> -o=custom-columns=NAME:.metadata.name,STATUS:.status.phase,NODE:.spec.nodeName
+NAME                                           STATUS   NODE
+nfs-client-provisioner-865c67f466-r7txk        Running  worker03
+openshift-apiserver-operator-7f87667d89-6bcsj  Running  master01
+apiserver-69b8c6f494-9hflm                     Running  master01
+apiserver-69b8c6f494-kkfjj                     Running  master02
+apiserver-69b8c6f494-xbvmn                     Running  master03
+authentication-operator-559d87b6-t5ttm         Running  master01
+oauth-openshift-6786dd496c-ghb6s               Running  master01
+oauth-openshift-6786dd496c-hnbsj               Running  master02
+...output omitted...
+Extracting a Single Property with Multiple Nesting from Resources
+The command oc get pods returns a list of pods. Supplying .items[*] iterates over each pod Each pod contains a nested spec.containers object, which is a list of the containers in the pod. Using [*] iterates over all containers in all pods.
+
+[user@demo ~]$ oc get pods -A \
+> -o jsonpath='{.items[*].spec.containers[*].image}'
+quay.io/external_storage/nfs-client-provisioner:latest
+...output omitted...
+Extracting Multiple Properties at Different Levels of Nesting from Resources
+Use the {range} statement to perform more complex iterations. The statement {range x}…​template…​{end} executes template for each item in x until reaching the end.
+
+Use {range} as an alternative to .items[*].property.
+
+[user@demo ~]$  oc get pods -A \
+> -o jsonpath='{range .items[*]}'\
+> '{.metadata.namespace} {.metadata.creationTimestamp}{"\n"}'
+nfs-client-provisioner 2020-06-22T16:50:34Z
+openshift-apiserver-operator 2020-06-22T16:38:09Z
+...output omitted...
+Use nested ranges to print nested information in lists of items.
+
+Print a line for every pod. Print all pod conditions on each line.
+
+[user@demo ~]$ oc get pods -A -o jsonpath='{range.items[*]}'\
+> '{"\n"}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}'\
+> '{range.status.conditions[*]}{.type}-{.status},{.end}{end}{"\n"}'
+
+nfs-client-provisioner	nfs-client-provisioner-865c67f466-spfv6	Initialized-True,Ready-True,ContainersReady-True,PodScheduled-True,
+openshift-apiserver-operator	openshift-apiserver-operator-54b67788df-7k9k9	Initialized-True,Ready-True,ContainersReady-True,PodScheduled-True,
+openshift-apiserver	apiserver-587b85b7db-47nqv	Initialized-True,Ready-True,ContainersReady-True,PodScheduled-True,
+...output omitted...
+It is often helpful to use the argument -o jsonpath-file to store JSONPath reports in files for readability.
+
+Create not_ready_nodes.jsonpath:
+
+{range .items[*]}
+  {.metadata.name}
+  {range .status.conditions[?(@.status=="False")]}
+    {.type}{"="}{.status} {.message}
+  {end}
+{end}
+Execute the report:
+
+[user@demo ~]$ oc get nodes -o jsonpath-file=not_ready_nodes.jsonpath
+
+  master01
+
+    MemoryPressure=False kubelet has sufficient memory available
+
+    DiskPressure=False kubelet has no disk pressure
+
+    PIDPressure=False kubelet has sufficient PID available
+
+  master02
+
+...output omitted...
+Note that spacing in JSONPath is significant, so the output contains the indentation and line breaks in the template.
+
+Using Label Filtering
+Use --show-labels to view labels with oc get.
+
+[user@demo ~]$ oc get deployment -n openshift-cluster-storage-operator \
+> --show-labels
+NAME                               ... LABELS
+cluster-storage-operator           ... <none>
+csi-snapshot-controller            ... <none>
+csi-snapshot-controller-operator   ... app=csi-snapshot-controller-operator
+Use the argument -l label to filter by label:
+
+[user@demo ~]$ oc get deployment -n openshift-cluster-storage-operator \
+> -l app=csi-snapshot-controller-operator -o name
+deployment.apps/csi-snapshot-controller-operator
+Introducing Alternative Methods for Extracting Resource Information
+The command oc get -o name is also useful for many automation cases. JSONPath might not cover all operations that you want to perform on resource information. Because oc get can return a JSON output, any tool that understands JSON can process OpenShift resource information. Lastly, the jq command line processor provides a domain-specific language to process JSON information, enabling users to perform more powerful transformations.
+
+Describing Automation Challenges with Resource Updates
+In general, automation executes a series of defined steps. Operators execute steps that change an OpenShift resource specification in the background, following the controller pattern. Steps depending on a previous step that is not ready yet can fail, breaking the automation.
+
+Waiting for the controllers to execute the changes prevents these issues. Waiting for a predefined amount of time after a change can work in some situations, but this is a fragile and inefficient approach. Some automation tools provide features to solve this problem robustly and efficiently:
+
+oc rollout status waits until a Deployment is rolled out.
+
+The Ansible k8s module can wait until resources it manages are in the desired state.
+
+However, sometimes waiting must be implemented ad hoc and can provide the only available option to complete some automation approaches.
+
+Waiting on Triggered Deployment Updates
+The authentication Cluster Operator uses a Deployment to run the processes that implement authentication. When using the HTPasswd identity provider, user credentials are stored in a Secret. Changing the contents of the Secret triggers a Deployment update. This update occurs in the background, so after replacing the secret changes are not be executed immediately.
+
+To perform a change and wait until it is executed:
+
+Retrieve the observedGeneration of the Deployment before applying the change that triggers the update.
+
+deployment_generation=$(oc get \
+    -n openshift-authentication deployment/oauth-openshift \
+    -o jsonpath='{.status.observedGeneration}')
+Apply the change
+
+Wait until the observedGeneration increases.
+
+while
+    new_generation=$(oc get \
+        -n openshift-authentication deployment/oauth-openshift \
+        -o jsonpath='{.status.observedGeneration}')
+    [ $new_generation -eq $deployment_generation ]
+do
+    sleep 3
+done
+Execute the oc rollout status command specifying the new revision. Note that this command does not successfully execute until the preceding changes are complete.
+
+oc rollout status -n openshift-authentication deployment/oauth-openshift \
+    --revision=$new_generation
+Executing oc rollout status immediately after triggering the update does not work, as the update does not start immediately.
+
+Wait until there are no pods pending deletion.
+
+while [ -n "$(oc get pod -n openshift-authentication -o \
+jsonpath='{.items[?(@.metadata.deletionTimestamp != "")].metadata.name}')" ]
+do
+    sleep 3
+done

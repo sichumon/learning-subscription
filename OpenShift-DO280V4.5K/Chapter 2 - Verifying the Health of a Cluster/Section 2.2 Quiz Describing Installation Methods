@@ -1,0 +1,54 @@
+Quiz: Describing Installation Methods
+Choose the correct answers to the following questions:
+
+1.	Which of the following installation methods requires using the OpenShift installer to configure control plane and worker nodes?
+
+A	Full-stack automation.
+
+B	Pre-existing infrastructure.
+
+C	Both full-stack automation and pre-existing infrastructure.
+
+D	Neither full-stack automation nor pre-existing infrastructure.
+
+2.	Which of the following installation methods allows setting up nodes using Red Hat Enterprise Linux?
+
+A	Full-stack automation.
+
+B	Pre-existing infrastructure.
+
+C	Both full-stack automation and pre-existing infrastructure.
+
+D	Neither full-stack automation nor pre-existing infrastructure.
+
+3.	Which of the following installation methods allows using an unsupported virtualization provider at the expense of some OpenShift features?
+
+A	Full-stack automation.
+
+B	Pre-existing infrastructure.
+
+C	Both full-stack automation and pre-existing infrastructure.
+
+D	Neither full-stack automation nor pre-existing infrastructure.
+
+4.	Which installation method allows using several supported cloud providers with minimum effort?
+
+A	Full-stack automation.
+
+B	Pre-existing infrastructure.
+
+C	Both full-stack automation and pre-existing infrastructure.
+
+D	Neither full-stack automation nor pre-existing infrastructure.
+
+5.	Which of the following installation methods allows extensive customization of the cluster settings by providing input to the OpenShift installer?
+
+A	Full-stack automation.
+
+B	Pre-existing infrastructure.
+
+C	Both full-stack automation and pre-existing infrastructure.
+
+D	Neither full-stack automation nor pre-existing infrastructure.
+
+ANSWERS: 1.C 2.B 3.B 4.A 5.D 

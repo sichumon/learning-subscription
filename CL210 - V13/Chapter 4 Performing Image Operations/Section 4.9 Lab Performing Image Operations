@@ -1,0 +1,180 @@
+Lab: Performing Image Operations
+Performance Checklist
+
+In this lab, you will build a disk image using diskimage-builder, modify it using guestfish, upload it to the Image service, then launch an instance using the new image.
+
+Outcomes
+
+You should be able to:
+
+Build an image using diskimage-builder.
+
+Customize the image using a post-install script.
+
+Customize the image using the guestfish command.
+
+Upload the image to the OpenStack Image service.
+
+Launch an instance using the customized image.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab customization-review setup command. This ensures that the required packages are installed on workstation, and provisions the environment with the resources needed to launch an instance.
+
+[student@workstation ~]$ lab customization-review setup
+On workstation, retrieve the osp-small.qcow2 image from http://materials.example.com/osp-small.qcow2 and save it in the /home/student/ directory.
+
+[student@workstation ~]$ wget http://materials.example.com/osp-small.qcow2 \
+-O /home/student/osp-small.qcow2
+Create a copy of the /usr/share/diskimage-builder/elements directory to work with under /home/student/.
+
+[student@workstation ~]$ cp -a /usr/share/diskimage-builder/elements \
+/home/student/
+Create a post-install.d directory under the working copy of the rhel7 directory.
+
+[student@workstation ~]$ mkdir -p /home/student/elements/rhel7/post-install.d
+Add a script under the rhel7/post-install.d directory to enable the httpd service.
+
+Add a script to enable the httpd service.
+
+[student@workstation ~]$ cd /home/student/elements/rhel7/post-install.d/
+[student@workstation post-install.d]$ cat <<EOF > 01-enable-services
+#!/bin/bash
+systemctl enable httpd
+EOF
+Set the executable permission on the script.
+
+[student@workstation post-install.d]$ chmod +x 01-enable-services
+Change back to your home directory.
+
+[student@workstation post-install.d]$ cd
+[student@workstation ~]$ 
+Export the following environment variables, which diskimage-builder requires. The DIB_NO_TMPFS variable is only required because workstation has a small hard disk, it is not required in most cases.
+
+Table 4.11. Environment Variables
+
+Variable	Content
+DIB_LOCAL_IMAGE	/home/student/osp-small.qcow2
+DIB_YUM_REPO_CONF	"/etc/yum.repos.d/openstack.repo"
+ELEMENTS_PATH	/home/student/elements
+DIB_NO_TMPFS	1
+
+[student@workstation ~]$ export DIB_LOCAL_IMAGE=/home/student/osp-small.qcow2
+[student@workstation ~]$ export DIB_YUM_REPO_CONF=/etc/yum.repos.d/openstack.repo
+[student@workstation ~]$ export ELEMENTS_PATH=/home/student/elements
+[student@workstation ~]$ export DIB_NO_TMPFS=1
+Build a Red Hat Enterprise Linux 7 image named production-rhel-web.qcow2 using the diskimage-builder elements configured previously. Include the httpd package in the image. Provide the password for student when prompted.
+
+[student@workstation ~]$ disk-image-create vm rhel7 \
+-t qcow2 \
+-p httpd \
+-o production-rhel-web.qcow2
+Use the guestfish command to add a custom web index page to the production-rhel-web.qcow2 image. Include the text production-rhel-web in the index.html file. Ensure the SELinux context of /var/www/html/index.html is correct.
+
+Open a guestfish shell for the production-rhel-web.qcow2 image.
+
+[student@workstation ~]$ guestfish -i -a production-rhel-web.qcow2
+...output omitted...
+><fs>
+Create a new /var/www/html/index.html file.
+
+><fs> touch /var/www/html/index.html
+Edit the /var/www/html/index.html file and include the required key words.
+
+><fs> edit /var/www/html/index.html
+This instance uses the production-rhel-web image.
+To ensure the new index page works with SELinux in enforcing mode, restore the /var/www/ directory context (including the index.html file).
+
+><fs> selinux-relabel /etc/selinux/targeted/contexts/files/file_contexts /var/www/
+Exit the guestfish shell.
+
+><fs> exit
+
+[student@workstation ~]$
+As the operator1 user, create a new OpenStack image named production-rhel-web using the production-rhel-web.qcow2 image, with a minimum disk requirement of 10 GiB, and a minimum RAM requirement of 2 GiB.
+
+Source the /home/student/operator1-production-rc environment file.
+
+[student@workstation ~]$ source ~/operator1-production-rc
+[student@workstation ~(operator1-production)]$ 
+Upload the production-rhel-web.qcow2 image to the OpenStack Image service.
+
+[student@workstation ~(operator1-production)]$ openstack image create \
+--disk-format qcow2 \
+--min-disk 10 \
+--min-ram 2048 \
+--file ~/production-rhel-web.qcow2 \
+production-rhel-web
+...output omitted...
+As the operator1 user, launch an instance using the following attributes:
+
+Table 4.12. Instance Attributes
+
+Attribute	Value
+flavor	default
+key pair	example-keypair
+network	production-network1
+image	production-rhel-web
+security group	default
+name	production-web1
+
+[student@workstation ~(operator1-production)]$ openstack server create \
+--flavor default \
+--key-name example-keypair \
+--nic net-id=production-network1 \
+--image production-rhel-web \
+--security-group default \
+--wait production-web1
+...output omitted...
+List the available floating IP addresses, and then allocate one to production-web1.
+
+List the floating IPs. Available IP addresses have the Port attribute set to None.
+
+[student@workstation ~(operator1-production)]$ openstack floating ip list \
+-c "Floating IP Address" -c Port
++---------------------+------+
+| Floating IP Address | Port |
++---------------------+------+
+| 172.25.250.104      | None |
++---------------------+------+
+Attach an available floating IP to the production-web1 instance.
+
+[student@workstation ~(operator1-production)]$ openstack server add \ 
+floating ip production-web1 172.25.250.104
+Use the ssh command to log in to the production-web1 instance. Verify that the httpd package is installed, and that the httpd service is enabled and running.
+
+Use SSH to log in to the production-web1 instance.
+
+[student@workstation ~(operator1-production)]$ ssh cloud-user@172.25.250.104
+Warning: Permanently added '172.25.250.104' (ECDSA) to the list of known hosts.
+[cloud-user@production-web1 ~]$ 
+Verify that the httpd package is installed.
+
+[cloud-user@production-web1 ~]$ rpm -q httpd
+httpd-2.4.6-45.el7.x86_64
+Verify that the httpd service is running, and then log off.
+
+[cloud-user@production-web1 ~]$ systemctl status httpd
+...output omitted...
+   Loaded: loaded (/usr/lib/systemd/system/httpd.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2017-05-24 23:55:42 EDT; 8min ago
+     Docs: man:httpd(8)
+           man:apachectl(8)
+ Main PID: 833 (httpd)
+...output omitted...
+[cloud-user@production-web1 ~]$ logout
+[student@workstation ~(operator1-production)]$ 
+From workstation, confirm that the custom web page, displayed from production-web1, contains the text production-rhel-web.
+
+[student@workstation ~(operator1-production)]$ curl http://172.25.250.104/index.html
+This instance uses the production-rhel-web image.
+Evaluation
+
+On workstation, run the lab customization-review grade command to confirm the success of this exercise. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab customization-review grade
+Cleanup
+
+On workstation, run the lab customization-review cleanup command to clean up this exercise.
+
+[student@workstation ~]$ lab customization-review cleanup

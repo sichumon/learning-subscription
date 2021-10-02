@@ -1,0 +1,97 @@
+Lab: Managing Operators
+In this lab, you will install and troubleshoot operators.
+
+Outcomes
+
+You should be able to:
+
+Install the OpenShift metering operator from the OperatorHub.
+
+Update the channel of an operator.
+
+Verify the CVO restoration of a cluster operator.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the environment for this lab is set up properly.
+
+[student@workstation ~]$ lab operators-review start
+Procedure 3.3. Instructions
+
+Install the OpenShift metering operator by using the metering_operator.yaml file located in the /home/student/DO380/labs/operators-review directory. This file has errors that have to be fixed for a successful installation. Find this errors by applying the file using oc apply.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Change to the ~/DO380/labs/operators-review directory. Apply the metering_operator.yaml file and identify the errors.
+
+[student@workstation ~]$ cd ~/DO380/labs/operators-review
+[student@workstation operators-review]$ oc apply -f metering_operator.yaml
+unable to decode "metering_operator.yaml": Object 'Kind' is missing in '{"apiVersion":"v1","ind":"Namespace","metadata":{"labels":{"openshift.io/cluster-monitoring":"true"},"name":"openshift-metering"}}'
+Error from server (NotFound): error when creating "metering_operator.yaml": namespaces "openshift-metering" not found
+Error from server (NotFound): error when creating "metering_operator.yaml": namespaces "openshift-metering" not found
+Edit the metering_operator.yaml file with your favorite editor or use the sed command to fix the kind field name for the namespace object.
+
+[student@workstation operators-review]$ sed -i 's/^ind/kind/' \
+> metering_operator.yaml
+Verify the changes made to the metering_operator.yaml file.
+
+[student@workstation operators-review]$ cat metering_operator.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  name: openshift-metering
+
+...output omitted...
+[student@workstation operators-review]$ oc apply -f metering_operator.yaml
+namespace/openshift-metering created
+operatorgroup.operators.coreos.com/openshift-metering created
+subscription.operators.coreos.com/lab-openshift-metering created
+Update the metering operator channel to 4.5 by modifying channel field in the metering_operator.yaml file. Use the oc apply command for the update.
+
+Edit the metering_operator.yaml and change the value of the channel field from 4.4 to 4.5.
+
+Apply the change using oc apply.
+
+[student@workstation operators-review]$ oc apply -f metering_operator.yaml
+namespace/openshift-metering unchanged
+operatorgroup.operators.coreos.com/openshift-metering unchanged
+subscription.operators.coreos.com/lab-openshift-metering configured
+Verify the update by checking the pod status
+
+[student@workstation operators-review]$ oc get sub/lab-openshift-metering \
+> -n openshift-metering
+NAME                     PACKAGE        SOURCE             CHANNEL
+lab-openshift-metering   metering-ocp   redhat-operators   4.5
+Delete the project openshift-cluster-storage-operator to confirm the that the CVO restores the cluster storage operator.
+
+Delete the openshift-cluster-storage-operator project.
+
+[student@workstation operators-review]$ oc delete project \
+> openshift-cluster-storage-operator
+Run the watch command to verify that the project is restored.
+
+[student@workstation operators-review]$ watch oc get project \
+> openshift-cluster-storage-operator
+After the openshift-cluster-storage-operator project is restored, press Ctrl+C to exit the watch command.
+
+Change to the /home/student/ directory.
+
+[student@workstation operators-review]$ cd
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab operators-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab operators-review finish
+This concludes the section.

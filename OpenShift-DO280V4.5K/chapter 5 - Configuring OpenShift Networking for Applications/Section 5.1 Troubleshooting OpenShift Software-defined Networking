@@ -1,0 +1,216 @@
+Chapter 5. Configuring OpenShift Networking for Applications
+Troubleshooting OpenShift Software-defined Networking
+Guided Exercise: Troubleshooting OpenShift Software-defined Networking
+Exposing Applications for External Access
+Guided Exercise: Exposing Applications for External Access
+Configuring Network Policies
+Guided Exercise: Configuring Network Policies
+Lab: Configuring OpenShift Networking for Applications
+Summary
+Abstract
+
+Goal	Troubleshoot OpenShift software-defined networking (SDN) and configure network policies.
+Objectives	
+Troubleshoot OpenShift software-defined networking using the command-line interface.
+
+Allow and protect network connections to applications inside an OpenShift cluster.
+
+Restrict network traffic between projects and pods.
+
+Sections	
+Troubleshooting OpenShift Software-defined Networking (and Guided Exercise)
+
+Exposing Applications for External Access (and Guided Exercise)
+
+Configuring Network Policies (and Guided Exercise)
+
+Lab	
+Configuring OpenShift Networking for Applications
+
+Troubleshooting OpenShift Software-defined Networking
+Objectives
+After completing this section, you should be able to troubleshoot OpenShift software-defined networking using the command-line interface.
+
+Introducing OpenShift Software-defined Networking
+OpenShift implements a software-defined network (SDN) to manage the network infrastructure of the cluster and user applications. Software-defined networking is a networking model that allows you to manage network services through the abstraction of several networking layers. It decouples the software that handles the traffic, called the control plane, and the underlying mechanisms that route the traffic, called the data plane. Among the many features of SDN, open standards enable vendors to propose their solutions, centralized management, dynamic routing, and tenant isolation.
+
+In OpenShift Container Platform, the SDN satisfies the following five requirements:
+
+Managing the network traffic and network resources programmatically, so that the organization teams can decide how to expose their applications.
+
+Managing communication between containers that run in the same project.
+
+Managing communication between pods, whether they belong to a same project or run in separate projects.
+
+Managing network communication from a pod to a service.
+
+Managing network communication from an external network to a service, or from containers to external networks.
+
+The SDN implementation creates a backward-compatible model, in which pods are akin to virtual machines in terms of port allocation, IP address leasing, and reservation.
+
+Discussing OpenShift Networking Model
+The Container Network Interface (CNI) is a common interface between the network provider and the container execution and is implemented as network plug-ins. The CNI provides the specification for plug-ins to configure network interfaces inside containers. Plug-ins written to the specification allow different network providers to control the OpenShift cluster network.
+
+The SDN uses CNI plug-ins to create Linux namespaces to partition the usage of resources and processes on physical and virtual hosts. This implementation allows containers inside pods to share network resources, such as devices, IP stacks, firewall rules, and routing tables. The SDN allocates a unique routable IP to each pod so that you can access the pod from any other service in the same network.
+
+Some common CNI plug-ins used in OpenShift are OpenShift SDN, OVN-Kubernetes, and Kuryr. The OpenShift SDN network provider is currently the default network provider in OpenShift 4.5, but future OpenShift 4 releases will default to the OVN-Kubernetes network provider.
+
+The OpenShift SDN network provider uses Open vSwitch (OVS) to connect pods on the same node and Virtual Extensible LAN (VXLAN) tunneling to connect nodes. OVN-Kubernetes uses Open Virtual Network (OVN) to manage the cluster network. OVN extends OVS with virtual network abstractions. Kuryr provides networking through the Neutron and Octavia Red Hat OpenStack Platform services.
+
+Migrating Legacy Applications
+The SDN design makes it easy to containerize your legacy applications because you do not need to change the way the application components communicate with each other. If your application is comprised of many services that communicate over the TCP/UDP stack, this approach still works as containers in a pod share the same network stack.
+
+The following diagram shows how all pods are connected to a shared network.
+
+NOTE
+The OpenShift Cluster Network Operator manages the network, as discussed later.
+
+
+Figure 5.1: Kubernetes basic networking
+Using Services for Accessing Pods
+Kubernetes provides the concept of a service, which is an essential resource in any OpenShift application. Services allow for the logical grouping of pods under a common access route. A service acts as a load balancer in front of one or more pods, thus decoupling the application specifications (such as the number running of replicas) from the access to the application. It load balances client requests across member pods, and provides a stable interface that enables communication with pods without tracking individual pod IP addresses.
+
+Most real-world applications do not run as a single pod. They need to scale horizontally, so an application could run on many pods to meet growing user demand. In an OpenShift cluster, pods are constantly created and destroyed across the nodes in the cluster, such as during the deployment of a new application version or when draining a node for maintenance. Pods are assigned a different IP address each time they are created; thus, pods are not easily addressable. Instead of having a pod discover the IP address of another pod, you can use services to provide a single, unique IP address for other pods to use, independent of where the pods are running.
+
+Services rely on selectors (labels) that indicate which pods receive the traffic through the service. Each pod matching these selectors is added to the service resource as an endpoint. As pods are created and killed, the service automatically updates the endpoints.
+
+Using selectors brings flexibility to the way you design the architecture and routing of your applications. For example, you can divide the application into tiers and decide to create a service for each tier. Selectors allow a design that is flexible and highly resilient.
+
+OpenShift uses two subnets: one subnet for pods, and one subnet for services. The traffic is forwarded in a transparent way to the pods; an agent (depending on the network mode that you use) manages routing rules to route traffic to the pods that match the selectors.
+
+The following diagram shows how three API pods are running on separate nodes. The service1 service balances the load between these three pods.
+
+
+Figure 5.2: Using services for accessing applications
+The following YAML definition shows you how to create a service. This defines the application-frontend service, which creates a virtual IP that exposes the TCP port 443. The front-end application listens on the unprivileged port 8843.
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: application-frontend 1
+  labels:
+    app: frontend-svc 2
+spec:
+  ports: 3
+    - name: HTTP
+      protocol: TCP
+      port: 443 4
+      targetPort: 8443 5
+  selector: 6
+    app: shopping-cart
+    name: frontend
+  type: ClusterIP 7
+1
+
+The name of the service. This identifier allows you to manage the service after its creation.
+
+2
+
+A label that you can use as a selector. This allow you to logically group your services.
+
+3
+
+An array of objects that describes network ports to expose.
+
+Each entry defines the name for the port mapping. This value is generic and is used for identification purposes only.
+
+4
+
+This is the port that the service exposes. You use this port to connect to the application that the service exposes.
+
+5
+
+This is the port on which the application listens. The service creates a forwarding rule from the service port to the service target port.
+
+6
+
+The selector defines which pods are in the service pool. Services use this selector to determine where to route the traffic.
+
+In this example, the service targets all pods whose labels match app: shopping-cart and name: frontend.
+
+5
+
+This is how the service is exposed. ClusterIP exposes the service using an IP address internal to the cluster and is the default value. Other service types will be described in elsewhere this course.
+
+Discussing the DNS Operator
+The DNS operator deploys and runs a DNS server managed by CoreDNS, a lightweight DNS server written in GoLang. The DNS operator provides DNS name resolution between pods, which enables services to discover their endpoints.
+
+Every time you create a new application, OpenShift configures the pods so that they contact the CoreDNS service IP for DNS resolution.
+
+Run the following command to review the configuration of the DNS operator.
+
+[user@demo ~]$ oc describe dns.operator/default
+Name:         default
+...output omitted...
+API Version:  operator.openshift.io/v1
+Kind:         DNS
+...output omitted...
+Spec:
+Status:
+  Cluster Domain:  cluster.local
+  Cluster IP:      172.30.0.10
+...output omitted...
+The DNS operator is responsible for the following:
+
+Creating a default cluster DNS name (cluster.local)
+
+Assigning DNS names to services that you define (for example, db.backend.svc.cluster.local)
+
+For example, from a pod named example-6c4984d949-7m26r you can reach the hello pod through the hello service in the test project via the FQDN for the service.
+
+[user@demo ~]$ oc rsh example-6c4984d949-7m26r curl \
+>    hello.test.svc.cluster.local:8080
+Managing DNS Records for Services
+This DNS implementation allows pods to seamlessly resolve DNS names for resources in a project or the cluster. Pods can use a predictable naming scheme for accessing a service. For example, querying the db.backend.svc.cluster.local host name from a container returns the IP address of the service. In this example, db is the name of the service, backend is the project name, and cluster.local is the cluster DNS name.
+
+CoreDNS creates two kind of records for services: A records that resolve to services, and SRV records that match the following format:
+
+_port-name._port-protocol.svc-name.namespace.svc.cluster-domain.cluster-domain
+For example, if you use a service that exposes the TCP port 443 through the HTTPS service, the SRV record is created as follows:
+
+_443-tcp._tcp.https.frontend.svc.cluster.local
+NOTE
+When services do not have a cluster IP, the DNS operator assigns them a DNS A record that resolves to the set of IPs of the pods behind the service.
+
+Similarly, the newly created SRV record resolves to all the pods that are behind the service.
+
+Introducing the Cluster Network Operator
+OpenShift Container Platform uses the Cluster Network Operator for managing the SDN. This includes the network CIDR to use, the network provider, and the IP address pools. Configuration of the Cluster Network Operator is done before installation, although it is possible to migrate from the OpenShift SDN default CNI network provider to the OVN-Kubernetes network provider.
+
+Run the following oc get command as an administrative user to consult the SDN configuration, which is managed by the Network.config.openshift.io custom resource definition.
+
+[user@demo ~]$ oc get network/cluster -o yaml
+apiVersion: config.openshift.io/v1
+kind: Network
+...output omitted...
+spec:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14 1
+    hostPrefix: 23 2
+  externalIP:
+    policy: {}
+  networkType: OpenshiftSDN 3
+  serviceNetwork:
+  - 172.30.0.0/16
+...output omitted...
+1
+
+Defines the CIDR for all pods in the cluster. In this example, the SDN has a netmask of 255.252.0.0 and can allocate 262144 IP addresses.
+
+2
+
+Defines the host prefix. A value of 23 indicates a netmask of 255.255.254.0, which translates to 512 allocatable IPs.
+
+3
+
+Shows the current SDN provider. You can choose between OpenShiftSDN, OVNKubernetes, and Kuryr.
+
+NOTE
+Configuring additional networks is outside the scope of the course. For more information on the Kubernetes network custom resource definition, consult the Kubernetes Network Custom Resource Definition De-facto Standard Version 1 document listed in the references section.
+
+Introducing Multus CNI
+Multus is an open source project to support multiple network cards in OpenShift. One of the challenges that Multus solves is the migration of network function virtualization to containers. Multus acts as a broker and arbiter of other CNI plug-ins for managing the implementation and life cycle of supplementary network devices in containers. Multus supports plug-ins, such as SR-IOV, vHost CNI, Flannel, and Calico. Special edge cases often seen in telecommunication services, edge computing, and virtualization are handled by Multus, allowing multiple network interfaces to pods.
+
+Be aware that all Kubernetes and OpenShift networking features, such as services, ingress, and routes, ignore the extra network devices provided by Multus.
+
+ 

@@ -1,0 +1,227 @@
+
+Guided Exercise: Configuring Applications to Trust the Enterprise Certificate Authority
+In this exercise you will modify the deployment of an application so that it trusts certificates signed by your enterprise certificate authority.
+
+Outcomes
+
+You should be able to:
+
+Identity the configuration map used by the cluster proxy.
+
+Verify the certificates in the cluster proxy configuration map.
+
+Create a new configuration map that is injected with the trusted certificate bundle.
+
+Mount your configuration map inside a pod so that it trusts certificates signed by your enterprise CA.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and ensures that your cluster uses a certificate signed by the classroom enterprise CA.
+
+[student@workstation ~]$ lab certificates-app-trust start
+Procedure 6.2. Instructions
+
+Determine if the cluster proxy trusts additional certificates. The listed name is a configuration map in the openshift-config namespace.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Display the cluster proxy resource definition in YAML format. The name attribute under trustedCA is the name of the configuration map in the openshift-config namespace.
+
+[student@workstation ~]$ oc get proxy/cluster -o yaml
+apiVersion: config.openshift.io/v1
+kind: Proxy
+metadata:
+  creationTimestamp: "2020-05-28T19:17:20Z"
+  generation: 2
+  name: cluster
+  resourceVersion: "39884"
+  selfLink: /apis/config.openshift.io/v1/proxies/cluster
+  uid: c8d8a144-ded9-41d2-87d2-422bbfea0b47
+spec:
+  trustedCA:
+    name: combined-certs
+status: {}
+Search for Classroom in the content of the data key of the identified configuration map. It must contain the wildcard certificate and the certificate for your enterprise CA.
+
+[student@workstation ~]$ oc get configmap combined-certs -n openshift-config \
+>   -o jsonpath='{.data.*}' | grep Classroom
+# Classroom Wildcard Certificate
+# GLS Training Classroom Certificate Authority
+NOTE
+If the comment for the wildcard certificate displays # Classroom Wildcard & Master API Certificate instead of # Classroom Wildcard Certificate, then the API server also uses the wildcard certificate. Either wildcard certificate is valid, and the same comment appears a few times in this exercise.
+
+Create the certificates-app-trust project with two applications named hello1 and hello2. Use the cluster wildcard certificate to create edge routes for each application.
+
+Create the certificates-app-trust project.
+
+[student@workstation ~]$ oc new-project certificates-app-trust
+Now using project "certificates-app-trust" on server
+"https://api.ocp4.example.com:6443".
+...output omitted...
+Use the container image located at quay.io/redhattraining/hello-world-nginx:v1.0 to create the hello1 application.
+
+[student@workstation ~]$ oc new-app --name hello1 \
+>   --docker-image quay.io/redhattraining/hello-world-nginx:v1.0
+...output omitted...
+--> Success
+...output omitted...
+Use the cluster wildcard certificate to create an edge route for the hello1 application.
+
+[student@workstation ~]$ oc create route edge --service hello1 \
+>   --hostname hello1-trust.apps.ocp4.example.com
+route.route.openshift.io/hello1 created
+Use the container image located at quay.io/redhattraining/hello-world-nginx:v1.0 to create the hello2 application.
+
+[student@workstation ~]$ oc new-app --name hello2 \
+>   --docker-image quay.io/redhattraining/hello-world-nginx:v1.0
+...output omitted...
+--> Success
+...output omitted...
+Use the cluster wildcard certificate to create an edge route for the hello2 application.
+
+[student@workstation ~]$ oc create route edge --service hello2 \
+>   --hostname hello2-trust.apps.ocp4.example.com
+route.route.openshift.io/hello2 created
+Use the curl command to access both application routes from the workstation machine. Both routes are secure because the workstation machine trusts any certificate signed by the classroom enterprise CA. The edge routes use the wildcard certificate for the cluster.
+
+Identify the routes.
+
+[student@workstation ~]$ oc get routes
+NAME     HOST/PORT                            ...   PORT       TERMINATION   ...
+hello1   hello1-trust.apps.ocp4.example.com   ...   8080-tcp   edge          ...
+hello2   hello2-trust.apps.ocp4.example.com   ...   8080-tcp   edge          ...
+Use the curl command to access hello1-trust.apps.ocp4.example.com.
+
+[student@workstation ~]$ curl https://hello1-trust.apps.ocp4.example.com
+<html>
+  <body>
+    <h1>Hello, world from nginx!</h1>
+  </body>
+</html>
+Use the curl command to access hello2-trust.apps.ocp4.example.com.
+
+[student@workstation ~]$ curl https://hello2-trust.apps.ocp4.example.com
+<html>
+  <body>
+    <h1>Hello, world from nginx!</h1>
+  </body>
+</html>
+Connect to the hello1 application pod and attempt to access the route for the hello2 application. This attempt fails because the hello1 pods do not trust certificates signed by the enterprise CA.
+
+Identify the running application pods for the hello1 application.
+
+[student@workstation ~]$ oc get pods -l deployment=hello1
+NAME                      READY   STATUS    RESTARTS   AGE
+hello1-766cfb954c-hghz8   1/1     Running   0          98s
+Connect to the hello1 application pod.
+
+[student@workstation ~]$ oc rsh hello1-766cfb954c-hghz8
+Attempt to access the route for the hello2 application. This attempt fails because the hello1 pod does not trust the enterprise CA.
+
+sh-4.4$ curl https://hello2-trust.apps.ocp4.example.com
+curl: (60) SSL certificate problem: self signed certificate in certificate chain
+More details here: https://curl.haxx.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the web page mentioned above.
+Exit the pod.
+
+sh-4.4$ exit
+Inject the trusted certificate bundle into a new ca-certs configuration map.
+
+Create the ca-certs configuration map.
+
+[student@workstation ~]$ oc create configmap ca-certs
+configmap/ca-certs created
+Label the configuration map with config.openshift.io/inject-trusted-cabundle=true.
+
+[student@workstation ~]$ oc label configmap ca-certs \
+>   config.openshift.io/inject-trusted-cabundle=true
+configmap/ca-certs labeled
+Display the contents of the configuration map. Although it was originally empty, the cluster network operator injected certificates into it. There are many certificates in the configuration map; the certificates from combined-certs were injected at the top.
+
+[student@workstation ~]$ oc get configmap ca-certs -o yaml | head -n6
+apiVersion: v1
+data:
+  ca-bundle.crt: |
+    # Classroom Wildcard Certificate
+    -----BEGIN CERTIFICATE-----
+    MIIF/DCCA+SgAwIBAgIUfQkO2Jic+6NuP1KaDXejqqUM3I4wDQYJKoZIhvcNAQEL
+Mount the ca-certs configuration map in the hello1 application pod, ensuring that the hello1 application trusts certificates signed by the classroom enterprise CA.
+
+Use the oc set volume command to mount the ca-certs configuration map into the hello1 deployment.
+
+[student@workstation ~]$ oc set volume deployment/hello1 -t configmap \
+>   --name trusted-ca --add --read-only=true \
+>   --mount-path /etc/pki/ca-trust/extracted/pem \
+>   --configmap-name ca-certs
+deployment.apps/hello1 volume updated
+Modify the hello1 deployment to add additional information about the configuration map. Add the lines in bold and ensure the correct indentation (using spaces rather than tabs) before saving.
+
+[student@workstation ~]$ oc edit deployment/hello1
+...output omitted...
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: ca-certs
+        name: trusted-ca
+...output omitted...
+This modification creates the tls-ca-bundle.pem file at the volume mount point (/etc/pki/ca-trust/extracted/pem/) using the data from the ca-bundle.crt key contained in the ca-certs configuration map.
+
+Connect to the new hello1 application pod and attempt to access the route for the hello2 application.
+
+Wait until the pods in the hello1 application finish redeploying. Press Ctrl+C to exit the watch command.
+
+[student@workstation ~]$ watch oc get pods -l deployment=hello1
+List the pods for the hello1 application.
+
+[student@workstation ~]$ oc get pods -l deployment=hello1
+NAME                      READY   STATUS    RESTARTS   AGE
+hello1-566ccbb7f5-f5r94   1/1     Running   0          41s
+List the routes for the hello2 application.
+
+[student@workstation ~]$ oc get routes -l app=hello2
+NAME     HOST/PORT                            ...
+hello2   hello2-trust.apps.ocp4.example.com   ...
+Connect to the new hello1 application pod.
+
+[student@workstation ~]$ oc rsh hello1-566ccbb7f5-f5r94
+Check for classroom certificates in /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem.
+
+sh-4.4$ grep Classroom /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+# Classroom Wildcard Certificate
+# GLS Training Classroom Certificate Authority
+Access the route for the hello2 application. The curl command works because the pod now trusts certificates signed by the classroom enterprise CA.
+
+sh-4.4$ curl https://hello2-trust.apps.ocp4.example.com
+<html>
+  <body>
+    <h1>Hello, world from nginx!</h1>
+  </body>
+</html>
+Exit from the pod.
+
+sh-4.4$ exit
+Clean up your environment. Delete the certificates-app-trust project.
+
+[student@workstation ~]$ oc delete project certificates-app-trust
+project.project.openshift.io "certificates-app-trust" deleted
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab certificates-app-trust finish
+This concludes the section.

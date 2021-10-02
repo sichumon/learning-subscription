@@ -1,0 +1,81 @@
+Chapter 11. Recovering Failed Worker Nodes
+Profiling Degraded Worker Nodes
+Guided Exercise: Profiling Degraded Worker Nodes
+Troubleshooting Worker Node Capacity Issues
+Guided Exercise: Troubleshooting Worker Node Capacity Issues
+Lab: Recovering Failed Worker Nodes
+Summary
+Abstract
+
+Goal	Inspect, troubleshoot, and remediate worker nodes in a variety of failure scenarios.
+Objectives	
+Profile worker nodes to examine healthy nodes, ensure the node services function properly, and identify adverse performance or degradation.
+
+Diagnose and troubleshoot capacity issues that occur on worker nodes.
+
+Sections	
+Profiling Degraded Worker Nodes (and Guided Exercise)
+
+Troubleshooting Worker Node Capacity Issues (and Guided Exercise)
+
+Lab	
+Recovering Failed Worker Nodes
+
+Profiling Degraded Worker Nodes
+Objectives
+After completing this section, you should be able to profile worker nodes to examine healthy nodes, ensure the node services function correctly, and identify adverse performance or degradation.
+
+Examining Healthy Worker Node Statuses
+To properly troubleshoot issues with a worker node, you must understand the typical status and behaviors of healthy worker nodes. Familiarity with the output of commands that report worker node status, running processes, and other critical information about the cluster and worker node health are essential to identifying a degraded environment. This knowledge allows you to identify and troubleshoot issues using valuable details that aid mitigation, such as the taints OpenShift applies to degraded worker nodes that describe the symptom.
+
+Retrieve node status:
+
+oc get nodes <NODE>
+Get information for a node through top output for currently running processes:
+
+oc adm top node <NODE>
+Check for any applied taints for a node:
+
+oc describe node <NODE> | grep -i taint
+Additionally, inspect the worker node through the web console and CLI commands to familiarize yourself with healthy operational statuses and where to find valuable information, such as on the Monitoring page. You can find a link to the OpenShift web console for your cluster using the command:
+
+oc whoami --show-console
+Ensuring Worker Node Service Functionality
+Each worker node has two main services, kubelet and cri-o, that allow for cluster operations. On the monitoring page, various probes are configured to monitor worker node performance and provide necessary details during service issues. More severe service issues might require direct access using CLI commands on the worker node, such as systemctl, to troubleshoot further and restore node health.
+
+Determine the appropriate method to manage the services on worker nodes:
+
+The web console monitoring provides insight into unhealthy worker nodes, but may not give specific details for every scenario.
+
+Use the oc client commands to gather as much information as available for the given symptoms.
+
+If you cannot correct the issue using other means, then connect directly to the worker node using SSH to mitigate the issue.
+
+Navigate the web console information alerting administrators to node issues.
+
+Identifying Adverse Worker Node Performance
+When OpenShift detects an adverse node condition, OpenShift applies a corresponding taint to the node.
+
+A taint that represents an adverse node condition consists of a key value pair directing cluster interactions with the worker node.
+
+The taint key helps administrators identify the cause of the node degradation. For example, the node.kubernetes.io/disk-pressure taint key indicates that a node is low on available disk space.
+
+OpenShift uses the taint effect value to direct pod scheduling preference on the tainted node. The table that follows describes the three taint effects and the corresponding impact on pod scheduling.
+
+Table 11.1. OpenShift Taint Effects
+
+Effect value	Description
+NoSchedule	
+New pods that do not match the taint are not scheduled on the node.
+
+Pods that are running on the node continue running.
+
+PreferNoSchedule	
+New pods that do not match the taint are only scheduled on the node when no other suitable node can be located.
+
+Pods that are running on the node continue running.
+
+NoExecute	
+New pods that do not match the taint are not scheduled on the node.
+
+Pods that are running on the node are removed and deployed on another suitable node.

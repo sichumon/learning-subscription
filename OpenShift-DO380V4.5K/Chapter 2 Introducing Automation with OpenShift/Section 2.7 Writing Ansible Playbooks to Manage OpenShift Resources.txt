@@ -1,0 +1,113 @@
+Writing Ansible Playbooks to Manage OpenShift Resources
+Objectives
+After completing this section, you should be able to automate creation and modification of OpenShift resources using the Ansible k8s modules.
+
+Explaining the Kubernetes Ansible Modules
+There are a handful of modules available to help manage and interact with Kubernetes. Those same modules also work with OpenShift because OpenShift is a distribution of Kubernetes. The shorthand name for Kubernetes, k8s, is used to refer to all of the Kubernetes modules and is the group name that prepends of all the Kubernetes modules.
+
+Table 2.1. k8s Modules in Ansible 2.9
+
+Module name	Description
+k8s	Manages Kubernetes objects. This module has access to all Kubernetes APIs, allowing you to create, update, or delete Kubernetes objects.
+k8s_auth	Authenticates to Kubernetes clusters which require an explicit login step, like OpenShift. This module returns an api_key that the other modules can use for authentication.
+k8s_info	Retrieves information about Kubernetes objects.
+k8s_scale	Sets a new size for a Deployment, ReplicaSet, Replication Controller, or Job.
+k8s_service	Manages Services on Kubernetes.
+
+Most of these modules have common parameters like api_key, context, and namespace. Shared parameters can be set to default values using the module_defaults attribute.
+
+module_defaults Example
+
+- hosts: localhost
+  module_defaults:
+    group/k8s:
+      api_key: "{{ auth_token }}"
+      host: https://api.example.com/
+      ca_cert: ca.pem
+Example Playbook
+
+- name: Log in to OpenShift
+  hosts: localhost
+  tasks:
+    - name: Log in (obtain access token)
+      k8s_auth:
+        host: https://api.ocp4.example.com:6443
+        username: admin
+        password: redhat
+        validate_certs: false
+      register: k8s_auth_results
+
+- name: Demonstrate k8s modules
+  hosts: localhost
+  vars:
+    namespace: dev
+  module_defaults:
+    group/k8s:
+      namespace: "{{ namespace }}"
+      api_key: "{{ hostvars['localhost']['k8s_auth_results']['k8s_auth']['api_key'] }}"
+      host: https://api.ocp4.example.com:6443
+      validate_certs: false
+  tasks:
+    - name: Create objects from the manifest
+      k8s:
+        state: present
+        src: "{{ playbook_dir + '/files/manifest.yml' }}"
+
+    - name: Get a info about Pods that are web apps in dev or test
+      k8s_info:
+        kind: Pod
+        label_selectors:
+          - app = web
+          - tier in (dev, test)
+
+    - name: Scale deployment up
+      k8s_scale:
+        kind: Deployment
+        name: example_deployment
+        replicas: 3
+
+    - name: Expose https port with ClusterIP
+      k8s_service:
+        state: present
+        name: example_service
+        ports:
+          - port: 443
+            protocol: TCP
+        selector:
+          key: value
+NOTE
+The apiVersion in the manifest might need to be more explicit for the openshift python package. Instead of putting v1, use the full endpoint, such as authorization.openshift.io/v1.
+
+IMPORTANT
+The current implementation of the k8s modules does not respect role standards. When using src or resource_definition parameters, you must provide the full path. The modules will not check the standard files or templates directories in a role automatically.
+
+Describing the K8s Modules Dependencies
+Prerequisite python packages for the k8s, k8s_info, and k8s_scale modules are:
+
+openshift >= 0.6
+
+PyYAML >= 3.11
+
+The k8s_service module does not require PyYAML and requires openshift >= 0.6.2.
+
+The k8s_auth module requires:
+
+urllib3
+
+requests
+
+requests-oauthlib
+
+IMPORTANT
+The openshift python package needs to stay at 0.8.x until the k8s_scale module is updated. https://github.com/ansible/ansible/pull/65312
+
+Explaining the Module Authentication Options
+Authenticate with the API using either a kubeconfig file, HTTP Basic Auth, or authentication tokens.
+
+If no connection options are provided, the openshift client attempts to load the default configuration file from ~/.kube/config. The kubeconfig module parameter specifies a path to an existing Kubernetes config file. The context module parameter chooses a context from the kubeconfig file.
+
+To authenticate via by HTTP Basic Auth, provide the host, username, and password module parameters. The optional proxy module parameter connects through an HTTP proxy.
+
+The k8s_auth module provides an authentication token that can be used with the api_key module parameter to authenticate with the API.
+
+Verify SSL certificates for the API server using the ca_cert, client_cert, and client_key module parameters. Toggle certificate validation with the validate_certs module parameter.

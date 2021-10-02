@@ -1,0 +1,363 @@
+Guided Exercise: Viewing Overcloud Control Plane Services
+In this exercise, you will view overcloud control plane services.
+
+Outcomes
+
+You should be able to:
+
+List MariaDB databases.
+
+Stop and start clustered resources.
+
+Verify the functionality of Redis.
+
+Verify the functionality of Memcached.
+
+Connect to an instance console from the command line.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab controlplane-services setup command.
+
+[student@workstation ~]$ lab controlplane-services setup
+From workstation, use SSH to connect to controller0. Use the sudo -i command to become the root user.
+
+[student@workstation ~]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+Check the status of the Ceph Monitor service. Note the details that have been called out.
+
+[root@controller0 ~]# systemctl status ceph-mon@controller0.service -l -n 0
+● ceph-mon@controller0.service - Ceph Monitor
+   Loaded: loaded (/etc/systemd/system/ceph-mon@.service; 1enabled; vendor preset: disabled)
+   Active: 2active (running) since Sun 2018-08-26 22:29:21 UTC; 4h 52min ago
+  Process: 6051 3ExecStartPre=/usr/bin/docker rm ceph-mon-%i (code=exited, status=1/FAILURE)
+ Main PID: 6085 (docker-current)
+   CGroup: /system.slice/system-ceph\x2dmon.slice/ceph-mon@controller0.service
+           └─6085 4/usr/bin/docker-current run --rm --name ceph-mon-controller0 --net=host --memory=1g --cpu-quota=100000 -v /var/lib/ceph:/var/lib/ceph:z -v /etc/ceph:/etc/ceph:z -v /var/run/ceph:/var/run/ceph:z -v /etc/localtime:/etc/localtime:ro --net=host -e IP_VERSION=4 -e MON_IP=172.24.3.1 -e CLUSTER=ceph -e FSID=f9d61d02-a355-11e8-ae2b-52540001fac8 -e CEPH_PUBLIC_NETWORK=172.24.3.0/24 -e CEPH_DAEMON=MON 172.25.249.200:8787/rhceph/rhceph-3-rhel7:latest
+1
+
+The service is enabled.
+
+2
+
+The service is active.
+
+3
+
+Any existing instances are removed before starting.
+
+4
+
+The full command line to the process.
+
+Check the status of the Ceph Metadata Server service. Note the details that have been called out.
+
+[root@controller0 ~]# systemctl status ceph-mds@controller0.service -l -n 0
+● ceph-mds@controller0.service - Ceph MDS
+   Loaded: loaded (/etc/systemd/system/ceph-mds@.service; 1enabled; vendor preset: disabled)
+   Active: 2active (running) since Sun 2018-08-26 22:29:21 UTC; 5h 33min ago
+  Process: 36072 ExecStartPre=/usr/bin/docker rm ceph-mds-controller0 (code=exited, status=1/FAILURE)
+  Process: 6050 ExecStartPre=/usr/bin/docker stop ceph-mds-controller0 (code=exited, status=1/FAILURE)
+ Main PID: 6148 (docker-current)
+   CGroup: /system.slice/system-ceph\x2dmds.slice/ceph-mds@controller0.service
+           └─6148 4/usr/bin/docker-current run --rm --net=host --memory=4g --cpu-quota=100000 -v /var/lib/ceph:/var/lib/ceph:z -v /etc/ceph:/etc/ceph:z -v /var/run/ceph:/var/run/ceph:z -v /etc/localtime:/etc/localtime:ro -e CLUSTER=ceph -e CEPH_DAEMON=MDS -e MDS_NAME=controller0 --name=ceph-mds-controller0 172.25.249.200:8787/rhceph/rhceph-3-rhel7:latest
+1
+
+The service is enabled.
+
+2
+
+The service is active.
+
+3
+
+Any existing instances are removed and stopped before starting.
+
+4
+
+The full command line to the process.
+
+List the MariaDB databases to see which components are storing data in the relational database.
+
+Execute the mysql -u root -e "show databases;" command inside the galera-bundle-docker-0 container.
+
+[root@controller0 ~]# docker exec -t \
+galera-bundle-docker-0 mysql -u root -e "show databases;"
++--------------------+
+| Database           |
++--------------------+
+| aodh               |
+| cinder             |
+| glance             |
+| gnocchi            |
+| heat               |
+| information_schema |
+| keystone           |
+| manila             |
+| mysql              |
+| nova               |
+| nova_api           |
+| nova_cell0         |
+| nova_placement     |
+| octavia            |
+| ovs_neutron        |
+| panko              |
+| performance_schema |
++--------------------+
+As an alternative to executing commands inside the Galera container, you can query MariaDB externally.
+
+Locate the password for the root MariaDB user.
+
+[root@controller0 ~]# grep ^password \
+/var/lib/config-data/puppet-generated/mysql/root/.my.cnf
+password="3T8pj6Nu9F"
+password="3T8pj6Nu9F"
+Determine the interface that MariaDB is listening on.
+
+[root@controller0 ~]# ss -tnlp | grep 3306
+LISTEN  0  128  172.24.1.1:3306     *:*    users:(("mysqld",pid=16796,fd=28))
+LISTEN  0  128  172.24.1.50:3306    *:*    users:(("haproxy",pid=14849,fd=26))
+Connect to MariaDB and list the databases. Either interface will work, HAProxy will pass connections through to MariaDB.
+
+[root@controller0 ~]# mysql -uroot \
+-p3T8pj6Nu9F \
+-h172.24.1.50 \
+-e"show databases;"
++--------------------+
+| Database           |
++--------------------+
+| aodh               |
+| cinder             |
+| glance             |
+| gnocchi            |
+| heat               |
+| information_schema |
+| keystone           |
+| manila             |
+| mysql              |
+| nova               |
+| nova_api           |
+| nova_cell0         |
+| nova_placement     |
+| octavia            |
+| ovs_neutron        |
+| panko              |
+| performance_schema |
++--------------------+
+Query Redis to ensure it is available.
+
+Locate the Redis password.
+
+[root@controller0 ~]# docker exec -t redis-bundle-docker-0 \
+grep ^requirepass /etc/redis.conf
+requirepass q3W8WR4GbJaBhy64t9f2kckHD
+Determine the interface that Redis is listening on.
+
+[root@controller0 ~]# ss -tnlp | grep redis
+LISTEN  0  128  172.24.1.1:6379   *:*   users:(("redis-server",pid=17715,fd=4))
+Connect to Redis using the redis-cli command. Authenticate using the AUTH command and the password retrieved earlier.
+
+[root@controller0 ~]# redis-cli -h 172.24.1.1
+172.24.1.1:6379> AUTH q3W8WR4GbJaBhy64t9f2kckHD
+OK
+172.24.1.1:6379> 
+List all keys using the KEYS command. Note that your results may vary. Determine the type of the gnocchi-config key. Use the HGETALL command to get all hash values of the key. Exit from the Redis CLI.
+
+172.24.1.1:6379> KEYS *
+ 1) "_tooz_beats:controller0.0.95d6c52b-bf0b-4802-89b6-bc88e9dd0ee4"
+ 2) "_tooz_group:gnocchi-processing"
+ 3) "_tooz_group:compute-compute0.overcloud.example.com"
+ 4) "_tooz_group:central-global"
+ 5) "_tooz_group:alarm_evaluator"
+ 6) "_tooz_group:compute-compute1.overcloud.example.com"
+ 7) "_tooz_beats:controller0.0.11d314d7-8b44-45c9-a98d-5838cb682f30"
+ 8) "_tooz_beats:e7ebea7f-7f04-4006-a493-a96a64cc2606"
+ 9) "_tooz_beats:bc92a536-09cc-43c4-867a-2c472e7e144c"
+10) "_tooz_groups"
+11) "_tooz_beats:9c9af69a-f09a-449f-8dbb-e1b7edb63f90"
+12) "gnocchi-config"
+172.24.1.1:6379> TYPE gnocchi-config
+hash
+172.24.1.1:6379> HGETALL gnocchi-config
+1) "sacks"
+2) "128"
+172.24.1.1:6379> exit
+[root@controller0 ~]# 
+Examine memcached.
+
+Determine the interface that Memcached is listening on.
+
+[root@controller0 ~]# ss -tnlp | grep memcached
+LISTEN  0  128  172.24.1.1:11211    *:*   users:(("memcached",pid=4559,fd=16))
+Execute the memcached-tool command inside the memcached container. By default this displays the slab class class statistics.
+
+[root@controller0 ~]# docker exec -t memcached memcached-tool 172.24.1.1
+  #  Item_Size  Max_age   Pages   Count   Full?  Evicted Evict_Time OOM
+  6     304B        85s       1       1     yes        0        0    0
+ 23    13.6K       263s       1       3     yes        0        0    0
+There are two slab classes above. Note that your results may vary. We can see the size, age, and other relevant information.
+
+Execute memcached-tool again with the stats option.
+
+[root@controller0 ~]# docker exec -t memcached memcached-tool 172.24.1.1 stats
+#172.24.1.1:11211  Field       Value
+         accepting_conns           1
+               auth_cmds           0
+             auth_errors           0
+                   bytes       33823
+              bytes_read      299122
+           bytes_written     3123740
+              cas_badval           0
+                cas_hits           0
+              cas_misses           0
+               cmd_flush           0
+                 cmd_get         305
+                 cmd_set          60
+               cmd_touch           0
+             conn_yields           0
+   connection_structures           5
+   crawler_items_checked           0
+       crawler_reclaimed           0
+        curr_connections           4
+              curr_items           4
+               decr_hits           0
+             decr_misses           0
+             delete_hits           0
+           delete_misses           0
+       evicted_unfetched           0
+               evictions           0
+       expired_unfetched          17
+             get_expired          17
+             get_flushed           0
+                get_hits         281
+              get_misses          24
+              hash_bytes      524288
+       hash_is_expanding           0
+        hash_power_level          16
+               incr_hits           0
+             incr_misses           0
+                libevent 2.0.21-stable
+          limit_maxbytes  4100980736
+     listen_disabled_num           0
+        log_watcher_sent           0
+     log_watcher_skipped           0
+      log_worker_dropped           0
+      log_worker_written           0
+       lrutail_reflocked           0
+            malloc_fails           0
+                     pid           7
+            pointer_size          64
+               reclaimed          21
+            reserved_fds          10
+           rusage_system    0.201163
+             rusage_user    0.080465
+                 threads           2
+                    time  1535415920
+time_in_listen_disabled_us           0
+       total_connections           6
+             total_items          60
+              touch_hits           0
+            touch_misses           0
+                  uptime        3052
+                 version      1.4.39
+There are several pieces of information here:
+
+The value of curr_items should match the total of the count column in the slab class output.
+
+The cmd_set and cmd_get values indicate the caching ratio. The cmd_get value should be higher, if not then your stored items may be expiring too quickly.
+
+The value of get_misses indicates how often an item was not present.
+
+Use the pcs command to manage Pacemaker resources.
+
+Examine the status of all Pacemaker resources using the pcs resource show command.
+
+[root@controller0 ~]# pcs resource show
+ Docker container: rabbitmq-bundle [172.25.249.200:8787/rhosp13/openstack-rabbitmq:pcmklatest]
+   rabbitmq-bundle-0	(ocf::heartbeat:rabbitmq-cluster):	Started controller0
+ Docker container: galera-bundle [172.25.249.200:8787/rhosp13/openstack-mariadb:pcmklatest]
+   galera-bundle-0	(ocf::heartbeat:galera):	Master controller0
+ Docker container: redis-bundle [172.25.249.200:8787/rhosp13/openstack-redis:pcmklatest]
+   redis-bundle-0	(ocf::heartbeat:redis):	Master controller0
+ ip-172.25.249.50	(ocf::heartbeat:IPaddr2):	Started controller0
+ ip-172.25.250.50	(ocf::heartbeat:IPaddr2):	Started controller0
+ ip-172.24.1.51	(ocf::heartbeat:IPaddr2):	Started controller0
+ ip-172.24.1.50	(ocf::heartbeat:IPaddr2):	Started controller0
+ ip-172.24.3.50	(ocf::heartbeat:IPaddr2):	Started controller0
+ ip-172.24.4.50	(ocf::heartbeat:IPaddr2):	Started controller0
+ Docker container: haproxy-bundle [172.25.249.200:8787/rhosp13/openstack-haproxy:pcmklatest]
+   haproxy-bundle-docker-0	(ocf::heartbeat:docker):	Started controller0
+ Docker container: ovn-dbs-bundle [172.25.249.200:8787/rhosp13/openstack-ovn-northd:latest]
+   ovn-dbs-bundle-0	(ocf::ovn:ovndb-servers):	Master controller0
+ Docker container: openstack-cinder-volume [172.25.249.200:8787/rhosp13/openstack-cinder-volume:pcmklatest]
+   openstack-cinder-volume-docker-0	(ocf::heartbeat:docker):	Started controller0
+ Docker container: openstack-manila-share [172.25.249.200:8787/rhosp13/openstack-manila-share:pcmklatest]
+   openstack-manila-share-docker-0	(ocf::heartbeat:docker):	Started controller0
+Disable the openstack-manila-share resource. Execute pcs resource show again to confirm.
+
+[root@controller0 ~]# pcs resource disable openstack-manila-share
+[root@controller0 ~]# pcs resource show
+...output omitted...
+ Docker container: openstack-manila-share [172.25.249.200:8787/rhosp13/openstack-manila-share:pcmklatest]
+   openstack-manila-share-docker-0	(ocf::heartbeat:docker):	Stopped (disabled)
+Enable the openstack-manila-share resource. Execute the pcs resource show openstack-manila-share command to view details of the resource.
+
+[root@controller0 ~]# pcs resource enable openstack-manila-share
+[root@controller0 ~]# pcs resource show openstack-manila-share
+ Bundle: openstack-manila-share
+  Docker: image=172.25.249.200:8787/rhosp13/openstack-manila-share:pcmklatest network=host options="--ipc=host --privileged=true --user=root --log-driver=journald -e KOLLA_CONFIG_STRATEGY=COPY_ALWAYS" replicas=1 run-command="/bin/bash /usr/local/bin/kolla_start"
+  Storage Mapping:
+   options=ro source-dir=/var/lib/kolla/config_files/manila_share.json target-dir=/var/lib/kolla/config_files/config.json (manila-share-cfg-files)
+   options=ro source-dir=/var/lib/config-data/puppet-generated/manila/ target-dir=/var/lib/kolla/config_files/src (manila-share-cfg-data)
+   options=ro source-dir=/etc/hosts target-dir=/etc/hosts (manila-share-hosts)
+   options=ro source-dir=/etc/localtime target-dir=/etc/localtime (manila-share-localtime)
+   options=rw source-dir=/dev target-dir=/dev (manila-share-dev)
+   options=rw source-dir=/run target-dir=/run (manila-share-run)
+   options=rw source-dir=/sys target-dir=/sys (manila-share-sys)
+   options=ro source-dir=/lib/modules target-dir=/lib/modules (manila-share-lib-modules)
+   options=rw source-dir=/var/lib/manila target-dir=/var/lib/manila (manila-share-var-lib-manila)
+   options=ro source-dir=/etc/pki/ca-trust/extracted target-dir=/etc/pki/ca-trust/extracted (manila-share-pki-extracted)
+   options=ro source-dir=/etc/pki/tls/certs/ca-bundle.crt target-dir=/etc/pki/tls/certs/ca-bundle.crt (manila-share-pki-ca-bundle-crt)
+   options=ro source-dir=/etc/pki/tls/certs/ca-bundle.trust.crt target-dir=/etc/pki/tls/certs/ca-bundle.trust.crt (manila-share-pki-ca-bundle-trust-crt)
+   options=ro source-dir=/etc/pki/tls/cert.pem target-dir=/etc/pki/tls/cert.pem (manila-share-pki-cert)
+   options=rw source-dir=/var/log/containers/manila target-dir=/var/log/manila (manila-share-var-log)
+   options=ro source-dir=/etc/ceph target-dir=/etc/ceph (manila-share-ceph-cfg-dir)
+[root@controller0 ~]# logout
+[heat-admin@controller0 ~]$ logout
+Connection to controller0 closed.
+[student@workstation ~]$ 
+Connect to the console of an instance.
+
+Source the environment file for developer1 in the finance project. Obtain the console URL for the finance-server3 instance.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ openstack console url show \
+-c url -f value finance-server3
+http://172.25.250.50:6080/vnc_auto.html?token=99635dd0-f87b-4b1b-b8c8-48b1c06a4afc
+Note the port value of 6080 in the console URL.
+
+Log in to controller0 then become root. Display the process listening on port 6080.
+
+[student@workstation ~]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# ss -tnlp | grep 6080
+LISTEN  0 128 172.25.250.50:6080  *:* users:(("haproxy",pid=15285,fd=31))
+LISTEN  0 128 172.24.1.50:6080    *:* users:(("haproxy",pid=15285,fd=30))
+LISTEN  0 100 172.24.1.1:6080     *:* users:(("nova-novncproxy",pid=3902,fd=4))
+[root@controller0 ~]# logout
+[heat-admin@controller0 ~]$ logout
+Connection to controller0 closed.
+[student@workstation ~(developer1-finance)]$ 
+Note that nova-novncproxy is the service we are connecting to. It is fronted by HAProxy on the external network, allowing users to connect through to the instance console on the management network.
+
+Connect to the URL to verify the service is working.
+
+[student@workstation ~(developer1-finance)]$ firefox \
+http://172.25.250.50:6080/vnc_auto.html?token=99635dd0-f87b-4b1b-b8c8-48b1c06a4afc
+Cleanup
+
+From workstation, run lab controlplane-services cleanup to clean up resources created for this exercise.
+
+[student@workstation ~]$ lab controlplane-services cleanup
+This concludes the guided exercise.

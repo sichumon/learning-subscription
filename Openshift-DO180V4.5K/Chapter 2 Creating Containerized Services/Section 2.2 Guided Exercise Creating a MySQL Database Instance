@@ -1,0 +1,110 @@
+Guided Exercise: Creating a MySQL Database Instance
+In this exercise, you will start a MySQL database inside a container, and then create and populate a database.
+
+Outcomes
+
+You should be able to start a database from a container image and store information inside the database.
+
+Open a terminal on workstation as the student user and run the following command:
+
+[student@workstation ~]$ lab container-create start
+Create a MySQL container instance.
+
+Start a container from the Red Hat Software Collections Library MySQL image.
+
+[student@workstation ~]$ sudo podman run --name mysql-basic \
+> -e MYSQL_USER=user1 -e MYSQL_PASSWORD=mypa55 \
+> -e MYSQL_DATABASE=items -e MYSQL_ROOT_PASSWORD=r00tpa55 \
+> -d rhscl/mysql-57-rhel7:5.7-3.14
+Trying to pull ...output omitted...
+Copying blob sha256:e373541...output omitted...
+ 69.66 MB / 69.66 MB [===================================================] 8s
+Copying blob sha256:c5d2e94...output omitted...
+ 1.20 KB / 1.20 KB [=====================================================] 0s
+Copying blob sha256:b3949ae...output omitted...
+ 62.03 MB / 62.03 MB [===================================================] 8s
+Writing manifest to image destination
+Storing signatures
+92eaa6b67da0475745b2beffa7e0895391ab34ab3bf1ded99363bb09279a24a0
+This command downloads the MySQL container image with the 5.7-3.14 tag, and then starts a container-based image. It creates a database named items, owned by a user named user1 with mypa55 as the password. The database administrator password is set to r00tpa55 and the container runs in the background.
+
+Verify that the container started without errors.
+
+[student@workstation ~]$ sudo podman ps --format "{{.ID}} {{.Image}} {{.Names}}"
+92eaa6b67da0 registry.access.redhat.com/rhscl/mysql-57-rhel7:5.7-3.14 mysql-basic
+Access the container sandbox by running the following command:
+
+[student@workstation ~]$ sudo podman exec -it mysql-basic /bin/bash
+bash-4.2$ 
+This command starts a Bash shell, running as the mysql user inside the MySQL container.
+
+Add data to the database.
+
+Connect to MySQL as the database administrator user (root).
+
+Run the following command from the container terminal to connect to the database:
+
+bash-4.2$ mysql -uroot
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+...output omitted...
+mysql> 
+The mysql command opens the MySQL database interactive prompt. Run the following command to determine the database availability:
+
+mysql> show databases;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| items              |
+| mysql              |
+| performance_schema |
+| sys                |
++--------------------+
+5 rows in set (0.01 sec)
+Create a new table in the items database. Run the following command to access the database.
+
+mysql> use items;
+Database changed
+Create a table called Projects in the items database.
+
+mysql> CREATE TABLE Projects (id int(11) NOT NULL,
+    -> name varchar(255) DEFAULT NULL,
+    -> code varchar(255) DEFAULT NULL,
+    -> PRIMARY KEY (id));
+Query OK, 0 rows affected (0.01 sec)
+You can optionally use the ~/DO180/solutions/container-create/create_table.txt file to copy and paste the CREATE TABLE MySQL statement as given above.
+
+Use the show tables command to verify that the table was created.
+
+mysql> show tables;
++---------------------+
+| Tables_in_items     |
++---------------------+
+| Projects            |
++---------------------+
+1 row in set (0.00 sec)
+Use the insert command to insert a row into the table.
+
+mysql> insert into Projects (id, name, code) values (1,'DevOps','DO180');
+Query OK, 1 row affected (0.02 sec)
+Use the select command to verify that the project information was added to the table.
+
+mysql> select * from Projects;
++----+-----------+-------+
+| id | name      | code  |
++----------------+-------+
+|  1 | DevOps    | DO180 |
++----------------+-------+
+1 row in set (0.00 sec)
+Exit from the MySQL prompt and the MySQL container:
+
+mysql> exit
+Bye
+bash-4.2$ exit
+exit
+Finish
+
+On workstation, run the lab container-create finish script to complete this lab.
+
+[student@workstation ~]$ lab container-create finish
+This concludes the exercise.

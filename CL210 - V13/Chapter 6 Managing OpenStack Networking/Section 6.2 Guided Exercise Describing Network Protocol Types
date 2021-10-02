@@ -1,0 +1,357 @@
+Guided Exercise: Describing Network Protocol Types
+
+In this exercise, you will deploy two instances and view the components of the path from one instance to the other.
+
+Outcomes
+
+You should be able to:
+
+View the components of the controller node.
+View the components of the compute nodes.
+View the Geneve network packets.
+
+
+Log in to workstation as student using student as the password.
+
+Run the lab networking-protocols setup command. This script ensures that the OpenStack services are running and the environment is properly configured for this exercise.
+
+[student@workstation ~]$ lab networking-protocols setup
+On workstation, source the architect1-finance-rc identity environment file. A zone can only be specified when using an admin account. As the architect1 user, create two instances. Use the rhel7 image, the default flavor, and the finance-network1 network. Create finance-server3 on compute0 and finance-server4 on compute1. Take note of the IP addresses because they are used in future steps.
+
+[student@workstation ~]$ source /home/student/architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--nic net-id=finance-network1 \
+--availability-zone nova:compute0.overcloud.example.com \
+--wait finance-server3
+
+
++-------------------------------------+---------------------------------+
+| Field                               | Value                           |
++-------------------------------------+---------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                          |
+| OS-EXT-AZ:availability_zone         | nova                            |
+| OS-EXT-SRV-ATTR:host                | compute0.overcloud.example.com  |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | compute0.overcloud.example.com  |
+| OS-EXT-SRV-ATTR:instance_name       | instance-00000007               |
+| OS-EXT-STS:power_state              | Running                         |
+| OS-EXT-STS:task_state               | None                            |
+| OS-EXT-STS:vm_state                 | active                          |
+| OS-SRV-USG:launched_at              | 2018-10-04T09:06:51.000000      |
+| OS-SRV-USG:terminated_at            | None                            |
+| accessIPv4                          |                                 |
+| accessIPv6                          |                                 |
+| addresses                           | finance-network1=192.168.1.11   |
+| adminPass                           | PZgvW7cp287V                    |
+| config_drive                        |                                 |
+| created                             | 2018-10-04T09:05:44Z            |
+| flavor                              | default (7ac0...0a9e)           |
+| hostId                              | 7f59...4ca01                    |
+| id                                  | bfa1...c531                     |
+| image                               | rhel7 (dd3d...d02e)             |
+| key_name                            | None                            |
+| name                                | finance-server3                 |
+| progress                            | 0                               |
+| project_id                          | f8594af5ef6246888ed31df520fccf30|
+| properties                          |                                 |
+| security_groups                     | name='default'                  |
+| status                              | ACTIVE                          |
+| updated                             | 2018-10-04T09:06:51Z            |
+| user_id                             | 8eb50062824b468b9b205c538d57f46f|
+| volumes_attached                    |                                 |
++-------------------------------------+---------------------------------+
+[student@workstation ~(architect1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--nic net-id=finance-network1 \
+--availability-zone nova:compute1.overcloud.example.com \
+--wait finance-server4
++-------------------------------------+---------------------------------+
+| Field                               | Value                           |
++-------------------------------------+---------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                          |
+| OS-EXT-AZ:availability_zone         | nova                            |
+| OS-EXT-SRV-ATTR:host                | compute1.overcloud.example.com  |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | compute1.overcloud.example.com  |
+| OS-EXT-SRV-ATTR:instance_name       | instance-00000008               |
+| OS-EXT-STS:power_state              | Running                         |
+| OS-EXT-STS:task_state               | None                            |
+| OS-EXT-STS:vm_state                 | active                          |
+| OS-SRV-USG:launched_at              | 2018-10-04T09:12:11.000000      |
+| OS-SRV-USG:terminated_at            | None                            |
+| accessIPv4                          |                                 |
+| accessIPv6                          |                                 |
+| addresses                           | finance-network1=192.168.1.8    |
+| adminPass                           | UBzit2gsUGKe                    |
+| config_drive                        |                                 |
+| created                             | 2018-10-04T09:11:43Z            |
+| flavor                              | default (7ac0...0a9e)           |
+| hostId                              | eeac...f6a7                     |
+| id                                  | 3f0c...e004                     |
+| image                               | rhel7 (dd3d...d02e)             |
+| key_name                            | None                            |
+| name                                | finance-server4                 |
+| progress                            | 0                               |
+| project_id                          | f8594af5ef6246888ed31df520fccf30|
+| properties                          |                                 |
+| security_groups                     | name='default'                  |
+| status                              | ACTIVE                          |
+| updated                             | 2018-10-04T09:12:12Z            |
+| user_id                             | 8eb50062824b468b9b205c538d57f46f|
+| volumes_attached                    |                                 |
++-------------------------------------+---------------------------------+
+Use the ovs-ofctl and ovs-vsctl commands to view the components on the overcloud nodes.
+
+Open another terminal. From workstation, log in to controller0 as the heat-admin user. Use the sudo -i command to gain root privileges.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+Use the ovs-vsctl show command to list the configuration of the bridges on the controller0 node. Notice the configuration of br-ex.
+
+[root@controller0 ~]# ovs-vsctl show
+...output omitted...
+Bridge br-ex
+    fail_mode: standalone
+    Port "eth2"
+         Interface "eth2"
+    Port br-ex
+         Interface br-ex
+         type: internal
+    Port "patch-provnet-ef9b4ad2-36c0-4ed4-8547-d7846f7d0f00-to-br-int"
+         Interface "patch-provnet-ef9b4ad2-36c0-4ed4-8547-d7846f7d0f00-to-br-int"
+         type: patch
+         options: {peer="patch-br-int-to-provnet-ef9b4ad2-36c0-4ed4-8547-d7846f7d0f00"}
+...output omitted...
+On workstation, use the openstack network list command to list the OpenStack networks. Notice that the ID of provider-datacentre matches one of the ports on br-ex.
+
+[student@workstation ~(architect1-finance)]$ openstack network list -c ID -c Name
++--------------------------------------+---------------------+
+| ID                                   | Name                |
++--------------------------------------+---------------------+
+| 1c458a95-a00f-411e-8a73-d88ba18dd0a0 | finance-network1    |
+| 772fe396-a9dc-4243-80bc-682664829e00 | lb-mgmt-net         |
+| b5522075-961a-40f3-b7b4-ce5236a3f73c | production-network1 |
+| e8d43fea-ad78-4165-913f-ad74288d0e51 | demo-network1       |
+| ef9b4ad2-36c0-4ed4-8547-d7846f7d0f00 | provider-datacentre |
++--------------------------------------+---------------------+
+On controller0, use the ovs-vsctl show command to list the configuration of the bridges on the controller0 node. Notice the configuration of br-int.
+
+[root@controller0 ~]# ovs-vsctl show
+...output omitted...
+Bridge br-int
+    fail_mode: secure
+    Port "ovn-840e32-0"
+         Interface "ovn-840e32-0"
+         type: geneve
+         options: {csum="true", key=flow, remote_ip="172.24.2.2"}
+    Port "ovn-14c844-0"
+         Interface "ovn-14c844-0"
+         type: geneve
+         options: {csum="true", key=flow, remote_ip="172.24.2.12"}
+    Port "o-hm0"
+         Interface "o-hm0"
+         type: internal
+    Port "ovn-263d95-0"
+         Interface "ovn-263d95-0"
+         type: geneve
+         options: {csum="true", key=flow, remote_ip="172.24.2.6"}
+    Port br-int
+         Interface br-int
+         type: internal
+    Port "patch-br-int-to-provnet-ef9b4ad2-36c0-4ed4-8547-d7846f7d0f00"
+         Interface "patch-br-int-to-provnet-ef9b4ad2-36c0-4ed4-8547-d7846f7d0f00"
+         type: patch
+         options: {peer="patch-provnet-ef9b4ad2-36c0-4ed4-8547-d7846f7d0f00-to-br-int"}
+  ovs_version: "2.9.0"
+...output omitted...
+On workstation, use the openstack hypervisor list command to list the compute nodes. Notice that interface ovn-840e32-0 corresponds to compute0, ovn-14c844-0 corresponds to compute1, and ovn-263d95-0 corresponds to computehci0. Also note that all of those interfaces are of type Geneve. There is also a port for the interface of the provider-datacentre network.
+
+[student@workstation ~(architect1-finance)]$ openstack hypervisor list \
+-c "Hypervisor Hostname" -c "Host IP"
++-----------------------------------+-------------+
+| Hypervisor Hostname               | Host IP     |
++-----------------------------------+-------------+
+| computehci0.overcloud.example.com | 172.24.1.6  |
+| compute1.overcloud.example.com    | 172.24.1.12 |
+| compute0.overcloud.example.com    | 172.24.1.2  |
++-----------------------------------+-------------+
+On controller0, use the ovs-ofctl show command to list the interfaces on br-trunk. Notice the five VLAN interfaces.
+
+>[root@controller0 ~]# ovs-ofctl show br-trunk
+OFPT_FEATURES_REPLY (xid=0x2): dpid:0000525400010001
+n_tables:254, n_buffers:0
+capabilities: FLOW_STATS TABLE_STATS PORT_STATS QUEUE_STATS ARP_MATCH_IP
+actions: output enqueue set_vlan_vid set_vlan_pcp strip_vlan mod_dl_src mod_dl_dst mod_nw_src mod_nw_dst mod_nw_tos mod_tp_src mod_tp_dst
+ 1(eth1): addr:52:54:00:01:00:01
+    config:     0
+    state:      0
+    speed: 0 Mbps now, 0 Mbps max
+ 2(vlan10): addr:7a:cf:bb:f5:83:cc
+    config:     0
+    state:      0
+    speed: 0 Mbps now, 0 Mbps max
+ 3(vlan20): addr:22:0c:51:bd:2e:bd
+    config:     0
+    state:      0
+    speed: 0 Mbps now, 0 Mbps max
+ 4(vlan30): addr:92:b5:04:bc:23:82
+    config:     0
+    state:      0
+    speed: 0 Mbps now, 0 Mbps max
+ 5(vlan40): addr:52:ff:78:53:14:ea
+    config:     0
+    state:      0
+    speed: 0 Mbps now, 0 Mbps max
+ 6(vlan50): addr:7e:6b:6e:17:74:59
+    config:     0
+    state:      0
+    speed: 0 Mbps now, 0 Mbps max
+ LOCAL(br-trunk): addr:52:54:00:01:00:01
+    config:     0
+    state:      0
+    speed: 0 Mbps now, 0 Mbps max
+ OFPT_GET_CONFIG_REPLY (xid=0x4): frags=normal miss_send_len=0
+Open another terminal window. From workstation, log in to compute0 as the heat-admin user. Use the ip link command to list the interfaces. Notice the VLAN interfaces. VLAN20 is the tenant VLAN.
+
+[student@workstation ~]$ ssh heat-admin@compute0
+[heat-admin@compute0 ~]$ ip link
+...output omitted...
+14: vlan10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether 1a:e5:09:ff:90:a3 brd ff:ff:ff:ff:ff:ff
+15: vlan20: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether 8e:43:4c:8b:d8:cf brd ff:ff:ff:ff:ff:ff
+16: vlan30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether ca:ca:f9:af:53:0e brd ff:ff:ff:ff:ff:ff
+17: vlan50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether ca:85:82:a1:f3:45 brd ff:ff:ff:ff:ff:ff
+Capture packets on interface VLAN20 to show traffic between finance-server3 and finance-server4.
+
+On compute0, use the sudo -i command to gain root privileges. Use the tcpdump command to capture packets on the VLAN20 tenant network.
+
+[heat-admin@compute0 ~]$ sudo -i
+[root@compute0 ~]# tcpdump -ten -i vlan20 | grep ICMP
+tcpdump: listening on eth1, link-type EN10MB (Ethernet), capture size 262144 bytes
+            
+On workstation, use the openstack console url show command to obtain the console URL for finance-server3. Open the URL in Firefox, then log in to finance-server3 using root as the username and redhat as the password. Ping finance-server4.
+
+[student@workstation ~(architect1-finance)]$ openstack console url show \
+finance-server3 --max-width=80
++-------+----------------------------------------------------------------------+
+| Field | Value                                                                |
++-------+----------------------------------------------------------------------+
+| type  | novnc                                                                |
+| url   | http://172.25.250.50:6080/vnc_auto.html?token=201c4763-7f10-4c55     |
+|       | -a3fb-a4fd045a5f32                                                   |
++-------+----------------------------------------------------------------------+
+[student@workstation ~(architect1-finance)]$ firefox \ 
+http://172.25.250.50:6080/vnc_auto.html?token=201c4763-7f10-4c55-a3fb-a4fd045a5f32
+[root@finance-server3 ~]$ ping -c3 192.168.1.8
+64 bytes from 192.168.1.8: icmp_seq=1 ttl=64 time=0.450 ms
+64 bytes from 192.168.1.8: icmp_seq=1 ttl=64 time=0.350 ms
+64 bytes from 192.168.1.8: icmp_seq=1 ttl=64 time=0.430 ms
+...output omitted...
+On compute0, analyze the output of the tcpdump command. Look for the ICMP echo request and ICMP echo reply packets between finance-server3 and finance-server4. Notice that the packets are sent between compute0 and compute1. The tunnel type is Geneve, and the vni parameter holds the ID for the packet.
+
+8e:43:4c:8b:d8:cf > 76:3a:02:69:82:1e, ethertype IPv4 (0x0800), length 156: 172.24.2.2.35614 > 172.24.2.12.6081: Geneve, Flags [C], vni 0x3, proto TEB (0x6558), options [8 bytes]: fa:16:3e:b5:fd:da > fa:16:3e:ec:5f:e0, ethertype IPv4 (0x0800), length 98: 192.168.1.11 > 192.168.1.8: ICMP echo request, id 1211, seq 1, length 64
+         76:3a:02:69:82:1e > 8e:43:4c:8b:d8:cf, ethertype IPv4 (0x0800), length 156: 172.24.2.12.23252 > 172.24.2.2.6081: Geneve, Flags [C], vni 0x3, proto TEB (0x6558), options [8 bytes]: fa:16:3e:ec:5f:e0 > fa:16:3e:b5:fd:da, ethertype IPv4 (0x0800), length 98: 192.168.1.8 > 192.168.1.11: ICMP echo reply, id 1211, seq 1, length 64
+Open another terminal. From workstation, log in to compute1 as the heat-admin user. Use the sudo -i command to gain root privileges.
+
+[student@workstation ~]$ ssh heat-admin@compute1
+[heat-admin@compute1 ~]$ sudo -i
+[root@compute1 ~]# 
+On compute0, use the ovs-vsctl list open command to find the IP address of the Southbound and Northbound OVN databases. The IP address is in the ovn-remote parameter. Set the environment variables for the OVN databases on both compute0 and compute1. The port for the Northbound database is 6641.
+
+[root@compute0 ~]# ovs-vsctl list open
+...output omitted...
+external_ids        : {hostname="compute0.overcloud.example.com", ovn-bridge=br-int, ovn-bridge-mappings="datacentre:br-ex,provider_vlan:br-eth3", ovn-encap-ip="172.24.2.2", ovn-encap-type=geneve, ovn-remote="tcp:172.24.1.50:6642", rundir="/var/run/openvswitch", system-id="840e32d5-21c3-4760-b6e8-8bfd063b50a1"}
+...output omitted...
+[root@compute0 ~]# export OVN_SB_DB=tcp:172.24.1.50:6642
+[root@compute0 ~]# export OVN_NB_DB=tcp:172.24.1.50:6641
+On workstation, use the openstack port list command to find the port ID for finance-server3 and finance-server4.
+
+[student@workstation ~(architect1-finance)]$ openstack port list \ 
+-c ID -c "Fixed IP Addresses"
++-------------+------------------------------------------------------+
+| ID          | Fixed IP Addresses                                   |
++-------------+------------------------------------------------------+
+| f13c...9107 | ip_address='192.168.1.11', subnet_id='1479...6a78'   |
+...output omitted...
+| 9b27...78d7 | ip_address='192.168.1.8', subnet_id='1479...6a78'    |
+...output omitted...
+Use the ovn-sbctl lflow-list command to list the OpenFlow flows for the Southbound database.
+
+On compute0, use the ovn-sbctl lflow-list command to list the OpenFlow flows. Redirect the output to a file called flow.txt.
+
+[root@compute0 ~]# ovn-sbctl lflow-list > flow.txt
+Search the file for the ID of finance-server3. Search the flows to find the tables that allow traffic from finance-server3 and finance-server4.
+
+[root@compute0 ~]# view flow.txt
+...output omitted...
+  table=0 (ls_in_port_sec_l2  ), priority=50   , match=(inport == "f13cebbd-32ca-4fc8-9a65-4293f4fe9107" && eth.src == {fa:16:3e:bc:bb:d9}), action=(next;)
+...output omitted...
+  table=13(ls_in_dhcp_response), priority=100  , match=(inport == "f13cebbd-32ca-4fc8-9a65-4293f4fe9107" && eth.src == fa:16:3e:bc:bb:d9 && ip4 && udp.src == 68 && udp.dst == 67 && reg0[3]), action=(eth.dst = eth.src; eth.src = fa:16:3e:f8:63:f0; ip4.dst = 192.168.1.11; ip4.src = 192.168.1.1; udp.src = 67; udp.dst = 68; outport = inport; flags.loopback = 1; output;)
+  table=13(ls_in_dhcp_response), priority=0    , match=(1), action=(next;)
+  table=14(ls_in_dns_lookup   ), priority=0    , match=(1), action=(next;)
+  table=15(ls_in_dns_response ), priority=0    , match=(1), action=(next;)
+  table=16(ls_in_l2_lkup      ), priority=100  , match=(eth.mcast), action=(outport = "_MC_flood"; output;)
+  table=16(ls_in_l2_lkup      ), priority=50   , match=(eth.dst == fa:16:3e:18:e6:f6), action=(outport = "9b272b18-1b7c-47a9-9d9f-d431d31278d7"; output;)
+...output omitted...
+Repeat the above steps on compute1. Look for the OpenFlow flows for finance-server4.
+
+[root@compute1 ~]# ovn-sbctl lflow-list > flow.txt
+[root@compute1 ~]# view flow.txt
+...output omitted...
+  table=0 (ls_in_port_sec_l2  ), priority=50   , match=(inport == "9b272b18-1b7c-47a9-9d9f-d431d31278d7" && eth.src == {fa:16:3e:18:e6:f6}), action=(next;)
+...output omitted...
+  table=13(ls_in_dhcp_response), priority=100  , match=(inport == "9b272b18-1b7c-47a9-9d9f-d431d31278d7" && eth.src == fa:16:3e:18:e6:f6 && ip4 && udp.src == 68 && udp.dst == 67 && reg0[3]), action=(eth.dst = eth.src; eth.src = fa:16:3e:f8:63:f0; ip4.dst = 192.168.1.8; ip4.src = 192.168.1.1; udp.src = 67; udp.dst = 68; outport = inport; flags.loopback = 1; output;)
+  table=13(ls_in_dhcp_response), priority=100  , match=(inport == "f13cebbd-32ca-4fc8-9a65-4293f4fe9107" && eth.src == fa:16:3e:bc:bb:d9 && ip4 && udp.src == 68 && udp.dst == 67 && reg0[3]), action=(eth.dst = eth.src; eth.src = fa:16:3e:f8:63:f0; ip4.dst = 192.168.1.11; ip4.src = 192.168.1.1; udp.src = 67; udp.dst = 68; outport = inport; flags.loopback = 1; output;)
+  table=13(ls_in_dhcp_response), priority=0    , match=(1), action=(next;)
+  table=14(ls_in_dns_lookup   ), priority=0    , match=(1), action=(next;)
+  table=15(ls_in_dns_response ), priority=0    , match=(1), action=(next;)
+  table=16(ls_in_l2_lkup      ), priority=100  , match=(eth.mcast), action=(outport = "_MC_flood"; output;)
+  table=16(ls_in_l2_lkup      ), priority=50   , match=(eth.dst == fa:16:3e:18:e6:f6), action=(outport = "9b272b18-1b7c-47a9-9d9f-d431d31278d7"; output;)
+...output omitted...
+Using the same file on each compute node, find the security group flows for DHCP, SSH, and ICMP.
+
+[root@compute0 ~]# view flow.txt
+...output omitted...
+  table=6 (ls_in_acl          ), priority=2002 , match=(!ct.new && ct.est && !ct.rpl && ct_label.blocked == 0 && (inport == "f13cebbd-32ca-4fc8-9a65-4293f4fe9107" && ip4 && ip4.dst == {255.255.255.255, 192.168.1.0/24} && udp && udp.src == 68 && udp.dst == 67)), action=(next;)
+...output omitted...
+  table=4 (ls_out_acl         ), priority=2002 , match=(!ct.new  ct.est && !ct.rpl && ct_label.blocked == 0 && (outport == "f13cebbd-32ca-4fc8-9a65- 4293f4fe9107" && ip4 && ip4.src == 0.0.0.0/0 && icmp4)), action=(next;)
+  table=4 (ls_out_acl         ), priority=2002 , match=(!ct.new && ct.est && !ct.rpl && ct_label.blocked == 0 && (outport == "f13cebbd-32ca-4fc8-9a65-4293f4fe9107" && ip4 && ip4.src == 0.0.0.0/0 && tcp && tcp.dst == 22)), action=(next;)
+...output omitted...
+table=6 (ls_in_acl          ), priority=2002 , match=(!ct.new && ct.est && !ct.rpl && ct_label.blocked == 0 && (inport == "9b272b18-1b7c-47a9-9d9f-d431d31278d7" && ip4 && ip4.dst == {255.255.255.255, 192.168.1.0/24} && udp && udp.src == 68 && udp.dst == 67)), action=(next;)
+...output omitted...
+  table=4 (ls_out_acl         ), priority=2002 , match=(!ct.new && ct.est && !ct.rpl && ct_label.blocked == 0 && (outport == "9b272b18-1b7c-47a9-9d9f-d431d31278d7" && ip4 && ip4.src == 0.0.0.0/0 && icmp4)), action=(next;)
+  table=4 (ls_out_acl         ), priority=2002 , match=(!ct.new && ct.est && !ct.rpl && ct_label.blocked == 0 && (outport == "9b272b18-1b7c-47a9-9d9f-d431d31278d7" && ip4 && ip4.src == 0.0.0.0/0  tcp && tcp.dst == 22)), action=(next;)
+...output omitted...
+On compute0, use the ovn-nbctl show command to list the contents of the Northbound database. Find the lrp (logical router port) port for finance-network1. On compute1, in the flow.txt file, find the OpenFlow flows for the port for finance-network1.
+
+[root@compute0 ~]# ovn-nbctl show
+...output omitted...
+switch 3bc3a1b0-2a6f-4b91-853e-b2d143871066 (neutron-1c458a95-a00f-411e-8a73-d88ba18dd0a0) (aka finance-network1)
+   port 9b272b18-1b7c-47a9-9d9f-d431d31278d7
+       addresses: ["fa:16:3e:18:e6:f6 192.168.1.8"]
+   port f13cebbd-32ca-4fc8-9a65-4293f4fe9107
+       addresses: ["fa:16:3e:bc:bb:d9 192.168.1.11"]
+   port 252e3397-e320-4b99-ae82-ee3a2e91d565
+        type: router
+        router-port: lrp-252e3397-e320-4b99-ae82-ee3a2e91d565
+   port 3d58e426-a8d7-4ea3-a974-0abd48b5b1d3
+        type: localport
+        addresses: ["fa:16:3e:54:e9:70 192.168.1.2"]
+...output omitted...
+  table=8 (lr_in_arp_resolve  ), priority=100  , match=(outport == "lrp-252e3397-e320-4b99-ae82-ee3a2e91d565" && reg0 == 192.168.1.8), action=(eth.dst = fa:16:3e:18:e6:f6; next;)
+...output omitted...
+  table=8 (lr_in_arp_resolve  ), priority=100  , match=(outport == "lrp-252e3397-e320-4b99-ae82-ee3a2e91d565" && reg0 == 192.168.1.11), action=(eth.dst = fa:16:3e:bc:bb:d9; next;)
+...output omitted...
+Close all of the terminal windows opened during this exercise.
+
+Cleanup
+
+On workstation, run the lab networking-protocols cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab networking-protocols cleanup
+This concludes the guided exercise.

@@ -1,0 +1,280 @@
+Lab: Managing OpenStack Networking
+Performance Checklist
+
+In this lab, you will create and test VLAN provider networks.
+
+Outcomes
+
+You should be able to:
+
+Create a VLAN provider network.
+
+Launch an instance attached to a provider network.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab networking-review setup command. This script creates any resources required to perform the exercise.
+
+[student@workstation ~]$ lab networking-review setup
+View the network interface configuration on utility. utility has a subinterface configured in each VLAN from 101 to 104, allowing testing for VLAN traffic leaving OpenStack.
+
+[student@workstation ~]$ ssh root@utility ip a
+...output omitted...
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:03:00:dc brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::5054:ff:fe03:dc/64 scope link
+       valid_lft forever preferred_lft forever
+4: eth1.102@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 52:54:00:03:00:dc brd ff:ff:ff:ff:ff:ff
+    inet 10.0.102.1/24 brd 10.0.102.255 scope global noprefixroute eth1.102
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5054:ff:fe03:dc/64 scope link
+       valid_lft forever preferred_lft forever
+5: eth1.104@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 52:54:00:03:00:dc brd ff:ff:ff:ff:ff:ff
+    inet 10.0.104.1/24 brd 10.0.104.255 scope global noprefixroute eth1.104
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5054:ff:fe03:dc/64 scope link
+       valid_lft forever preferred_lft forever
+6: eth1.103@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 52:54:00:03:00:dc brd ff:ff:ff:ff:ff:ff
+    inet 10.0.103.1/24 brd 10.0.103.255 scope global noprefixroute eth1.103
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5054:ff:fe03:dc/64 scope link
+       valid_lft forever preferred_lft forever
+7: eth1.101@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 52:54:00:03:00:dc brd ff:ff:ff:ff:ff:ff
+    inet 10.0.101.1/24 brd 10.0.101.255 scope global noprefixroute eth1.101
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5054:ff:fe03:dc/64 scope link
+       valid_lft forever preferred_lft forever
+Using the /home/student/admin-rc environment file, create a VLAN provider network named provider1-104 with a matching subnet named subnet1-104. From the previous exercise, you know that traffic for this network will travel over the br-eth3 bridge. Use the options and values from the following table.
+
+Option	Value
+--share	 
+--provider-network-type	vlan
+--provider-physical-network	vlanprovider1
+--provider-segment	104
+--dhcp	 
+--subnet-range	10.0.104.0/24
+--allocation-pool	start=10.0.104.100,end=10.0.104.149
+On workstation, source the /home/student/admin-rc environment file.
+
+[student@workstation ~]$ source ~/admin-rc
+Create the provider1-104 provider network.
+
+[student@workstation ~]$ openstack network create \
+--share \
+--provider-network-type vlan \
+--provider-physical-network vlanprovider1 \
+--provider-segment 104 \
+provider1-104
+...output omitted...
+| mtu                       | 1500                                 |
+| name                      | provider1-104                        |
+| port_security_enabled     | True                                 |
+| project_id                | 42eecbfbaf684f909abfe5304434fc77     |
+| provider:network_type     | vlan                                 |
+| provider:physical_network | vlanprovider1                        |
+| provider:segmentation_id  | 104                                  |
+| qos_policy_id             | None                                 |
+| revision_number           | 6                                    |
+| router:external           | External                             |
+...output omitted...
+Create the subnet1-104 subnet.
+
+[student@workstation ~]$ openstack subnet create \
+--dhcp \
+--subnet-range=10.0.104.0/24 \
+--allocation-pool=start=10.0.104.100,end=10.0.104.149 \
+--network provider1-104 \
+subnet1-104
++-------------------+--------------------------------------+
+| Field             | Value                                |
++-------------------+--------------------------------------+
+| allocation_pools  | 10.0.104.100-10.0.104.149            |
+| cidr              | 10.0.104.0/24                        |
+| created_at        | 2018-10-30T03:29:46Z                 |
+| description       |                                      |
+| dns_nameservers   |                                      |
+| enable_dhcp       | True                                 |
+| gateway_ip        | 10.0.104.1                           |
+...output omitted...
+Using the /home/student/admin-rc environment file, create a VLAN provider network named provider2-104 with a matching subnet named subnet2-104. From the previous exercise, you know that traffic for this network travels over the br-eth4 bridge. Use the options and values from the following table.
+
+Option	Value
+--share	 
+--provider-network-type	vlan
+--provider-physical-network	vlanprovider2
+--provider-segment	104
+--dhcp	 
+--subnet-range	10.0.104.0/24
+--allocation-pool	start=10.0.104.150,end=10.0.104.199
+Create the provider2-104 provider network.
+
+[student@workstation ~]$ openstack network create \
+--share \
+--provider-network-type vlan \
+--provider-physical-network vlanprovider2 \
+--provider-segment 104 \
+provider2-104
+...output omitted...
+| mtu                       | 1500                                 |
+| name                      | provider2-104                        |
+| port_security_enabled     | True                                 |
+| project_id                | 42eecbfbaf684f909abfe5304434fc77     |
+| provider:network_type     | vlan                                 |
+| provider:physical_network | vlanprovider2                        |
+| provider:segmentation_id  | 104                                  |
+| qos_policy_id             | None                                 |
+| revision_number           | 6                                    |
+| router:external           | External                             |
+...output omitted...
+Create the subnet2-104 subnet.
+
+[student@workstation ~]$ openstack subnet create \
+--dhcp \
+--subnet-range=10.0.104.0/24 \
+--allocation-pool=start=10.0.104.150,end=10.0.104.199 \
+--network provider2-104 \
+subnet2-104
++-------------------+--------------------------------------+
+| Field             | Value                                |
++-------------------+--------------------------------------+
+| allocation_pools  | 10.0.104.150-10.0.104.199            |
+| cidr              | 10.0.104.0/24                        |
+| created_at        | 2018-10-30T03:33:06Z                 |
+| description       |                                      |
+| dns_nameservers   |                                      |
+| enable_dhcp       | True                                 |
+| gateway_ip        | 10.0.104.1                           |
+...output omitted...
+Launch an instance attached to the provider1-104 network. Name the instance production-server1 and use the following values.
+
+Option	Value
+--flavor	default
+--image	rhel7
+--key-name	example-keypair
+--network	provider1-104
+Source the /home/student/operator1-production-rc user environment file.
+
+[student@workstation ~]$ source ~/operator1-production-rc
+[student@workstation ~(operator1-production)]$ 
+Launch the instance.
+
+[student@workstation ~(operator1-production)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--network provider1-104 \
+--wait \
+production-server1
+...output omitted...
+| addresses           | provider1-104=10.0.104.102      |
+...output omitted...
+Launch an instance attached to the provider2-104 network. Name the instance production-server2 and use the following values.
+
+Option	Value
+--flavor	default
+--image	rhel7
+--key-name	example-keypair
+--network	provider2-104
+Launch the instance.
+
+[student@workstation ~(operator1-production)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--network provider2-104 \
+--wait \
+production-server2
+...output omitted...
+| addresses           | provider2-104=10.0.104.153      |
+...output omitted...
+From utility, use the ping command to test that production-server1 and production-server2 are reachable from outside of OpenStack.
+
+[student@workstation ~(operator1-production)]$ ssh utility ping -c3 10.0.104.102
+PING 10.0.104.102 (10.0.104.102) 56(84) bytes of data.
+64 bytes from 10.0.104.102: icmp_seq=1 ttl=64 time=1.50 ms
+64 bytes from 10.0.104.102: icmp_seq=2 ttl=64 time=0.797 ms
+64 bytes from 10.0.104.102: icmp_seq=3 ttl=64 time=0.565 ms
+
+--- 10.0.104.102 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2002ms
+rtt min/avg/max/mdev = 0.565/0.954/1.502/0.400 ms
+
+[student@workstation ~(operator1-production)]$ ssh utility ping -c3 10.0.104.153
+PING 10.0.104.153 (10.0.104.153) 56(84) bytes of data.
+64 bytes from 10.0.104.153: icmp_seq=1 ttl=64 time=1.23 ms
+64 bytes from 10.0.104.153: icmp_seq=2 ttl=64 time=0.625 ms
+64 bytes from 10.0.104.153: icmp_seq=3 ttl=64 time=0.565 ms
+
+--- 10.0.104.153 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.565/0.809/1.238/0.304 ms
+Open a new terminal on workstation, then log in to utility and start the tcpdump command. This will verify that the correct VLAN is in use.
+
+[student@workstation ~]$ ssh root@utility
+[root@utility ~]# tcpdump -nnei eth1 -vvv
+From production-server1, use the ping command to test communication with production-server2 and utility.
+
+From workstation, obtain the console URL for production-server1.
+
+[student@workstation ~(operator1-production)]$ openstack console url show \
+production-server1
++-------+------------------------------------------------------------------------+
+| Field | Value                                                                  |
++-------+------------------------------------------------------------------------+
+| type  | novnc                                                                  |
+| url   | http://172.25.250.50:6080/vnc_auto.html?token=84f2c5ae-                |
+|       | 11b9-4297-be63-327fcc7152f4                                            |
++-------+------------------------------------------------------------------------+
+Open the link in Firefox, then log in as root with the password redhat.
+
+Use the ping command to test the connection to production-server2 and utility.
+
+[root@production-server1 ~]# ping -c3 10.0.104.153
+PING 10.0.104.153 (10.0.104.153) 56(84) bytes of data.
+64 bytes from 10.0.104.153: icmp_seq=1 ttl=64 time=3.23 ms
+64 bytes from 10.0.104.153: icmp_seq=2 ttl=64 time=1.22 ms
+64 bytes from 10.0.104.153: icmp_seq=3 ttl=64 time=0.863 ms
+
+--- 10.0.104.153 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2003ms
+rtt min/avg/max/mdev = 0.863/1.774/3.234/1.043 ms
+[root@production-server1 ~]# ping -c3 10.0.104.1
+PING 10.0.104.1 (10.0.104.1) 56(84) bytes of data.
+64 bytes from 10.0.104.1: icmp_seq=1 ttl=64 time=3.23 ms
+64 bytes from 10.0.104.1: icmp_seq=2 ttl=64 time=1.22 ms
+64 bytes from 10.0.104.1: icmp_seq=3 ttl=64 time=0.863 ms
+
+--- 10.0.104.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2003ms
+rtt min/avg/max/mdev = 0.863/1.774/3.234/1.043 ms
+On utility, cancel tcpdump and verify that the captured ICMP traffic is from VLAN 104.
+
+...output omitted...
+05:41:39.550482 fa:16:3e:b7:86:40 > 52:54:00:03:00:dc, ethertype 802.1Q (0x8100), length 102: vlan 104, p 0, ethertype IPv4, (tos 0x0, ttl 64, id 11745, offset 0, flags [DF], proto ICMP (1), length 84)
+    10.0.104.102 > 10.0.104.1: ICMP echo request, id 1339, seq 1, length 64
+05:41:39.550564 52:54:00:03:00:dc > fa:16:3e:b7:86:40, ethertype 802.1Q (0x8100), length 102: vlan 104, p 0, ethertype IPv4, (tos 0x0, ttl 64, id 46758, offset 0, flags [none], proto ICMP (1), length 84)
+    10.0.104.1 > 10.0.104.102: ICMP echo reply, id 1339, seq 1, length 64
+05:41:40.552250 fa:16:3e:b7:86:40 > 52:54:00:03:00:dc, ethertype 802.1Q (0x8100), length 102: vlan 104, p 0, ethertype IPv4, (tos 0x0, ttl 64, id 12450, offset 0, flags [DF], proto ICMP (1), length 84)
+    10.0.104.102 > 10.0.104.1: ICMP echo request, id 1339, seq 2, length 64
+05:41:40.552308 52:54:00:03:00:dc > fa:16:3e:b7:86:40, ethertype 802.1Q (0x8100), length 102: vlan 104, p 0, ethertype IPv4, (tos 0x0, ttl 64, id 47597, offset 0, flags [none], proto ICMP (1), length 84)
+    10.0.104.1 > 10.0.104.102: ICMP echo reply, id 1339, seq 2, length 64
+05:41:41.553772 fa:16:3e:b7:86:40 > 52:54:00:03:00:dc, ethertype 802.1Q (0x8100), length 102: vlan 104, p 0, ethertype IPv4, (tos 0x0, ttl 64, id 12729, offset 0, flags [DF], proto ICMP (1), length 84)
+    10.0.104.102 > 10.0.104.1: ICMP echo request, id 1339, seq 3, length 64
+05:41:41.553837 52:54:00:03:00:dc > fa:16:3e:b7:86:40, ethertype 802.1Q (0x8100), length 102: vlan 104, p 0, ethertype IPv4, (tos 0x0, ttl 64, id 48352, offset 0, flags [none], proto ICMP (1), length 84)
+    10.0.104.1 > 10.0.104.102: ICMP echo reply, id 1339, seq 3, length 64
+...output omitted...
+Evaluation
+
+On workstation, run the lab networking-review grade command to confirm the success of this exercise. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab networking-review grade
+Cleanup
+
+On workstation, run the lab networking-review cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab networking-review cleanup
+This concludes the lab.

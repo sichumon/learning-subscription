@@ -1,0 +1,133 @@
+Guided Exercise: Managing Identity Service Tokens
+In this exercise, you will view and rotate Fernet keys.
+
+Outcomes
+
+You should be able to:
+
+Initiate Fernet key rotation.
+
+Validate Fernet key rotation.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab identity-tokens setup command. This script ensures that the OpenStack services are running and that the environment is properly configured for this guided exercise.
+
+[student@workstation ~]$ lab identity-tokens setup
+Use the crudini command to determine whether or not the overcloud uses Fernet tokens.
+
+Log in to the controller0 system then become the root user.
+
+[student@workstation ~]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+List the value of the provider parameter in the token section of the /var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf Identity service configuration file to determine the token provider.
+
+[root@controller0 ~]# crudini --get \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+token provider
+fernet
+List the value of the driver parameter in the token section of the /var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf Identity service configuration file to determine the token driver.
+
+[root@controller0 ~]# crudini --get \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+token driver
+sql
+Use the crudini command to determine the location of the Fernet key repository, and the maximum number of active Fernet keys.
+
+List the value of the key_repository parameter in the fernet_tokens section of the /var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf Identity service configuration file to determine the location of the Fernet key repository.
+
+[root@controller0 ~]# crudini --get \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+fernet_tokens key_repository
+/etc/keystone/fernet-keys
+List the value of the max_active_keys parameter in the fernet_tokens section of the /var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf Identity service configuration file to determine the maximum number of active Fernet keys.
+
+[root@controller0 ~]# crudini --get \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+fernet_tokens max_active_keys
+5
+Display the list of active Fernet keys.
+
+[root@controller0 ~]# ls -l \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/fernet-keys/
+total 8
+-rw-------. 1 42425 42425 44 Aug  1 15:38 0
+-rw-------. 1 42425 42425 44 Aug  1 15:38 1
+Display the contents of the active Fernet key files. The file is not terminated by a line feed so use the cat command in conjunction with the echo command to make it easier to view the contents of the key files. Note that the output might be slightly different on your system.
+
+[root@controller0 ~]# cat \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/fernet-keys/0; echo
+dXsGBGMEbbPutvd-tASd77aqVFox26TFBPsArA3Rpb8=
+[root@controller0 ~]# cat \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/fernet-keys/1; echo
+HyOrU0K_W0u7BWPTQ_rb0FLd4-ojilko_x27Cpv28zw=
+Rotate the Fernet keys.
+
+In a new terminal session, log in to the director system.
+
+[student@workstation ~]$ ssh director
+(undercloud) [stack@director ~]$ 
+Execute the Mistral workflow to initiate the rotation of the Fernet keys.
+
+(undercloud) [stack@director ~]$ openstack workflow execution create \
+tripleo.fernet_keys.v1.rotate_fernet_keys '{"container": "overcloud"}'
++--------------------+-------------------------------------------+
+| Field              | Value                                     |
++--------------------+-------------------------------------------+
+| ID                 | d2fe1059-c3f0-40e3-b31a-eb83bf383711      |
+| Workflow ID        | 42e56b9a-b174-4626-831d-0e66b2fe0f32      |
+| Workflow name      | tripleo.fernet_keys.v1.rotate_fernet_keys |
+| Workflow namespace |                                           |
+| Description        |                                           |
+| Task Execution ID  | <none>                                    |
+| State              | RUNNING                                   |
+| State info         | None                                      |
+| Created at         | 2018-08-14 01:51:33                       |
+| Updated at         | 2018-08-14 01:51:33                       |
++--------------------+-------------------------------------------+
+Wait two minutes or so and then view the status of the workflow execution. Use the workflow execution ID displayed in the output of the previous command. Continue when the state displays SUCCESS.
+
+(undercloud) [stack@director ~]$ openstack workflow execution show \
+d2fe1059-c3f0-40e3-b31a-eb83bf383711
++--------------------+-------------------------------------------+
+| Field              | Value                                     |
++--------------------+-------------------------------------------+
+| ID                 | d2fe1059-c3f0-40e3-b31a-eb83bf383711      |
+| Workflow ID        | 42e56b9a-b174-4626-831d-0e66b2fe0f32      |
+| Workflow name      | tripleo.fernet_keys.v1.rotate_fernet_keys |
+| Workflow namespace |                                           |
+| Description        |                                           |
+| Task Execution ID  | <none>                                    |
+| State              | SUCCESS                                   |
+| State info         | None                                      |
+| Created at         | 2018-08-14 01:51:33                       |
+| Updated at         | 2018-08-14 01:52:56                       |
++--------------------+-------------------------------------------+
+Return to the controller0 system and list the active Fernet keys in the repository directory.
+
+[root@controller0 ~]# ls -l \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/fernet-keys/
+total 8
+-rw-------. 1 42425 42425 44 Aug  1 15:38 0
+-rw-------. 1 42425 42425 44 Aug  1 15:38 1
+-rw-------. 1 42425 42425 44 Aug  1 15:38 2
+Display the contents of the active Fernet key files.
+
+[root@controller0 ~]# cat \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/fernet-keys/0; echo
+V8oBbRwmgwft2kJmPelsYFUX3Qbym15RZwNQEl6lrOk=
+[root@controller0 ~]# cat \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/fernet-keys/1; echo
+HyOrU0K_W0u7BWPTQ_rb0FLd4-ojilko_x27Cpv28zw=
+[root@controller0 ~]# cat \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/fernet-keys/2; echo
+dXsGBGMEbbPutvd-tASd77aqVFox26TFBPsArA3Rpb8=
+Notice that the contents of the previous staged key file, 0, has now rotated into the highest indexed key file, 2, and is now the primary key. Notice also that the contents of the previous primary key file, 1, is now in the second highest indexed key file, 1, and is now the secondary key. Lastly, notice that the staged key file, 0, now contains a new staged key.
+
+Cleanup
+
+On workstation, run the lab identity-tokens cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab identity-tokens cleanup
+This concludes the guided exercise.

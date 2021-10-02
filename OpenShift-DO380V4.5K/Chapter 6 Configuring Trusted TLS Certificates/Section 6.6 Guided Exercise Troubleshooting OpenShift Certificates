@@ -1,0 +1,259 @@
+
+Guided Exercise: Troubleshooting OpenShift Certificates
+In this exercise, you will renew expired certificates and apply the renewed certificates to the default ingress controller operator and master API.
+
+Outcomes
+
+You should be able to:
+
+Identify expired OpenShift certificates.
+
+Configure the OpenShift cluster to use renewed certificates.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+On the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable and configures the cluster to use certificates that are set to expire one minute in the future.
+
+[student@workstation ~]$ lab certificates-troubleshoot start
+Procedure 6.3. Instructions
+
+Review the TLS certificates for the ingress controller.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Use the curl command to display information about the TLS certificate that secures traffic to the OpenShift web console.
+
+[student@workstation ~]$ curl -k -v \
+>   https://console-openshift-console.apps.ocp4.example.com 2>&1 \
+>   | grep -E 'date|expired'
+*  start date: Jun  9 12:49:23 2020 GMT
+*  expire date: Jun  9 12:50:23 2020 GMT
+*  SSL certificate verify result: certificate has expired (10), continuing anyway.
+< date: Tue, 09 Jun 2020 12:50:25 GMT
+The certificate expired at the date and time listed on the expire date line.
+
+NOTE
+The router pods in the openshift-ingress namespace must finish redeploying with the new (expired) certificate. If you do not see a certificate has expired message, then wait for a minute and try again.
+
+If your enterprise CA signed the wildcard certificate for your OpenShift cluster, then the cluster-wide proxy stores certificate information in a configuration map. Run the oc get command to retrieve the name of the configuration map used by the cluster proxy.
+
+[student@workstation ~]$  oc get proxy/cluster \
+>   -o jsonpath='{.spec.trustedCA.name}{"\n"}'
+wildcard-bundle
+Extract the wildcard-bundle configuration map to the /tmp/ directory. The --confirm option overwrites the file if it already exist in the destination.
+
+[student@workstation ~]$ oc extract configmap/wildcard-bundle \
+>   -n openshift-config --to /tmp/ --confirm
+/tmp/ca-bundle.crt
+Use the openssl command to read the certificate. The -dates option displays the dates and times of certificate validity and the -serial option displays the certificate serial number.
+
+[student@workstation ~]$ openssl x509 -in /tmp/ca-bundle.crt -noout -dates -serial
+notBefore=Jun  9 12:49:23 2020 GMT
+notAfter=Jun  9 12:50:23 2020 GMT
+serial=7730293A5E0590039EC8B94B85954C4DFC8CEB60
+NOTE
+Although your certificate displays different information, expect that the notAfter date (in GMT) is in the past.
+
+Run the oc get command to retrieve the ingress controller secret name. The secret contains the TLS certificate and the associated private key.
+
+[student@workstation ~]$ oc get ingresscontroller/default \
+>   -n openshift-ingress-operator \
+>   -o jsonpath='{.spec.defaultCertificate.name}{"\n"}'
+wildcard-tls
+Extract the wildcard-tls secret and save the output to the /tmp/ directory. The --confirm option overwrites the files if they already exist in the destination.
+
+[student@workstation ~]$ oc extract secret/wildcard-tls -n openshift-ingress \
+>   --to /tmp/ --confirm
+/tmp/tls.crt
+/tmp/tls.key
+Use the openssl command to read the certificate. The -dates option displays the dates and times of certificate validity and the -serial option displays the certificate serial number.
+
+[student@workstation ~]$ openssl x509 -in /tmp/tls.crt -noout -dates -serial
+notBefore=Jun  9 12:49:23 2020 GMT
+notAfter=Jun  9 12:50:23 2020 GMT
+serial=7730293A5E0590039EC8B94B85954C4DFC8CEB60
+The dates and serial line match the output from the /tmp/ca-bundle.crt certificate. The notAfter line indicates that the certificate expired just after starting this exercise.
+
+Renew the ingress controller wildcard certificate. Ensure the certificate is valid for 10 years.
+
+Change to the ~/DO380/labs/certificates-troubleshoot/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/certificates-troubleshoot/
+Run the renew_wildcard.sh script. The script uses an Ansible Playbook to create a new wildcard certificate with an expiration date set to 3650 days from now (about ten years). The script stores files in the current directory.
+
+[student@workstation certificates-troubleshoot]$ ./renew_wildcard.sh
+...output omitted...
+TASK [Create a combined certificate] ***************************************
+ok: [localhost]
+
+TASK [Create a hard-link to the combined certificate] **********************
+ok: [localhost]
+
+PLAY RECAP *****************************************************************
+localhost                  : ok=18   changed=6    unreachable=0    failed=0    skipped=3    rescued=0    ignored=0
+Use the openssl command to verify that the wildcard-combined.pem certificate expires in about ten years.
+
+[student@workstation certificates-troubleshoot]$ openssl x509 \
+>   -in wildcard-combined.pem -noout -dates
+notBefore=Jun  9 12:55:43 2020 GMT
+notAfter=Jun  7 12:55:43 2030 GMT
+Update the OpenShift cluster proxy and ingress controller operator.
+
+Update the existing wildcard-bundle configuration map in the openshift-config namespace using the renewed wildcard-combined.pem certificate.
+
+[student@workstation certificates-troubleshoot]$ oc set data \
+>   configmap/wildcard-bundle --from-file ca-bundle.crt=wildcard-combined.pem \
+>   -n openshift-config
+configmap/wildcard-bundle data updated
+You must also update the TLS secret that the ingress controller uses. The secret resides in the openshift-ingress namespace.
+
+Update the existing wildcard-tls secret in the openshift-ingress namespace using the renewed wildcard-combined.pem certificate and the existing wildcard-key.pem private key.
+
+[student@workstation certificates-troubleshoot]$ oc set data \
+>   secret/wildcard-tls --from-file tls.crt=wildcard-combined.pem \
+>   --from-file tls.key=wildcard-key.pem -n openshift-ingress
+secret/wildcard-tls data updated
+Confirm the renewal of the ingress controller wildcard certificate. From the workstation machine, run the following curl command. The output indicates an expiration date of about ten years in the future.
+
+[student@workstation certificates-troubleshoot]$ curl -k -v \
+>   https://console-openshift-console.apps.ocp4.example.com 2>&1 | grep -w date
+*  start date: Jun  9 12:55:43 2020 GMT
+*  expire date: Jun  7 12:55:43 2030 GMT
+< date: Tue, 09 Jun 2020 13:09:32 GMT
+NOTE
+It can take a minute before the router pods use the updated certificate. You can get different outputs from the curl command above depending on which router pod processes the request.
+
+Review the TLS certificates of the API server.
+
+Delete the ~/.kube/ directory and run the oc login command. The message indicates that the API certificate has expired or is not yet valid. Type y to bypass the certificate check.
+
+[student@workstation certificates-troubleshoot]$ rm -rf ~/.kube/
+[student@workstation certificates-troubleshoot]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+The server is using an invalid certificate: x509: certificate has expired or is not yet valid
+You can bypass the certificate check, but any data you send to the server could be intercepted by others.
+Use insecure connections? (y/n): y
+
+Login successful.
+
+...output omitted...
+NOTE
+The start script redeploys the apiserver pods in the openshift-kube-apiserver namespace using an expiring certificate. If the pods have not finished redeploying, then the invalid certificate warning does not display. It is safe to continue the exercise even if you do not see the warning.
+
+The cluster resource is a custom resource of type apiserver and defines the certificate that the API server uses. Use the oc get command to review the resource configuration.
+
+[student@workstation certificates-troubleshoot]$ oc get apiserver/cluster \
+>   -o yaml
+...output omitted...
+spec:
+  servingCerts:
+    namedCertificates:
+    - names:
+      - api.ocp4.example.com
+      servingCertificate:
+        name: api-tls 1
+1
+
+The secret that contains the certificates.
+
+Extract the api-tls secret and save the output to the /tmp/ directory. The --confirm option overwrites the files if they already exist in the destination.
+
+[student@workstation certificates-troubleshoot]$ oc extract secret/api-tls \
+>   -n openshift-config --to /tmp/ --confirm
+/tmp/tls.crt
+/tmp/tls.key
+Use the openssl command to read the certificate. The -issuer and -dates options display the certificate authority that issued the certificate and the dates and times of certificate validity.
+
+[student@workstation certificates-troubleshoot]$ openssl x509 -in /tmp/tls.crt \
+>   -noout -issuer -dates
+issuer=C = US, ST = NC, L = Raleigh, O = "Red Hat, Inc.", OU = Training, CN = GLS Training Classroom Certificate Authority
+notBefore=Jun  9 12:49:32 2020 GMT
+notAfter=Jun  9 12:50:32 2020 GMT
+The GLS Training Classroom Certificate Authority CA issued the certificate. Although your dates are different, expect that the certificate expired because it was only valid for one minute.
+
+Renew the API certificate.
+
+Run the renew_api.sh script. The script uses an Ansible Playbook to create a new API certificate with an expiration date set to 3650 days from now (about ten years). The script stores files in the current directory.
+
+[student@workstation certificates-troubleshoot]$ ./renew_api.sh
+...output omitted...
+TASK [Create a combined certificate] ***************************************
+ok: [localhost]
+
+TASK [Create a hard-link to the combined certificate] **********************
+ok: [localhost]
+
+PLAY RECAP *****************************************************************
+localhost                  : ok=18   changed=6    unreachable=0    failed=0    skipped=3    rescued=0    ignored=0
+List the certificates in the ~/DO380/labs/certificates-troubleshoot/ directory.
+
+[student@workstation certificates-troubleshoot]$ ls *.pem | grep -v key
+api-combined.pem
+api.pem
+wildcard-combined.pem
+wildcard.pem
+Use the openssl command to display information about the api-combined.pem certificate.
+
+[student@workstation certificates-troubleshoot]$ openssl x509 \
+>   -in api-combined.pem -noout -dates
+notBefore=Jun  9 13:29:21 2020 GMT
+notAfter=Jun  7 13:29:21 2030 GMT
+The output indicates an expiration date of about ten years from now.
+
+Update the secret for the API certificate.
+
+Update the existing api-tls secret in the openshift-config namespace so that it uses the renewed api-combined.pem certificate and the existing api-key.pem private key.
+
+[student@workstation certificates-troubleshoot]$ oc set data secret/api-tls \
+>   --from-file tls.crt=api-combined.pem --from-file tls.key=api-key.pem \
+>   -n openshift-config
+secret/api-tls data updated
+If the oc set data command succeeds, then the certificate used by each apiserver pod is updated. Run the following command to view the latest events in the openshift-kube-apiserver namespace.
+
+[student@workstation certificates-troubleshoot]$ oc get events \
+>   --sort-by='.lastTimestamp' -n openshift-kube-apiserver
+...output omitted...
+30s ... CertificateUpdated ... pod/kube-apiserver-master01 ... Wrote updated secret: openshift-kube-apiserver/user-serving-cert-000
+30s ... CertificateUpdated ... pod/kube-apiserver-master02 ... Wrote updated secret: openshift-kube-apiserver/user-serving-cert-000
+30s ... CertificateUpdated ... pod/kube-apiserver-master03 ... Wrote updated secret: openshift-kube-apiserver/user-serving-cert-000
+Change to the /home/student/ directory.
+
+[student@workstation certificates-troubleshoot]$ cd
+Run the following curl command to ensure that the certificate is renewed.
+
+[student@workstation ~]$ curl -k -v https://api.ocp4.example.com:6443 2>&1 \
+>   | grep -w date
+*  start date: Jun  9 13:29:21 2020 GMT
+*  expire date: Jun  7 13:29:21 2030 GMT
+< date: Tue, 09 Jun 2020 13:41:30 GMT
+NOTE
+You might need to run the curl command more than once before you see the updated certificate. Although your dates are different, expect that the certificate expires in about ten years.
+
+You can get different outputs from the curl command above depending on which APIserver pod processes the request.
+
+Delete the ~/.kube/ directory and run the oc login command. Ensure that the warning about an expired certificate no longer displays. If it does, cancel the login operation with Ctrl+C and try again after a few seconds.
+
+[student@workstation ~]$ rm -rf ~/.kube/
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+NOTE
+You can get different error messages while trying to log into the cluster. This happens because the APIserver pods are being restarted. It takes 5~6 minutes to restart all the APIserver pods.
+
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab certificates-troubleshoot finish
+This concludes the section.

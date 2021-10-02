@@ -1,0 +1,19 @@
+Quiz: Describing Cluster Operators
+
+Match the terms below to their correct definition in the table:
+
+Drag and drop the items to the cell next to the correct answer. Each cell should contain one answer. To change an answer, either drag it to another location, or click RESET to return the quiz to its original settings.
+
+When you have completed the quiz, click CHECK. Correct answers have a green background; incorrect answers have a red background. To try the quiz again, click RESET. Note: if you have trouble getting the quiz to function a second time, try refreshing your browser. Click SHOW SOLUTION to see all of the correct answers.
+
+Operator Terminology	                                                                                            Name
+
+An open source toolkit for building, testing, and packaging operators.	                                            Operator SDK
+A repository for discovering and installing operators.	                                                            Operator Catalog
+An extension of the Kubernetes API that defines the syntax of a custom resource.	                                Custom Resource Definition
+The artifact defined by the Operator Framework that you can publish for consumption by an OLM instance.	            Operator Image
+An application that manages Kubernetes resources.	                                                                Operator
+An application that manages Kubernetes operators.                                               	                Operator Lifecycle Manager (OLM)
+A public web service where you can publish operators that are compatible with the OLM.	                            OperatorHub
+Platform that allows access to certified software packaged as Kubernetes operators that 
+can be deployed in an OpenShift cluster.                                                                            Red Hat Marketplace

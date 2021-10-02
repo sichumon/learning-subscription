@@ -1,0 +1,90 @@
+
+Guided Exercise: Configuring Apache Container Logs for Debugging
+In this exercise, you will configure an Apache httpd container to send the logs to the stdout, then review Podman logs and events.
+
+Outcomes
+
+You should be able to configure an Apache httpd container to send debug logs to stdout and view them using the podman logs command.
+
+A running OpenShift cluster.
+
+Retrieve the lab files and verify that Docker and the OpenShift cluster are running by running the following command.
+
+[student@workstation ~]$ lab troubleshoot-container start
+Configure a Apache web server to send log messages to the standard output and update the default log level.
+
+The default log level for the Apache httpd image is warn. Change the default log level for the container to debug, and redirect log messages to stdout by overriding the default httpd.conf configuration file. To do so, create a custom image from the workstation VM.
+
+Briefly review the custom httpd.conf file located at /home/student/DO180/labs/troubleshoot-container/conf/httpd.conf.
+
+Observe the ErrorLog directive in the file:
+
+ErrorLog "/dev/stdout"
+The directive sends the httpd error log messages to the container's standard output.
+
+Observe the LogLevel directive in the file.
+
+LogLevel debug
+The directive changes the default log level to debug.
+
+Observe the CustomLog directive in the file.
+
+CustomLog "/dev/stdout" common
+The directive redirects the httpd access log messages to the container's standard output.
+
+Build a custom container to save an updated configuration file to the container.
+
+From the terminal window, run the following commands to build a new image.
+
+[student@workstation ~]$ cd ~/DO180/labs/troubleshoot-container
+[student@workstation troubleshoot-container]$ sudo podman build \
+>  -t troubleshoot-container .
+STEP 1: FROM quay.io/redhattraining/httpd-parent
+...output omitted...
+STEP 5: COMMIT troubleshoot-container
+e23d...c1de
+[student@workstation troubleshoot-container]$ cd ~
+Verify that the image is created.
+
+[student@workstation ~]$ sudo podman images
+The new image must be available in the local storage.
+
+REPOSITORY                            TAG      IMAGE ID   CREATED         SIZE
+localhost/troubleshoot-container      latest   e23df...   9 seconds ago   137MB
+quay.io/redhattraining/httpd-parent   latest   0eba3...   4 weeks ago     137MB
+Create a new httpd container from the custom image.
+
+[student@workstation ~]$ sudo podman run \
+> --name troubleshoot-container -d \
+> -p 10080:80 troubleshoot-container
+4c8bb12815cc02f4eef0254632b7179bd5ce230d83373b49761b1ac41fc067a9
+Review the container's log messages and events.
+
+View the debug log messages from the container using the podman logs command:
+
+[student@workstation ~]$ sudo podman logs -f troubleshoot-container
+... [mpm_event:notice] [pid 1:tid...] AH00489: Apache/2.4.37 ...
+... [mpm_event:info] [pid 1:tid...] AH00490: Server built: Apr  5 2019 07:31:21
+... [core:notice] [pid 1:tid...] AH00094: Command line: 'httpd -D FOREGROUND'
+... [core:debug] [pid 1:tid ...): AH02639: Using SO_REUSEPORT: yes (1)
+... [mpm_event:debug] [pid 6:tid ...): AH02471: start_threads: Using epoll
+... [mpm_event:debug] [pid 7:tid ...): AH02471: start_threads: Using epoll
+... [mpm_event:debug] [pid 8:tid ...): AH02471: start_threads: Using epoll
+Notice the debug logs, available in the standard output.
+
+Open a new terminal and access the home page of the web server by using the curl command:
+
+[student@workstation ~]$ curl http://127.0.0.1:10080
+Hello from the httpd-parent container!
+Review the new entries in the log. Look in the terminal running the podman logs command to see the new entries.
+
+...output omitted...
+10.88.0.1 - - [08/Dec/2020:16:29:50 +0000] "GET / HTTP/1.1" 200 39
+Stop the Podman command with Ctrl+C.
+
+Finish
+
+On workstation, run the lab troubleshoot-container finish script to complete this lab.
+
+[student@workstation ~]$ lab troubleshoot-container finish
+This concludes the guided exercise.

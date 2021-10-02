@@ -1,0 +1,352 @@
+Guided Exercise: Viewing the Overcloud Architecture
+
+In this exercise, you will view the architecture overcloud on your classroom system. You will verify the operation and configuration of the overcloud nodes.
+
+Outcomes
+
+You should be able to:
+
+Connect to and observe the undercloud virtual machine.
+
+Connect to and observe the overcloud virtual machines.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab architecture-overcloud setup command.
+
+[student@workstation ~]$ lab architecture-overcloud setup
+Log in to director as the stack user. Observe that the stackrc environment file automatically loaded. You will use the stack user's authentication environment to query and manage the undercloud.
+
+Log in to director as the stack user. No password is required. View the stack user's environment, which is used to connect to the undercloud.
+
+[student@workstation ~]$ ssh stack@director
+(undercloud) [stack@director ~]$ env | grep OS_
+OS_BAREMETAL_API_VERSION=1.34
+OS_USER_DOMAIN_NAME=Default
+OS_PROJECT_NAME=admin
+OS_IDENTITY_API_VERSION=3
+OS_PASSWORD=redhat
+OS_AUTH_TYPE=password
+PS1=${OS_CLOUDNAME:+($OS_CLOUDNAME)} [\u@\h \W]\$
+OS_AUTH_URL=https://172.25.249.201:13000/
+OS_USERNAME=admin
+OS_NO_CACHE=True
+OS_CLOUDNAME=undercloud
+OS_PROJECT_DOMAIN_NAME=Default
+View the current overcloud server list to find the provisioning network address for each node. The IP addresses shown here may differ from yours. Log out from the director node.
+
+(undercloud) [stack@director ~]$ openstack server list \
+-c Name -c Status -c Networks
++-------------+--------+------------------------+
+| Name        | Status | Networks               |
++-------------+--------+------------------------+
+| controller0 | ACTIVE | ctlplane=172.25.249.59 |
+| compute1    | ACTIVE | ctlplane=172.25.249.56 |
+| ceph0       | ACTIVE | ctlplane=172.25.249.54 |
+| compute0    | ACTIVE | ctlplane=172.25.249.53 |
+| computehci0 | ACTIVE | ctlplane=172.25.249.58 |
++-------------+--------+------------------------+
+(undercloud) [stack@director ~]$ exit
+logout
+Connection to director closed.
+[student@workstation ~ ]$ 
+Use the heat-admin account to log in to the controller0 node to view the unique services running on it. The heat-admin account is configured with the SSH keys for the stack user from director to allow passwordless access.
+
+Log in to the controller0 node as the heat-admin user. Use the ip addr command to list the network configuration.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ ip addr | grep -E 'eth0|vlan|br-ex'
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP
+    inet 172.25.249.53/24 brd 172.25.249.255 scope global eth0
+    inet 172.25.249.50/32 brd 172.25.249.255 scope global eth0
+10: br-ex: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.25.250.1/24 brd 172.25.250.255 scope global br-ex
+    inet 172.25.250.50/32 brd 172.25.250.255 scope global br-ex
+14: vlan20: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.2.1/24 brd 172.24.2.255 scope global vlan20
+15: vlan40: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.4.1/24 brd 172.24.4.255 scope global vlan40
+    inet 172.24.4.50/32 brd 172.24.4.255 scope global vlan40
+16: vlan10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.1.1/24 brd 172.24.1.255 scope global vlan10
+    inet 172.24.1.51/32 brd 172.24.1.255 scope global vlan10
+    inet 172.24.1.50/32 brd 172.24.1.255 scope global vlan10
+17: vlan30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.3.1/24 brd 172.24.3.255 scope global vlan30
+    inet 172.24.3.50/32 brd 172.24.3.255 scope global vlan30
+18: vlan50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.5.1/24 brd 172.24.5.255 scope global vlan50
+Use the ovs-vsctl command to list the bridges on the controller0 node.
+
+[heat-admin@controller0 ~]$ sudo ovs-vsctl list-br
+br-eth3
+br-eth4
+br-ex
+br-int
+br-trunk
+Use the ovs-vsctl command to list the interfaces on br-trunk.
+
+[heat-admin@controller0 ~]$ sudo ovs-vsctl list-ifaces br-trunk
+eth1
+vlan10
+vlan20
+vlan30
+vlan40
+vlan50
+Use the ovs-vsctl command to list the interfaces on br-ex.
+
+[heat-admin@controller0 ~]$ sudo ovs-vsctl list-ifaces br-ex
+eth2
+...output omitted...
+Use the docker command to list the containers on the controller0 node. Log off from the controller0 node.
+
+[heat-admin@controller0 ~]$ sudo docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                              STATUS
+ovn-dbs-bundle-docker-0            Up 7 hours
+openstack-manila-share-docker-0    Up 7 hours
+openstack-cinder-volume-docker-0   Up 7 hours
+haproxy-bundle-docker-0            Up 7 hours
+redis-bundle-docker-0              Up 7 hours
+galera-bundle-docker-0             Up 7 hours
+rabbitmq-bundle-docker-0           Up 7 hours
+...output omitted...
+[heat-admin@controller0 ~]$ exit
+(undercloud) [stack@director ~]$ 
+Log in to the compute0 node as the head-admin user. List the relevant services and network configuration, and then log off.
+
+Log in to the compute0 node as the heat-admin user. Use the ip addr command to list the network configuration.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@compute0
+[heat-admin@compute0 ~]$ ip addr | grep -E 'eth0|vlan|eth2'
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP
+    inet 172.25.249.53/24 brd 172.25.249.255 scope global eth0
+4: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master ovs-system state UP
+14: vlan10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.1.2/24 brd 172.24.1.255 scope global vlan10
+15: vlan20: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.2.2/24 brd 172.24.2.255 scope global vlan20
+16: vlan30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.3.2/24 brd 172.24.3.255 scope global vlan30
+17: vlan50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.5.2/24 brd 172.24.5.255 scope global vlan50
+Use the ovs-vsctl command to list the bridges on the compute0 node.
+
+[heat-admin@compute0 ~]$ sudo ovs-vsctl list-br
+br-eth3
+br-eth4
+br-ex
+br-int
+br-trunk
+Use the ovs-vsctl command to list the interfaces on br-trunk.
+
+[heat-admin@compute0 ~]$ sudo ovs-vsctl list-ifaces br-trunk
+eth1
+vlan10
+vlan20
+vlan30
+vlan50
+Use the docker command to list the containers on the compute0 node. Log off from the compute0 node.
+
+[heat-admin@compute0 ~]$ sudo docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                      STATUS
+ovn_metadata_agent         Up 7 hours (healthy)
+ovn_controller             Up 7 hours
+nova_compute               Up 7 hours (healthy)
+logrotate_crond            Up 7 hours
+ceilometer_agent_compute   Up 7 hours
+nova_migration_target      Up 7 hours
+iscsid                     Up 7 hours
+nova_libvirt               Up 7 hours
+nova_virtlogd              Up 7 hours
+[heat-admin@compute0 ~]$ exit
+(undercloud) [stack@director ~]$ 
+Log in to the computehci0 node as the head-admin user. List the relevant services and network configuration, and then log off.
+
+Log in to the computehci0 node as the heat-admin user. Use the ip addr command to list the network configuration.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@computehci0
+[heat-admin@computehci0 ~]$ ip addr | grep -E 'eth0|vlan|eth2'
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP
+    inet 172.25.249.56/24 brd 172.25.249.255 scope global eth0
+4: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master ovs-system state UP
+14: vlan10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.1.6/24 brd 172.24.1.255 scope global vlan10
+15: vlan20: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.2.6/24 brd 172.24.2.255 scope global vlan20
+16: vlan30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.3.6/24 brd 172.24.3.255 scope global vlan30
+17: vlan40: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.4.6/24 brd 172.24.4.255 scope global vlan40
+18: vlan50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.5.6/24 brd 172.24.5.255 scope global vlan50
+Use the ovs-vsctl command to list the bridges on the computehci0 node.
+
+[heat-admin@computehci0 ~]$ sudo ovs-vsctl list-br
+br-eth3
+br-eth4
+br-ex
+br-int
+br-trunk
+Use the ovs-vsctl command to list the interfaces on br-trunk.
+
+[heat-admin@computehci0 ~]$ sudo ovs-vsctl list-ifaces br-trunk
+eth1
+vlan10
+vlan20
+vlan30
+vlan40
+vlan50
+Use the docker command to list the containers on the computehci0 node.
+
+[heat-admin@computehci0 ~]$ sudo docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                      STATUS
+ceph-osd-computehci0-vdc   Up 7 hours
+ceph-osd-computehci0-vdd   Up 7 hours
+ceph-osd-computehci0-vdb   Up 7 hours
+ovn_controller             Up 7 hours
+ovn_metadata_agent         Up 7 hours (healthy)
+logrotate_crond            Up 7 hours
+nova_compute               Up 7 hours (healthy)
+nova_migration_target      Up 7 hours
+ceilometer_agent_compute   Up 7 hours
+iscsid                     Up 7 hours
+nova_libvirt               Up 7 hours
+nova_virtlogd              Up 7 hours
+Use the lsblk -fs command to list the specified block devices. Log off from the computehci0 node.
+
+[heat-admin@computehci0 ~]$ lsblk -fs
+NAME  FSTYPE  LABEL      UUID                                 MOUNTPOINT
+sr0   iso9660 iPXE       2014-12-21-12-02-07-00
+vda1  iso9660 config-2   2018-08-19-03-13-46-00
+└─vda
+vda2  xfs     img-rootfs afa067cb-d91f-432e-b7c4-c546dabe10ec /
+└─vda
+vdb1  xfs                77e922d3-e888-4a9c-9cc4-eb0f9025dcbc
+└─vdb
+vdb2
+└─vdb
+vdc1  xfs                3f8498e3-4c0b-4495-ab8c-0cfbdd099549
+└─vdc
+vdc2
+└─vdc
+vdd1  xfs                9c995a6f-32c5-4138-90da-dd4239ce37ec
+└─vdd
+vdd2
+└─vdd
+[heat-admin@computehci0 ~]$ exit
+(undercloud) [stack@director ~]$
+Log in to the ceph0 node as the heat-admin user. List the relevant services and network configuration, and then log off.
+
+Log in to the ceph0 node as the heat-admin user. Use the ip addr command to list the network configuration.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@ceph0
+[heat-admin@ceph0 ~]$ ip addr | grep -E 'eth0|vlan|eth2'
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP
+    inet 172.25.249.56/24 brd 172.25.249.255 scope global eth0
+4: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP
+6: vlan40: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.4.3/24 brd 172.24.4.255 scope global vlan40
+7: vlan30: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.3.3/24 brd 172.24.3.255 scope global vlan30
+8: vlan50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+    inet 172.24.5.3/24 brd 172.24.5.255 scope global vlan50
+Use the ovs-vsctl command to list the bridges on the ceph0 node.
+
+[heat-admin@ceph0 ~]$ sudo ovs-vsctl list-br
+br-ex
+br-trunk
+Use the docker command to list the containers on the ceph0 node. Log off from the ceph0 node.
+
+[heat-admin@ceph0 ~]$ sudo docker ps \
+--format="table {{.Names}}\t{{.Status}}"
+NAMES                STATUS
+ceph-osd-ceph0-vdb   Up 7 hours
+ceph-osd-ceph0-vdc   Up 7 hours
+ceph-osd-ceph0-vdd   Up 7 hours
+logrotate_crond      Up 7 hours
+Use the lsblk -fs command to list the specified block devices.
+
+[heat-admin@ceph0 ~]$ lsblk -fs
+NAME  FSTYPE  LABEL      UUID                                 MOUNTPOINT
+sr0   iso9660 iPXE       2014-12-21-12-02-07-00
+vda1  iso9660 config-2   2018-08-19-03-13-46-00
+└─vda
+vda2  xfs     img-rootfs afa067cb-d91f-432e-b7c4-c546dabe10ec /
+└─vda
+vdb1  xfs                c3d437d0-9215-4c98-8a40-c5dacabf95b1
+└─vdb
+vdb2
+└─vdb
+vdc1  xfs                d76e086b-db1e-4a84-9b7e-e23a51f71eee
+└─vdc
+vdc2
+└─vdc
+vdd1  xfs                1c4c6a2b-0b99-4453-8821-caea37e78728
+└─vdd
+vdd2
+└─vdd
+[heat-admin@ceph0 ~]$ exit
+(undercloud) [stack@director ~]$
+Log in to the controller0 node. Use Ceph commands to check the health of the Ceph cluster.
+
+Log in to the controller0 node. Use the ceph status command to check the health of the Ceph cluster.
+
+(undercloud) [stack@director ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ ceph status
+  cluster:
+    id:     f9d61d02-a355-11e8-ae2b-52540001fac8
+    health: HEALTH_OK
+
+  services:
+    mon: 1 daemons, quorum controller0
+    mgr: controller0(active)
+    mds: cephfs-1/1/1 up  {0=controller0=up:active}
+    osd: 6 osds: 6 up, 6 in
+
+  data:
+    pools:   7 pools, 416 pgs
+    objects: 744 objects, 5617 MB
+    usage:   6270 MB used, 107 GB / 113 GB avail
+    pgs:     416 active+clean
+Use the ceph osd lspools command to list the cluster's pools.
+
+[heat-admin@controller0 ~]$ ceph osd lspools
+1 images,2 metrics,3 backups,4 vms,5 volumes,6 manila_data,7 manila_metadata,
+Use the ceph osd ls command to list the cluster's OSDs. Log off from the ceph0 node.
+
+[heat-admin@controller0 ~]$ ceph osd ls
+0
+1
+2
+3
+4
+5
+[heat-admin@controller0 ~]$ exit
+(undercloud) [stack@director ~]$ 
+On the director node, authenticate as the admin user in the admin project in the overcloud.
+
+Source the overcloudrc authentication environment file. The loaded environment provides admin user access in the overcloud.
+
+(undercloud) [stack@director ~]$ source overcloudrc
+Confirm that the heat_stack_user role is available in the overcloud. Log out of the director node.
+
+(overcloud) [stack@director ~]$ openstack role list -c Name
++-----------------+
+| Name            |
++-----------------+
+| heat_stack_user |
+| ResellerAdmin   |
+| _member_        |
+| swiftoperator   |
+| admin           |
++-----------------+
+(overcloud) [stack@director ~]$ exit
+Cleanup
+
+On workstation, run the lab architecture-overcloud cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab architecture-overcloud cleanup
+This concludes the guided exercise.

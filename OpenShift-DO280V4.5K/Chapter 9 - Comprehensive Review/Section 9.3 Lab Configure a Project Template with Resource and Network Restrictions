@@ -1,0 +1,362 @@
+
+Lab: Configure a Project Template with Resource and Network Restrictions
+In this review, you will configure the cluster's default project template to ensure that new projects enforce default quotas, resource limits, and network policies.
+
+Outcomes
+
+You should be able to:
+
+Modify the default project template to automatically create limit ranges, resource quotas, and network policies.
+
+Create a TLS secret using the provided files.
+
+Mount a secret as a volume within an application.
+
+Create a passthrough route to an application.
+
+Configure an application to automatically scale.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command:
+
+Ensures that the cluster API is reachable.
+
+Configures the HTPasswd identity provider and provides access to the admin, leader, and developer users.
+
+Downloads sample YAML files to ~/DO280/labs/review-template/sample-files/.
+
+Creates the review-template-test project and deploys an application to the project that you can use to test your network policies.
+
+Adds the network.openshift.io/policy-group=ingress label to the default namespace.
+
+Generates certificate files needed for the secure application.
+
+[student@workstation ~]$ lab review-template start
+NOTE
+If you need help getting started, consider using the Post-installation network configuration chapter of the Red Hat OpenShift Container Platform Post-installation configuration guide as a reference.
+
+Instructions
+
+Complete the following tasks:
+
+As the admin user, update the OpenShift cluster to use a new project template. The project template must automatically create network policy, limit range, and quota resources for new projects. New projects must automatically have a label matching the name of the project. For example, a project named test has the name=test label.
+
+The following table provides guidance on the needed resources.
+
+Resource	Requirements
+Project	
+Includes a label with the name of the project.
+
+NetworkPolicy	
+Policy 1:
+
+Routes are accessible to external traffic; this means that traffic is allowed from pods in namespaces with the network.openshift.io/policy-group=ingress label.
+
+Policy 2:
+
+Pods in the same namespace can communicate with each other.
+
+Pods do not respond to pods that exist in a different namespace, except namespaces with the network.openshift.io/policy-group=ingress label.
+
+LimitRange	
+Each container requests 30 millicores of CPU.
+
+Each container requests 30 MiB of memory.
+
+Each container is limited to 100 millicores of CPU.
+
+Each container is limited to 100 MiB of memory.
+
+ResourceQuota	
+Projects are limited to 10 pods.
+
+Projects can request a maximum of 1 GiB of memory.
+
+Projects can request a maximum of 2 CPUs.
+
+Projects can use a maximum of 4 GiB of memory.
+
+Projects can use a maximum of 4 CPUs.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Use the oc adm create-bootstrap-project-template command to create a new YAML file that you will customize for this exercise. Save the file to ~/DO280/labs/review-template/project-template.yaml.
+
+[student@workstation ~]$ oc adm create-bootstrap-project-template \
+>    -o yaml > ~/DO280/labs/review-template/project-template.yaml
+Change to the ~/DO280/labs/review-template/ directory.
+
+[student@workstation ~]$ cd ~/DO280/labs/review-template/
+Edit the project-template.yaml file to add a label for new projects. Add the bold lines, ensuring proper indentation, and then save the file. The PROJECT_NAME variable takes the value of the project name.
+
+...output omitted...
+- apiVersion: project.openshift.io/v1
+  kind: Project
+  metadata:
+    labels:
+      name: ${PROJECT_NAME}
+    annotations:
+...output omitted...
+List the files in the ~/DO280/labs/review-template/sample-files/ directory. The directory provides two sample network policy files, a sample limit range file, and a sample resource quota file.
+
+[student@workstation review-template]$ ls sample-files/
+allow-from-openshift-ingress.yaml  allow-same-namespace.yaml  limitrange.yaml  resourcequota.yaml
+Add the content of the sample-files/allow-*.yaml files to the project-template.yaml file. Because the project-template.yaml file expects a list of resources, the first line of each resource must begin with a -, and you must indent the remainder of the content accordingly.
+
+Edit the project-template.yaml file to add the network policy resources. Add the bold lines, ensuring proper indentation, and then save the file.
+
+...output omitted...
+  subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: ${PROJECT_ADMIN_USER}
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: allow-from-openshift-ingress
+  spec:
+    podSelector: {}
+    ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            network.openshift.io/policy-group: ingress
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: allow-same-namespace
+  spec:
+    podSelector: {}
+    ingress:
+    - from:
+      - podSelector: {}
+parameters:
+- name: PROJECT_NAME
+...output omitted...
+Add the content of the sample-files/limitrange.yaml and sample-files/resourcequota.yaml files to the project-template.yaml file. Because the project-template.yaml file expects a list of resources, the first line of each resource must begin with a -, and you must indent the remainder of the content accordingly.
+
+Edit the project-template.yaml file to add the limit range and resource quota resources. Add the bold lines, ensuring proper indentation, and then save the file.
+
+...output omitted...
+    ingress:
+    - from:
+      - podSelector: {}
+- apiVersion: v1
+  kind: LimitRange
+  metadata:
+    name: project-limitrange
+  spec:
+    limits:
+    - default:
+        memory: 100Mi
+        cpu: 100m
+      defaultRequest:
+        memory: 30Mi
+        cpu: 30m
+      type: Container
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    name: project-quota
+  spec:
+    hard:
+      pods: '10'
+      requests.cpu: '2'
+      requests.memory: 1Gi
+      limits.cpu: '4'
+      limits.memory: 4Gi
+parameters:
+- name: PROJECT_NAME
+...output omitted...
+Use the oc create command to create a new template resource in the openshift-config namespace using the project-template.yaml file.
+
+NOTE
+The ~/DO280/solutions/review-template/project-template.yaml file contains the correct configuration and can be used for comparison.
+
+[student@workstation review-template]$ oc create -f project-template.yaml \
+>    -n openshift-config
+template.template.openshift.io/project-request created
+List the templates in the openshift-config namespace. You use the template name in the next step.
+
+[student@workstation review-template]$ oc get templates -n openshift-config
+NAME              DESCRIPTION   PARAMETERS    OBJECTS
+project-request                 5 (5 blank)   6
+Update the projects.config.openshift.io/cluster resource to use the new template.
+
+[student@workstation review-template]$ oc edit \
+>    projects.config.openshift.io/cluster
+Modify the spec: {} line to match the following bold lines. Use the template name identified in the openshift-config namespace. Ensure proper indentation, and then save your changes.
+
+...output omitted...
+spec:
+  projectRequestTemplate:
+    name: project-request
+A successful change redeploys the apiserver pods in the openshift-apiserver namespace. Monitor the redeployment.
+
+[student@workstation review-template]$ watch oc get pods -n openshift-apiserver
+Press Ctrl+C to end the watch command after all three new pods are running.
+
+Every 2.0s: oc get pods -n openshift-apiserver            ...
+
+NAME                         READY   STATUS    RESTARTS   AGE
+apiserver-75cfdcf877-257vs   1/1     Running   0          61s
+apiserver-75cfdcf877-l2xnv   1/1     Running   0          29s
+apiserver-75cfdcf877-rn9fs   1/1     Running   0          47s
+As the developer user, create a project named review-template. Ensure that the review-template project inherits the settings specified in the new project template. In the review-template project, create a deployment named hello-secure using the container image located at quay.io/redhattraining/hello-world-secure:v1.0.
+
+NOTE
+The hello-secure pod does not run successfully until after you provide access to the TLS certificate and key required by the NGINX server.
+
+Log in to your OpenShift cluster as the developer user.
+
+[student@workstation review-template]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+Create the review-template project.
+
+[student@workstation review-template]$ oc new-project review-template
+Now using project "review-template" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+List the network policy, limit range, and quota resources in the review-template project.
+
+[student@workstation review-template]$ oc get \
+>    networkpolicy,limitrange,resourcequota
+NAME                                                           ...
+networkpolicy.networking.k8s.io/allow-from-openshift-ingress   ...
+networkpolicy.networking.k8s.io/allow-same-namespace           ...
+
+NAME                            CREATED AT
+limitrange/project-limitrange   2020-10-19T16:17:19Z
+
+NAME                          AGE   REQUEST
+resourcequota/project-quota   37s   pods: 0/10, requests.cpu: 0/2,
+                                    requests.memory: 0/1Gi
+
+                                    LIMIT
+                                    limits.cpu: 0/4, limits.memory: 0/4Gi
+Verify that the review-template project has the name=review-template label.
+
+[student@workstation review-template]$ oc get project/review-template \
+>    --show-labels
+NAME              DISPLAY NAME   STATUS   LABELS
+review-template                  Active   name=review-template
+Use the oc new-app command to create the hello-secure deployment using the quay.io/redhattraining/hello-world-secure:v1.0 container image.
+
+[student@workstation review-template]$ oc new-app --name hello-secure \
+>    --docker-image quay.io/redhattraining/hello-world-secure:v1.0
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "hello-secure" created
+    deployment.apps "hello-secure" created
+    service "hello-secure" created
+--> Success
+...output omitted...
+Verify that the hello-secure pod does not start successfully.
+
+[student@workstation review-template]$ watch oc get pods
+Press Ctrl+C to end the watch command after the pod has a status of either CrashLoopBackOff or Error.
+
+Every 2.0s: oc get pods                                               ...
+
+NAME                            READY   STATUS             RESTARTS   AGE
+hello-secure-6475f657c9-rmgsr   0/1     CrashLoopBackOff   1          14s
+As the developer user, create a TLS secret using the hello-secure-combined.pem certificate and the hello-secure-key.pem key located in the ~/DO280/labs/review-template/ directory. Use the logs from the failed hello-secure pod to determine the expected mount point for the certificate. Mount the TLS secret as a volume in the pod using the identified directory. Verify that the hello-secure pod successfully redeploys.
+
+Create a TLS secret using the hello-secure-combined.pem certificate and the hello-secure-key.pem key.
+
+[student@workstation review-template]$ oc create secret tls hello-tls \
+>    --cert hello-secure-combined.pem --key hello-secure-key.pem
+secret/hello-tls created
+Identify the name of the failed pod.
+
+[student@workstation review-template]$ oc get pods
+NAME                            READY   STATUS             RESTARTS   AGE
+hello-secure-6475f657c9-rmgsr   0/1     CrashLoopBackOff   4          2m45s
+Examine the logs of the failed pod. The logs indicate that the pod attempts to use the /run/secrets/nginx/tls.crt file, but that the file does not exist.
+
+[student@workstation review-template]$ oc logs hello-secure-6475f657c9-rmgsr
+...output omitted...
+nginx: [emerg] BIO_new_file("/run/secrets/nginx/tls.crt") failed (SSL: error:02001002:system library:fopen:No such file or directory:fopen('/run/secrets/nginx/tls.crt','r') error:2006D080:BIO routines:BIO_new_file:no such file)
+Use the oc set volumes command to mount the secret into the /run/secrets/nginx directory.
+
+[student@workstation review-template]$ oc set volumes deployment/hello-secure \
+>    --add --type secret --secret-name hello-tls --mount-path /run/secrets/nginx
+info: Generated volume name: volume-hlrtf
+deployment.apps/hello-secure volume updated
+Verify that the hello-secure pod successfully redeploys.
+
+[student@workstation review-template]$ watch oc get pods
+Press Ctrl+C to end the watch command after the pod displays 1/1 and Running.
+
+Every 2.0s: oc get pods                                               ...
+
+NAME                            READY   STATUS    RESTARTS   AGE
+hello-secure-6bd8fcccb4-nhwr2   1/1     Running   0          25s
+The hello-secure-combined.pem certificate is valid for a single host name. Use the openssl x509 command with the -noout and -ext 'subjectAltName' options to read the hello-secure-combined.pem certificate and identify the host name. As the developer user, create a passthrough route to the hello-secure service using the identified host name. Verify that the route responds to external requests.
+
+NOTE
+The x509(1) man page provides information on the openssl x509 command.
+
+Examine the hello-secure-combined.pem certificate using the openssl x509 command.
+
+[student@workstation review-template]$ openssl x509 \
+>    -in hello-secure-combined.pem -noout -ext 'subjectAltName'
+X509v3 Subject Alternative Name:
+    DNS:hello-secure.apps.ocp4.example.com
+Create a passthrough route to the hello-secure service pointing to hello-secure.apps.ocp4.example.com.
+
+[student@workstation review-template]$ oc create route passthrough \
+>    --service hello-secure --hostname hello-secure.apps.ocp4.example.com
+route.route.openshift.io/hello-secure created
+Return to the /home/student directory.
+
+[student@workstation review-template]$ cd
+Use the curl command to verify that the route responds to external requests.
+
+[student@workstation ~]$ curl -s https://hello-secure.apps.ocp4.example.com \
+>    | grep Hello
+    <h1>Hello, world from nginx!</h1>
+As the developer user, configure the hello-secure deployment to scale automatically. The deployment must have at least one pod running. If the average CPU utilization exceeds 80%, then the deployment scales to a maximum of five pods.
+
+NOTE
+You can use the script located at ~/DO280/solutions/review-template/test-hpa.sh to test that your deployment scales as expected.
+
+Use the oc autoscale command to create the horizontal pod autoscaler resource.
+
+[student@workstation ~]$ oc autoscale deployment/hello-secure \
+>    --min 1 --max 5 --cpu-percent 80
+horizontalpodautoscaler.autoscaling/hello-secure autoscaled
+Run the provided test-hpa.sh script. The script uses the ab command to apply load using the Apache benchmarking tool.
+
+[student@workstation ~]$ ~/DO280/solutions/review-template/test-hpa.sh
+...output omitted...
+Benchmarking hello-secure.apps.ocp4.example.com (be patient)
+Completed 10000 requests
+Completed 20000 requests
+...output omitted...
+Finished 100000 requests
+...output omitted...
+Verify that at least two, but not more than five, hello-secure pods are running.
+
+[student@workstation ~]$ oc get pods
+NAME                            READY   STATUS    RESTARTS   AGE
+hello-secure-6bd8fcccb4-7qjcz   1/1     Running   0          96s
+hello-secure-6bd8fcccb4-d67xd   1/1     Running   0          66s
+hello-secure-6bd8fcccb4-m8vxp   1/1     Running   0          96s
+hello-secure-6bd8fcccb4-nhwr2   1/1     Running   0          9m36s
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab review-template grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise.
+
+[student@workstation ~]$ lab review-template finish
+This concludes the comprehensive review.

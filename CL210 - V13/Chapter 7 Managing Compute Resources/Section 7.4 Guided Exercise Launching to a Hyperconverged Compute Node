@@ -1,0 +1,243 @@
+Guided Exercise: Launching to a Hyperconverged Compute Node
+In this exercise, you will create an aggregate and a flavor forcing the creation of certain instances on the HCI node.
+
+Outcomes
+
+You should be able to create a flavor using aggregate and metadata information to control instance placement, and observe messages in the nova_scheduler service log file.
+
+Log in to workstation as student using student as the password.
+
+Run the lab computeresources-hci setup command. This script ensures that OpenStack services are running and the environment is properly configured for the guided exercise.
+
+[student@workstation ~]$ lab computeresources-hci setup
+As the architect1 user, create a new aggregate called hci-aggregate. Add the computehci0 node to the hci-aggregate aggregate.
+
+On workstation, source the /home/student/architect1-finance-rc identity environment file to provide administrator access to OpenStack services.
+
+[student@workstation ~]$ source architect1-finance-rc
+Use the openstack aggregate create command to create a new aggregate called hci-aggregate.
+
+[student@workstation ~(architect1-finance)]$ openstack aggregate create \
+hci-aggregate
++-------------------+----------------------------+
+| Field             | Value                      |
++-------------------+----------------------------+
+| availability_zone | None                       |
+| created_at        | 2018-10-16T08:21:28.625185 |
+| deleted           | False                      |
+| deleted_at        | None                       |
+| id                | 1                          |
+| name              | hci-aggregate              |
+| updated_at        | None                       |
++-------------------+----------------------------+
+Use the openstack aggregate add host command to add the computehci0 node to the hci-aggregate aggregate.
+
+[student@workstation ~(architect1-finance)]$ openstack aggregate add host \
+hci-aggregate computehci0.overcloud.example.com
++-------------------+----------------------------------------+
+| Field             | Value                                  |
++-------------------+----------------------------------------+
+| availability_zone | None                                   |
+| created_at        | 2018-10-16T08:21:28.000000             |
+| deleted           | False                                  |
+| deleted_at        | None                                   |
+| hosts             | [u'computehci0.overcloud.example.com'] |
+| id                | 1                                      |
+...
+| name              | hci-aggregate                          |
+| updated_at        | None                                   |
++-------------------+----------------------------------------+
+Set the metadata for the hci-aggregate aggregate.
+
+Use the openstack aggregate set command to set the metadata for the hci-aggregate aggregate.
+
+[student@workstation ~(architect1-finance)]$ openstack aggregate set \
+--property computehci=true hci-aggregate
+Use the openstack aggregate show command to show the details of the hci-aggregate aggregate.
+
+[student@workstation ~(architect1-finance)]$ openstack aggregate show \
+hci-aggregate
++-------------------+----------------------------------------+
+| Field             | Value                                  |
++-------------------+----------------------------------------+
+| availability_zone | None                                   |
+| created_at        | 2018-10-16T08:21:28.000000             |
+| deleted           | False                                  |
+| deleted_at        | None                                   |
+| hosts             | [u'computehci0.overcloud.example.com'] |
+| id                | 1                                      |
+| name              | hci-aggregate                          |
+| properties        | computehci='true'                      |
+| updated_at        | None                                   |
++-------------------+----------------------------------------+
+Create a new flavor and configure the computehci property.
+
+Use the openstack flavor create command to create a new flavor called default-hci. Configure the flavor to use 1024 MB of RAM, to have a 10 GB disk and to have two vCPUs. Configure the flavor to be public.
+
+[student@workstation ~(architect1-finance)]$ openstack flavor create \
+--ram 1024 --disk 10 --vcpus 2 --public default-hci
++----------------------------+--------------------------------------+
+| Field                      | Value                                |
++----------------------------+--------------------------------------+
+| OS-FLV-DISABLED:disabled   | False                                |
+| OS-FLV-EXT-DATA:ephemeral  | 0                                    |
+| disk                       | 10                                   |
+| id                         | d159f88a-ccab-4dca-8a91-de16e416792b |
+| name                       | default-hci                          |
+| os-flavor-access:is_public | True                                 |
+| properties                 |                                      |
+| ram                        | 1024                                 |
+| rxtx_factor                | 1.0                                  |
+| swap                       |                                      |
+| vcpus                      | 2                                    |
++----------------------------+--------------------------------------+
+Use the openstack flavor set command to configure the default-hci flavor to use the computehci property.
+
+[student@workstation ~(architect1-finance)]$ openstack flavor set \
+default-hci --property computehci=true
+[student@workstation ~(architect1-finance)]$ openstack flavor show default-hci
++----------------------------+--------------------------------------+
+| Field                      | Value                                |
++----------------------------+--------------------------------------+
+| OS-FLV-DISABLED:disabled   | False                                |
+| OS-FLV-EXT-DATA:ephemeral  | 0                                    |
+| access_project_ids         | None                                 |
+| disk                       | 10                                   |
+| id                         | d159f88a-ccab-4dca-8a91-de16e416792b |
+| name                       | default-hci                          |
+| os-flavor-access:is_public | True                                 |
+| properties                 | computehci='true'                    |
+| ram                        | 1024                                 |
+| rxtx_factor                | 1.0                                  |
+| swap                       |                                      |
+| vcpus                      | 2                                    |
++----------------------------+--------------------------------------+
+Use the openstack image list command to ensure the hci-image image exists. Use the openstack image show command to confirm the size of the image.
+
+[student@workstation ~(architect1-finance)]$ openstack image list
++--------------------------------------+-----------------+--------+
+| ID                                   | Name            | Status |
++--------------------------------------+-----------------+--------+
+| e0ba1c8f-0aa2-4599-a487-a506974b4cb7 | hci-image       | active |
+...output omitted...
+[student@workstation ~(architect1-finance)]$ openstack image show \
+hci-image --max-width=80
++------------------+-----------------------------------------------------------+
+| Field            | Value                                                     |
++------------------+-----------------------------------------------------------+
+| checksum         | cbe377ed77279c4a136e05e713db3a50                          |
+| container_format | bare                                                      |
+| created_at       | 2018-10-16T08:06:51Z                                      |
+| disk_format      | qcow2                                                     |
+| file             | /v2/images/e0ba1c8f-0aa2-4599-a487-a506974b4cb7/file      |
+| id               | e0ba1c8f-0aa2-4599-a487-a506974b4cb7                      |
+| min_disk         | 10                                                        |
+| min_ram          | 1024                                                      |
+| name             | hci-image                                                 |
+| owner            | 3bc7526a7d44471d8cad16a73e2d5871                          |
+| properties       | direct_url='rbd://945a02d4-c931-11e8-b4cd-                |
+|                  | 52540001fac8/images/e0ba1c8f-                             |
+|                  | 0aa2-4599-a487-a506974b4cb7/snap', locations='[{u'url':   |
+|                  | u'rbd://945a02d4-c931-11e8-b4cd-52540001fac8/images       |
+|                  | /e0ba1c8f-0aa2-4599-a487-a506974b4cb7/snap', u'metadata': |
+| protected        | True                                                      |
+| schema           | /v2/schemas/image                                         |
+| size             | 1621950464                                                |
+| status           | active                                                    |
+| tags             |                                                           |
+| updated_at       | 2018-10-16T08:07:10Z                                      |
+| virtual_size     | None                                                      |
+| visibility       | public                                                    |
++------------------+-----------------------------------------------------------+
+Open a new terminal on workstation. From workstation, log on to the controller0 node. On controller0, configure nova for debugging. Restart the containers and inspect the nova_scheduler log files.
+
+From a new terminal window on workstation, log on to controller0 as the heat-admin user.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+Warning: Permanently added 'controller0,172.25.250.1' (ECDSA) to the list of known hosts.
+[heat-admin@controller0 ~]$ 
+Use the sudo -i command to gain root privileges. Edit the nova.conf file and set the debug parameter to true. Restart the nova_scheduler and nova_api containers. Wait for 45 seconds. Use the docker ps to ensure the containers are running and healthy.
+
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/nova/etc/nova/nova.conf \
+DEFAULT debug True
+[root@controller0 ~]# docker restart nova_api
+nova_api
+[root@controller0 ~]# docker restart nova_scheduler
+nova_scheduler
+[heat-admin@controller0 ~]$ docker ps \
+--format="{{.Names}}\t{{.Status}}" | grep nova
+...output omitted...
+nova_api        Up About 31 seconds (healthy)
+nova_scheduler  Up About 46 seconds (healthy)
+...output omitted...
+Create an instance using the default-hci flavor. Ensure the instance is created on the computehci0 node. Inspect the nova-scheduler.log log file.
+
+In the original workstation terminal, use the openstack server create command to create a new instance called hci-server1. Use the default-hci flavor, the hci-image image, and the finance-network1 network.
+
+[student@workstation ~(architect1-finance)]$ openstack server create \
+--flavor default-hci \
+--image hci-image \
+--nic net-id=finance-network1 \
+--wait hci-server1
+During the creation of hci-server1, return to the controller0 node. Run the tail -f command on the nova-scheduler.log file and redirect the output to a file called hci.txt.
+
+[root@controller0 nova]# tail -f \
+/var/log/containers/nova/nova-scheduler.log > hci.txt
+On workstation, confirm that hci-server1 was created on computehci0. Note the ID of hci-server1 and compare it to the debug entries in the hci.txt file.
+
+[student@workstation ~(architect1-finance)]$ openstack server show \
+hci-server1 --max-width=80
++-------------------------------------+----------------------------------------+
+| Field                               | Value                                  |
++-------------------------------------+----------------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                                 |
+| OS-EXT-AZ:availability_zone         | nova                                   |
+| OS-EXT-SRV-ATTR:host                | computehci0.overcloud.example.com      |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | computehci0.overcloud.example.com      |
+| OS-EXT-SRV-ATTR:instance_name       | instance-00000002                      |
+| OS-EXT-STS:power_state              | Running                                |
+| OS-EXT-STS:task_state               | None                                   |
+| OS-EXT-STS:vm_state                 | active                                 |
+| OS-SRV-USG:launched_at              | 2018-10-16T09:06:00.000000             |
+| OS-SRV-USG:terminated_at            | None                                   |
+| accessIPv4                          |                                        |
+| accessIPv6                          |                                        |
+| addresses                           | finance-network1=192.168.1.5           |
+| config_drive                        |                                        |
+| created                             | 2018-10-16T09:05:31Z                   |
+| flavor                              | default-hci (d159f88a-ccab-4dca-       |
+|                                     | 8a91-de16e416792b)                     |
+| hostId                              | 9bf095a2180a28d194225768846ba007161890 |
+|                                     | 1cc37b032d9d44a1be                     |
+| id                                  | 9cc87d2c-efd3-45ae-940c-a3f08c590ace   |
+| image                               | hci-image (e0ba1c8f-                   |
+|                                     | 0aa2-4599-a487-a506974b4cb7)           |
+| key_name                            | None                                   |
+| name                                | hci-server1                            |
+| progress                            | 0                                      |
+| project_id                          | 7adc3822ee54472b85b2d34cc83f5803       |
+| properties                          |                                        |
+| security_groups                     | name='default'                         |
+| status                              | ACTIVE                                 |
+| updated                             | 2018-10-16T09:06:00Z                   |
+| user_id                             | 62dc592686267444e8065dd49673d5cfe7868b |
+|                                     | 4735edff02bea576d220c938fb             |
+| volumes_attached                    |                                        |
++-------------------------------------+----------------------------------------+
+On the controller0 node use the view command to open the hci.txt Search for the ID of hci-server1. Notice the request ID for these entries. Entries with the same request ID are part of the same request.
+
+[root@controller0 nova]# view hci.txt
+...output omitted...
+2018-10-16 12:20:27.240 1 DEBUG nova.scheduler.filter_scheduler [req-5406d5ea-432a-46dc-9b19-042fa769e8b0 62dc592686267444e8065dd49673d5cfe7868b4735edff02bea576d220c938fb 7adc3822ee54472b85b2d34cc83f5803 - 04c2c4fea5bb4a839101a89ef9134e2c default] Weighed [(computehci0.overcloud.example.com, computehci0.overcloud.example.com) ram: 2047MB disk: 106496MB io_ops: 0 instances: 0, (compute1.overcloud.example.com, compute1.overcloud.example.com) ram: 2047MB disk: 108544MB io_ops: 0 instances: 0, (compute0.overcloud.example.com, compute0.overcloud.example.com) ram: 2047MB disk: 108544MB io_ops: 0 instances: 0] _get_sorted_hosts /usr/lib/python2.7/site-packages/nova/scheduler/filter_scheduler.py:424
+2018-10-16 12:20:27.241 1 DEBUG nova.scheduler.utils [req-5406d5ea-432a-46dc-9b19-042fa769e8b0 62dc592686267444e8065dd49673d5cfe7868b4735edff02bea576d220c938fb 7adc3822ee54472b85b2d34cc83f5803 - 04c2c4fea5bb4a839101a89ef9134e2c default] Attempting to claim resources in the placement API for instance 9cc87d2c-efd3-45ae-940c-a3f08c590ace claim_resources /usr/lib/python2.7/site-packages/nova/scheduler/utils.py:786
+2018-10-16 12:20:27.283 1 DEBUG nova.scheduler.filter_scheduler [req-5406d5ea-432a-46dc-9b19-042fa769e8b0 62dc592686267444e8065dd49673d5cfe7868b4735edff02bea576d220c938fb 7adc3822ee54472b85b2d34cc83f5803 - 04c2c4fea5bb4a839101a89ef9134e2c default] Selected host: (computehci0.overcloud.example.com, computehci0.overcloud.example.com) ram: 2047MB disk: 106496MB io_ops: 0 instances: 0 _consume_selected_host /usr/lib/python2.7/site-packages/nova/scheduler/filter_scheduler.py:325
+2018-10-16 12:20:27.283 1 DEBUG oslo_concurrency.lockutils [req-5406d5ea-432a-46dc-9b19-042fa769e8b0 62dc592686267444e8065dd49673d5cfe7868b4735edff02bea576d220c938fb 7adc3822ee54472b85b2d34cc83f5803 - 04c2c4fea5bb4a839101a89ef9134e2c default] Lock "(u'computehci0.overcloud.example.com', u'computehci0.overcloud.example.com')" acquired by "nova.scheduler.host_manager._locked" :: waited 0.000s inner /usr/lib/python2.7/site-packages/oslo_concurrency/lockutils.py:273
+...output omitted...
+Cleanup
+
+On workstation, run the lab computeresources-hci cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab computeresources-hci cleanup
+This concludes the guided exercise.

@@ -1,0 +1,311 @@
+Lab: Launching an Application Stack
+Performance Checklist
+
+In this exercise, you will write a template that will launch a stack.
+
+Outcomes
+
+You should be able to:
+
+Modify a simple orchestration template.
+
+Launch a multi-instance application stack using the orchestration template.
+
+Add a block storage volume.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab stack-cr setup command. The script downloads the orchestration templates and environment file to the /home/student/heat-templates directory.
+
+[studentworkstation ~]$ lab stack-cr setup
+Instructions
+
+Use the following instructions to build an image with customizations and launch an instance using the customized image.
+
+Edit the /home/student/.vimrc file with the following content to set up automatic indentation.
+
+Edit the orchestration template /home/student/heat-templates/marketing-app1.yaml to launch an application stack comprised of one web server instance and one database server instance. The database server instance should use a persistent volume as the back-end storage for the database. The persistent volume should be provisioned as a member of the stack. The web server and the database server should use separate user-data files such as /home/student/heat-templates/webserver-cr3.sh and /home/student/heat-templates/dbserver-cr3.sh for their respective customizations. The orchestration stack must retry once to execute the user-data script. The user-data script must return success on the successful execution of the script. Set the timeout period to 600 seconds, after which the webserver-cr3.sh script must return a fail result. Set the timeout period to 800 seconds, after which the dbserver-cr3.sh script must return a fail result.
+
+Create the /home/student/heat-templates/environment-cr3.yaml environment file. Enter the values for all input parameters defined in the /home/student/heat-templates/marketing-app1.yaml template file.
+
+Table 10.4. Input Parameters
+
+Resource type	Resource name
+Web server image	rhel7-web
+Database server image	rhel7-db
+Web server name	marketing-web-server1
+Database server name	marketing-db-server2
+Flavor	default
+Key pair name	marketing-keypair
+Public network	provider-datacentre
+Private network	marketing-network1
+Private subnet	marketing-subnet1
+
+Launch the stack and verify it by accessing the web page deployed on the instance. Use the developer1 user credentials to launch the stack.
+
+Edit the /home/student/.vimrc file with the following content to set up automatic indentation:
+
+autocmd FileType yaml setlocal ai ts=2 sw=2 et
+Edit the orchestration template /home/student/heat-templates/marketing-app1.yaml to launch an application stack comprised of one web server instance and one database server instance. The database server instance should use a persistent volume as the back-end storage for the database. The persistent volume should be provisioned as a member of the stack.
+
+The orchestration template must include the following items:
+
+The web_server resource definition deploys the instance with a PHP web page that interacts with the MariaDB database. Run the /home/student/heat-templates/webserver-cr3.sh script as the user-data script to deploy the intended PHP web page on the marketing-web-server1 instance.
+
+The db_server resource definition deploys the instance with a MariaDB database. Run the /home/student/heat-templates/dbserver-cr3.sh script as the user-data script to deploy the intended MariaDB database on marketing-db-server2. The script also creates a database named mydb.
+
+The following parameters must be passed to the webserver-cr3.sh script using the user_data property:
+
+The $web_public_ip and $web_private_ip variables must be initialized with the external and private IP addresses of the finance-web instance, respectively. The $db_private_ip variable must be initialized with the private IP address of the finance-db instance. These variables are used in the webserver-cr3.sh script.
+
+The orchestration stack must retry once to execute the user-data script. The user-data script must return success on the successful execution of the script. Set the timeout period to 600 seconds, after which the webserver-cr3.sh script must return a fail result. Set the timeout period to 800 seconds, after which the dbserver-cr3.sh script must return a fail result.
+
+Navigate to the /home/student/heat-templates/ directory.
+
+[studentworkstation ~]$ cd heat-templates
+[studentworkstation heat-templates]$ 
+Edit the /home/student/heat-templates/marketing-app1.yaml file to specify the user_data property and set the /home/student/heat-templates/webserver-cr3.sh as the user-data script to deploy a PHP web page to marketing-web. Set the user_data_format property of the OS::Nova::Server resource type to RAW.
+
+The edited /home/student/heat-templates/marketing-app1.yaml file should have the content highlighted below:
+
+  web_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: web_instance_name }
+      image: { get_param: web_image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/webserver-cr3.sh }
+The web page uses the $web_private_ip, $db_private_ip, and $web_public_ip variables passed as parameters. These parameters are defined using the params property of the str_replace intrinsic function.
+
+The $web_private_ip variable uses the web_net_port resource attribute, fixed_ips, to retrieve the first IP address associated with the web_server resource. The $db_private_ip variable uses the db_net_port resource attribute, fixed_ips, to retrieve the first IP address associated with the db_server resource. The $web_public_ip variable uses the web_floating_ip resource attribute, floating_ip_address, to set the public IP address associated with the web_server resource.
+
+Edit the /home/student/heat-templates/marketing-app1.yaml file and add the content highlighted below:
+
+  web_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: instance_name }
+      image: { get_param: image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/webserver-cr3.sh }
+          params:
+            $web_private_ip: {get_attr: [web_net_port,fixed_ips,0,ip_address]}
+            $db_private_ip: {get_attr: [db_net_port,fixed_ips,0,ip_address]}
+            $web_public_ip: {get_attr: [web_floating_ip,floating_ip_address]}
+Use the WaitHandleCondition resource to send a signal about the status of the user-data script.
+
+The $wc_notify variable is set to the wait handle URL using the curl_cli attribute of the web_wait_handle resource. The wait handle URL value is set to the $wc_notify variable. If the web page deployed by the script is accessible (HTTP status code 200), then the $wc_notify variable returns a status of SUCCESS. The web_server resource state is marked as CREATE_COMPLETE when the WaitConditionHandle resource signals SUCCESS.
+
+The WaitConditionHandle returns FAILURE if the web page is not accessible or if it times out after 600 seconds. The web_server resource state is then marked as CREATE_FAILED.
+
+Edit the /home/student/heat-templates/marketing-app1.yaml file and add the content highlighted below:
+
+  web_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: instance_name }
+      image: { get_param: image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/webserver-cr3.sh }
+          params:
+            $web_private_ip: {get_attr: [web_net_port,fixed_ips,0,ip_address]}
+            $db_private_ip: {get_attr: [db_net_port,fixed_ips,0,ip_address]}
+            $web_public_ip: {get_attr: [web_floating_ip,ip,floating_ip_address]}
+            $wc_notify: {get_attr: [web_wait_handle,curl_cli]}
+Use the user_data property to define the /home/student/heat-templates/dbserver-cr3.sh user-data script to configure the MariaDB server on finance-db. Set the user_data_format property of the OS::Nova::Server resource type to RAW.
+
+Use the WaitHandleCondition resource to send a signal about the status of the user-data script. The $wc_notify variable is set to the wait handle URL using the curl_cli attribute of the db_wait_handle resource.
+
+Edit the /home/student/heat-templates/marketing-app1.yaml file and add the content highlighted below:
+
+  db_server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: db_instance_name }
+      image: { get_param: db_image_name }
+      flavor: { get_param: instance_flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: web_net_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: { get_file: /home/student/heat-templates/dbserver-cr3.sh }
+          params:
+            $db_wc_notify: {get_attr: [db_wait_handle,curl_cli]}
+Add a new resource of the OS::Cinder::Volume type to create a persistent volume for the marketing-db-server2 instance to use as the database volume. Create the parameters that define the availability zone, size, and the mount point for the volume. Edit the /home/student/heat-templates/marketing-app1.yaml file to include the following definitions for the volume resource and the relevant parameters.
+
+parameters:
+...output omitted...
+  availability_zone:
+    type: string
+    description: The Availability Zone to launch the instance.
+    default: nova
+  volume_size:
+    type: number
+    description: Size of the volume to be created.
+    default: 1
+  volume_mountpoint:
+    type: string
+    description: The location where the volume is exposed on the instance.
+    default: /dev/vdb
+
+resources:
+...output omitted...
+  cinder_volume:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: volume_size }
+      availability_zone: { get_param: availability_zone }
+  cinder_volume_attachment:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      volume_id: { get_resource: cinder_volume }
+      instance_uuid: { get_resource: db_server }
+      mountpoint: { get_param: volume_mountpoint }
+NOTE
+You may also download the ready-to-use version of the marketing-app1.yaml file from http://materials.example.com/heat/marketing-app1-final.yaml.
+
+Create the /home/student/heat-templates/environment-cr3.yaml environment file. Enter the values for all input parameters defined in the /home/student/heat-templates/marketing-app1.yaml template file.
+
+Create the /home/student/heat-templates/environment-cr3.yaml file with the following content:
+
+parameters:
+  web_image_name: rhel7-web
+  db_image_name: rhel7-db
+  web_instance_name: marketing-web-server1
+  db_instance_name: marketing-db-server2
+  instance_flavor: default
+  key_name: marketing-keypair
+  public_net: provider-datacentre
+  private_net: marketing-network1
+  private_subnet: marketing-subnet1
+Launch the stack and verify it by accessing the web page deployed on the instance. Use the developer1 user credentials to launch the stack.
+
+Use the developer1 user credentials to perform a dry-run stack deployment and inspect the resources that will be created when you launch the stack. Rectify all errors before proceeding to the next step.
+
+Use the marketing-app1.yaml template file and the environment-cr3.yaml environment file to create the stack. Name the stack marketing-app1.
+
+[student@workstation heat-templates]$ source ~/developer1-marketing-rc
+[student@workstation heat-templates(developer1-marketing)]$ openstack stack \
+create \
+--environment /home/student/heat-templates/environment-cr3.yaml \
+--template /home/student/heat-templates/marketing-app1.yaml \
+--dry-run -c description \
+marketing-app1
++-------------+-------------------------------+
+| Field       | Value                         |
++-------------+-------------------------------+
+| description | multi-instance stack template |
++-------------+-------------------------------+
+Launch the stack using the marketing-app1.yaml template file and the environment-cr3.yaml environment file. Name the stack marketing-app1.
+
+If the dry run is successful, use the openstack stack create command to launch the stack. Do not use the --dry-run option while launching the stack.
+
+[student@workstation heat-templates(developer1-marketing)]$ openstack stack \
+create \
+--environment /home/student/heat-templates/environment-cr3.yaml \
+--template /home/student/heat-templates/marketing-app1.yaml \
+--wait \
+marketing-app1
+...output omitted...
+List the output returned by the marketing-app1 stack.
+
+[student@workstation heat-templates(developer1-marketing)]$ openstack stack \
+output list marketing-app1
++----------------+---------------------------------------------------+
+| output_key     | description                                       |
++----------------+---------------------------------------------------+
+| web_private_ip | Private IP address of the web server              |
+| web_public_ip  | External IP address of the web server             |
+| website_url    | This URL is the "external" URL that can be used   |
+|                | to access the web server.                         |
+|                |                                                   |
+| db_private_ip  | Private IP address of the DB server               |
++----------------+---------------------------------------------------+
+Inspect the website_url output value of the stack. The IP address in the output_value field might vary.
+
+[student@workstation heat-templates(developer1-marketing)]$ openstack stack \
+output show marketing-app1 website_url
++--------------+--------------------------------------------+
+| Field        | Value                                      |
++--------------+--------------------------------------------+
+| description  | This URL is the "external" URL that can be |
+|              | used to access the web server.             |
+|              |                                            |
+| output_key   | website_url                                |
+| output_value | http://172.25.250.105/index.php            |
++--------------+--------------------------------------------+
+Verify that the multitier stack was created and the user-data script was executed successfully on both the instances by accessing the URL returned as the value for the website_url output.
+
+Access the marketing-db-server2 instance and configure the mariadb service to use the persistent block storage volume (vdb) of 1 GB capacity as its data directory.
+
+[student@workstation heat-templates(developer1-marketing)]$ openstack server \
+list -c Name -c Networks 
++-----------------------+-------------------------------------------------+
+| Name                  | Networks                                        |
++-----------------------+-------------------------------------------------+
+| marketing-web-server1 | marketing-network1=192.168.1.10, 172.25.250.105 |
+| marketing-db-server2  | marketing-network1=192.168.1.13, 172.25.250.102 |
++-----------------------+-------------------------------------------------+
+[student@workstation heat-templates(developer1-marketing)]$ ssh \
+-i ~/.ssh/marketing-keypair cloud-user@172.25.250.102
+[cloud-user@marketing-db-server2 ~]$ lsblk -fs
+NAME  FSTYPE LABEL UUID                                 MOUNTPOINT
+vda1  xfs          6bea2b7b-e6cc-4dba-ac79-be6530d348f5 /
+└─vda
+vdb   xfs          488eb97f-83d2-4067-8a4c-c79d35970044
+[cloud-user@marketing-db-server2 ~]$ sudo mount \
+/dev/vdb /var/lib/mysql
+[cloud-user@marketing-db-server2 ~]$ sudo chcon \
+-Rt mysqld_db_t /var/lib/mysql/
+[cloud-user@marketing-db-server2 ~]$ sudo chown \
+-R mysql:mysql /var/lib/mysql/
+[cloud-user@marketing-db-server2 ~]$ sudo systemctl \
+restart mariadb.service
+The persistent block storage volume was added as a member of the marketing-app1 stack. The mysqld_db_t SELinux context allows the database service access the /var/lib/mysql data directory. Because the database service runs as the mysql user, the mysql user and mysql group should own the /var/lib/mysql data directory.
+
+On marketing-db-server2, download the http://materials.example.com/heat/scripts/test_db.dump to /home/cloud-user/. Restore the /home/cloud-user/test_db.dump file to the test database in the marketing-db-server2 MariaDB server and verify that the new database table tbl_1 exists with an entry.
+
+[cloud-user@marketing-db-server2 ~]$ curl -s -o test_db.dump \
+http://materials.example.com/heat/scripts/test_db.dump
+[cloud-user@marketing-db-server2 ~]$ mysql -u root test < test_db.dump
+[cloud-user@marketing-db-server2 ~]$ mysql -u root test -e "select * from tbl_1;"
++------+------+
+| id   | name |
++------+------+
+| 1    | One  |
++------+------+
+Log off from marketing-db-server2.
+
+[cloud-user@marketing-db-server2 ~]$ logout
+[student@workstation heat-templates(developer1-marketing)]$ 
+Evaluation
+
+On workstation, run the lab stack-cr grade command to confirm success of this exercise. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab stack-cr grade
+Cleanup
+
+On workstation, run the lab stack-cr cleanup command to clean up this exercise.
+
+[student@workstation ~]$ lab stack-cr cleanup
+This concludes the lab.

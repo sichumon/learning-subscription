@@ -1,0 +1,16 @@
+Repositories Visibility
+Objectives
+After completing this section, you should be able to control repository visibility on Quay.io.
+
+Quay.io Repositories Visibility
+Quay.io offers the possibility of creating public and private repositories. Public repositories can be read by anyone without restrictions, despite write permissions must be explicitly granted. Private repositories have both read and write permissions restricted. Nevertheless, the number of private repositories in quay.io is limited depending on the namespace's plan.
+
+Default Repository Visibility
+Repositories created by pushing images to quay.io are private by default. In order OpenShift (or any other tool) to fetch those images you can either configure a private key in both OpenShift and Quay, or make the repository public, so no authentication is required. Setting up private keys is out of scope of this document.
+
+
+Updating Repository Visibility
+In order to set repository visibility to public select the appropriate repository in https://quay.io/repository/ (log in to your account if needed) and open the Settings page by clicking on the gear on the left-bottom edge. Scroll down to the Repository Visibility section and click on the Make Public button.
+
+
+Get back the the list of repositories. The lock icon besides the repository name have disappeared, indicating the repository became public.

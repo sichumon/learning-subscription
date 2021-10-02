@@ -1,0 +1,77 @@
+
+Chapter 3. Managing OpenShift Operators
+Describing Operators
+Quiz: Describing Operators Quiz
+Installing Operators
+Guided Exercise: Installing Operators
+Managing Cluster Operators
+Guided Exercise: Managing Cluster Operators
+Lab: Managing Operators
+Summary
+Abstract
+
+Goal	Manage operators and OpenShift cluster operators.
+Objectives	
+Describe Kubernetes controllers and the operator pattern.
+
+Install and troubleshoot operators from the OperatorHub.
+
+Identify namespaces and resources of a cluster operator.
+
+Sections	
+Describing Operators (and Quiz)
+
+Installing Operators (and Guided Exercise)
+
+Managing Cluster Operators (and Guided Exercise)
+
+Lab	
+Managing Operators
+
+Describing Operators
+Objectives
+After completing this section, you should be able to describe Kubernetes controllers and the operator pattern.
+
+Describing Operators
+Kubernetes clusters desired persistent state is encoded using resources, such as pods and services. Resources are endpoints in the Kubernetes API, storing sets of API objects that represent the state of the cluster.
+
+Controllers are responsible for maintaining the state of the cluster. By following a control loop in which the controller tracks one or more resource types, Controllers bring the current state of the objects closer to the desired state described within them.
+
+The Kubernetes API is extended by adding Custom Resource Definitions (CRDs). CRDs integrate with the cluster as if they are native resources. In combination with Custom Controllers, CRDs define a true declarative API.
+
+The operator pattern is a combination of CRDs and Custom Controllers that perform administrative tasks for API objects or the whole cluster.
+
+Describing Operators in Kubernetes
+The Kubernetes control plane runs:
+
+cloud-controller-manager
+
+kube-controller-manager
+
+cloud-controller-manager controls standard Kubernetes resources that interact with a cloud provider. cloud-controller-manager includes:
+
+Node controller
+Manages Node resources.
+
+Route controller
+Manages cloud routes for node communication.
+
+Service controller
+Manages cloud load balancers to publish services.
+
+kube-controller-manager controls standard Kubernetes resources that do not interact with a cloud provider.
+
+Describing Operators in OpenShift
+OpenShift operators implement OpenShift features such as self-healing, updates, and other administrative tasks, either on resources or cluster-wide actions. Operators package, deploy, and manage an OpenShift application.
+
+OpenShift uses operators to manage the cluster by controlling tasks, such as upgrades and self-healing, among others. For example, the Cluster Version Operator manages cluster operators and their upgrades.
+
+Additional operators can run applications or add features to OpenShift.
+
+There are several operators in an OpenShift cluster, such as:
+
+The OperatorHub, which is a registry for OpenShift operators.
+
+The Operator Lifecycle Manager, which installs, updates, and manages operators.
+
+Use either the CLI or the web console to install operators located in the OperatorHub.

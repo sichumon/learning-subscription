@@ -1,0 +1,25 @@
+Quiz: Approaches to Container Image Design
+Choose the correct answers to the following questions:
+
+1.	Which method for creating container images is recommended by the containers community? (Choose one.)
+
+A	Run commands inside a basic OS container, commit the container, and save or export it as a new container image.
+B	Run commands from a Dockerfile and push the generated container image to an image registry.
+C	Create the container image layers manually from tar files.
+D	Run the podman build command to process a container image description in YAML format.
+
+2.	What are two advantages of using the standalone S2I process as an alternative to Dockerfiles? (Choose two.)
+
+A	Requires no additional tools apart from a basic Podman setup
+B	Creates smaller container images, having fewer layers.
+C	Reuses high-quality builder images.
+D	Automatically updates the child image as the parent image changes (for example, with security fixes).
+E	Creates images compatible with OpenShift, unlike container images created from Docker tools.
+
+3.	What are two typical scenarios for creating a Dockerfile to build a child image from an existing image? (Choose two.)
+
+A	Adding new runtime libraries.
+B	Setting constraints to a container's access to the host machine's CPU.
+C	Adding internal libraries to be shared as a single image layer by multiple container images for different applications.
+
+1.B   2B,C    3.A,C 

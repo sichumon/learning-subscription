@@ -1,0 +1,491 @@
+
+Guided Exercise: Configuring OpenShift using GitOps and Jenkins
+In this exercise you will automate the configuration of HTPasswd authentication and group membership from resource files in Git using Jenkins.
+
+Outcomes
+
+You should be able to:
+
+Create a Jenkins pipeline that applies HTPasswd Identity Provider (IdP) settings and RBAC permissions from YAML files in a Git repository.
+
+Create another Jenkins pipeline that compares configuration in an OpenShift cluster with YAML files and, if there are differences, remediates the configuration drift.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+The Jenkins master and Node.js agent container images from Red Hat.
+
+A running Jenkins master in the gitops-deploy OpenShift project.
+
+A personal free account at GitHub.
+
+Resource files for configuring an HTPasswd IdP and RBAC permissions.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and downloads sample resource files. It also verifies that Jenkins is running in the gitops-deploy project and deploys Jenkins if not.
+
+[student@workstation ~]$ lab gitops-gitops start
+Procedure 4.3. Instructions
+
+Create a GitHub project to host your sample configuration files.
+
+Open a web browser and access https://github.com.
+
+If you do not have a GitHub account, then click Sign Up and follow the instructions to create a personal account.
+
+If you have a GitHub account, then click Sign In and follow the instructions to log in using your personal account.
+
+Create a new empty repository named gitops-gitops.
+
+On the Repositories page, click New to enter the Create a new repository page. Type gitops-gitops in the Repository name field. Leave all other fields at their default values and click Create repository.
+
+On the Quick setup page, click on the clipboard icon to copy the HTTPS URL of your repository.
+
+Open a terminal on the workstation machine and clone the new, empty repository into your home folder. Paste the URL obtained in the previous step into your terminal.
+
+[student@workstation ~]$ git clone \
+> https://github.com/youraccount/gitops-gitops.git
+Cloning into 'gitops-gitops'...
+warning: You appear to have cloned an empty repository.
+Copy the contents of the ~/DO380/labs/gitops-gitops/ folder into your local clone of the git repository, and then enter your local clone.
+
+[student@workstation ~]$ cp -r ~/DO380/labs/gitops-gitops/* ~/gitops-gitops
+[student@workstation ~]$ cd ~/gitops-gitops
+[student@workstation gitops-gitops]$ ls
+config  Jenkinsfile-apply  Jenkinsfile-drift  orig  wait_oauth.sh
+Inspect the sample configuration files in the ~/gitops-gitops/config folder. These files are ready for this exercise and you should not change any of them until specifically instructed to do so.
+
+oauth.yaml: configures the OpenShift Authentication Operator with an HTPasswd IdP.
+
+htpasswd-secret-data: defines HTPasswd users and passwords. Besides the initial admin and developer users, it defines the testuser user for the Test stage of the Apply Pipeline.
+
+project-leaders.yaml: defines the project-leaders group and its members.
+
+self-provisioners.yaml: defines the groups allowed to create OpenShift projects.
+
+kustomization.yaml: defines the Kustomize configuration that generates the HTPasswd secret.
+
+Commit the configuration files and push to GitHub.
+
+[student@workstation gitops-gitops]$ git add config
+[student@workstation gitops-gitops]$ git commit -m 'initial auth + rbac settings'
+...output omitted...
+ create mode 100644 config/self-provisioners.yaml
+...output omitted...
+ [student@workstation gitops-gitops]$ git push
+...output omitted...
+ * [new branch]      master -> master
+Verify that your Jenkins master is ready and running and assign cluster administration rights to the Jenkins service account.
+
+Log in to OpenShift as the admin user and enter the gitops-deploy project in OpenShift.
+
+[student@workstation gitops-gitops]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+[student@workstation gitops-gitops]$ oc project gitops-deploy
+Now using project "gitops-deploy" on server "https://api.ocp4.example.com:6443".
+Verify that the Jenkins pod is ready and running, and that it is fully initialized. Look for the message "Jenkins is fully up and running". You might get this message more than once.
+
+[student@workstation gitops-gitops]$ oc get pod
+NAME               READY   STATUS      RESTARTS   AGE
+jenkins-1-bft7r    1/1     Running     0          2m54s
+jenkins-1-deploy   0/1     Completed   0          2m57s
+[student@workstation gitops-gitops]$ oc logs jenkins-1-bft7r | grep 'up and running'
+2020-06-10 10:00:46.784+0000 [id=19]	INFO	hudson.WebAppMain$3#run: Jenkins is fully up and running
+Remove the developer user from the gitops-deploy project. You do not want to allow developers to create and build pipelines that configure the cluster.
+
+Also, remove the ability of the Jenkins service account to create new projects. This permission becomes unnecessary because of the actions performed in the next step.
+
+You can safely ignore the warnings from the oc adm policy command.
+
+[student@workstation gitops-gitops]$ oc policy remove-role-from-user admin \
+> developer
+clusterrole.rbac.authorization.k8s.io/admin removed: "developer"
+[student@workstation gitops-gitops]$ oc adm policy remove-cluster-role-from-user \
+> self-provisioner -z jenkins
+Warning: Your changes may get lost whenever a master is restarted, unless you prevent reconciliation of this rolebinding using the following command: oc annotate clusterrolebinding.rbac self-provisioners 'rbac.authorization.kubernetes.io/autoupdate=false' --overwriteclusterrole.rbac.authorization.k8s.io/self-provisioner removed: "jenkins"
+Assign cluster administrator privileges to the Jenkins service account.
+
+Remember that cluster roles are not namespaced and the service account is in the current project, so you do not require the -n option.
+
+[student@workstation gitops-gitops]$ oc adm policy add-cluster-role-to-user \
+> cluster-admin -z jenkins
+clusterrole.rbac.authorization.k8s.io/cluster-admin added: "jenkins"
+Complete the Jenkins file for your Apply Pipeline.
+
+Configure your pipeline to pool its Git repository for changes every 3 minutes, retain only the latest 5 builds, and use a Node.js agent. Also, add steps to the Validate, Apply, and Test stages to your pipeline.
+
+Open the file named Jenkinsfile-apply in the ~/gitops-gitops folder using a text editor . To save you time, this file provides a skeleton for the Apply pipeline; you will complete configuration settings and steps for each stage as you perform the following steps.
+
+pipeline {
+  triggers {
+  }
+  options {
+  }
+  agent {
+  }
+  stages {
+    stage ('Validate configuration resources') {
+      steps {
+      }
+    }
+    stage ('Apply resources') {
+      steps {
+      }
+    }
+    stage ('Verify test user') {
+      steps {
+      }
+    }
+  }
+}
+Complete the triggers and options directives.
+
+Pool your Git repository at three-minute intervals and disable concurrent builds.
+
+pipeline {
+  triggers {
+    pollSCM ('H/3 * * * *')
+  }
+  options {
+    disableConcurrentBuilds()
+  }
+  stages {
+  ...output omitted...
+Complete the agent directive.
+
+Add a node directive that runs all your stages using the agent image with the label nodejs.
+
+pipeline {
+  ...output omitted...
+  agent {
+    node {
+      label 'nodejs'
+    }
+  }
+  stages {
+  ...output omitted...
+Complete the Validate stage.
+
+Add steps that validate configuration files by performing a dry run with resource validation of the oc apply command using Kustomize.
+
+pipeline {
+  ...output omitted...
+  stages {
+    stage ('Validate configuration resources') {
+      steps {
+        sh 'oc apply --dry-run --validate -k config'
+      }
+    }
+  ...output omitted...
+Complete the Apply stage.
+
+Add steps using the oc apply command with Kustomize, and a condition that performs the stage only for the master branch. Also, call the wait_oauth.sh script that waits until the OAuth pods redeploy to ensure that the new authentication settings are in effect.
+
+pipeline {
+  ...output omitted...
+  stages {
+    ...output omitted...
+    stage ('Apply resources') {
+      when {
+        branch 'master'
+      }
+      steps {
+        sh 'oc apply -k config'
+        sh './wait_oauth.sh'
+      }
+    }
+  ...output omitted...
+Complete the Test stage.
+
+Add steps that log in to OpenShift as testuser and attempt to create a project; expect project creation to fail. This test proves that regular users (not members of the project-leaders group) cannot create projects.
+
+Also, add a condition that performs this stage only in the master branch.
+
+pipeline {
+    ...output omitted...
+    stage ('Verify test user') {
+      when {
+        branch 'master'
+      }
+      steps {
+        sh 'oc login -u testuser -p redhat123 --insecure-skip-tls-verify \
+https://kubernetes.default.svc:443'
+        sh 'oc new-project test-testuser || true'
+      }
+    }
+  }
+}
+Save your changes, commit, and then push to GitHub. Also, commit and push the wait_oauth.sh script.
+
+Before you commit and push, you can compare your new Jenkinsfile-apply file with the contents of Jenkinsfile-apply in the ~/DO380/solutions/gitops-gitops folder.
+
+[student@workstation gitops-gitops]$ diff Jenkinsfile-apply \
+> ~/DO380/solutions/gitops-gitops/Jenkinsfile-apply
+[student@workstation gitops-gitops]$ git add Jenkinsfile-apply wait_oauth.sh
+[student@workstation gitops-gitops]$ git commit -m 'Apply Pipeline definition'
+...output omitted...
+[student@workstation gitops-gitops]$ git push
+...output omitted...
+Inspect the wait_oauth.sh script that you invoke from the Apply stage. It is ready to use and contains commands that wait until:
+
+The Authentication Cluster Operator recognizes the changes.
+
+A new set of OAuth pods is available.
+
+The previous set of OAuth pods are removed.
+
+#!/bin/bash
+
+oc wait co/authentication --for condition=Progressing \
+    --timeout 90s
+oc rollout status -n openshift-authentication deployment/oauth-openshift \
+    --timeout 90s
+while [ -n "$(oc get pod -n openshift-authentication -o \
+jsonpath='{.items[?(@.metadata.deletionTimestamp != "")].metadata.name}')" ]
+do
+    sleep 3
+done
+Create and test the Apply Pipeline in Jenkins.
+
+Get the host name of the Jenkins master. Do not close your terminal, you will come back to it a few times during this exercise.
+
+[student@workstation gitops-gitops]$ oc get route
+NAME      HOST/PORT                                     ...
+jenkins   jenkins-gitops-deploy.apps.ocp4.example.com   ...
+Open the Jenkins web UI using a web browser and the URL from the previous step.
+
+If necessary, accept the TLS certificate when prompted, and then click Log in with OpenShift.
+
+Also, accept the TLS certificate of the OpenShift OAuth server, if necessary, and then click htpasswd_provider to enter the OpenShift log in page.
+
+Log in as the admin user with the redhat password, and then click Allow selected permissions. OpenShift redirects your browser to the Jenkins Dashboard page.
+
+Create a new multibranch pipeline project for the Apply Pipeline.
+
+Click New Item on the Jenkins Dashboard page, and then type apply as the item name. Select Multibranch Pipeline, and then click Ok.
+
+Under the Branch Sources heading, select Add Source → Git and type the HTTPS URL of your GitHub repository, https://github.com/youraccount/gitops-gitops.git, in the Project Repository field. Because your Git repository is public, you do not provide any credentials.
+
+Under the Build Configuration heading, type Jenkinsfile-apply in the Script Path field.
+
+Do not set any other fields and click Save.
+
+Verify that Jenkins finds the master branch.
+
+Jenkins automatically starts a Scan Multibranch Pipeline job and displays its logs. Wait until it finishes and verifies that the logs of the job indicate that Jenkins found a master branch. If a master branch is not found, click Configure, fix your Jenkins project settings, and then click Scan Multibranch Pipeline Now.
+
+Verify that the master branch has a successful build.
+
+Click either Up or Jenkins to go to the Jenkins Dashboard page. Click apply to enter the Apply project, then click master to list builds of the master branch of your Git repository.
+
+If you do not see any build, then click Build Now to start a build. If you see a build that is in progress, then wait until it finishes with a successful status and all stages are green.
+
+If you see errors during the build, hover the mouse over each stage of the build and click Logs to find clues about what caused these errors. Fix your Jenkinsfile, commit, and push your changes. Then, click Build Now to start a new build.
+
+Do not close your web browser. You will come back to the Jenkins web UI a few times during this exercise.
+
+Add a new HTPasswd user to the HTPasswd data file on Git, and then verify that the Apply pipeline builds and adds the new user to the cluster.
+
+Add the newdev user with password redhat123 to the htpasswd-secret-data file in the ~/gitops-gitops/config folder.
+
+[student@worksation gitops-gitops]$ htpasswd -b config/htpasswd-secret-data \
+> newdev redhat123
+Adding password for user newdev
+Add the newdev user as a member of the project-leaders group.
+
+Use a text editor to open the project-leaders.yaml file in the ~/gitops-gitops/config folder, and then add a newdev entry to the users array.
+
+apiVersion: user.openshift.io/v1
+kind: Group
+metadata:
+  name: project-leaders
+users:
+  - developer
+  - newdev
+Save your changes, commit, and push to GitHub.
+
+[student@workstation gitops-gitops]$ git add config/htpasswd-secret-data
+[student@workstation gitops-gitops]$ git add config/project-leaders.yaml
+[student@workstation gitops-gitops]$ git commit -m 'Add new project leader'
+...output omitted...
+[student@workstation gitops-gitops]$ git push
+...output omitted...
+Switch to the Jenkins web UI and enter the master branch of the Apply project, if you are not already there. Wait until a new build starts and completes successfully.
+
+Verify that close to the date and time of the build there is a box with a reference to the latest commit made to the branch. Hover the mouse over the Apply resources and Verify test user stages and review their logs to verify that the oc apply command changed the HTPasswd secret, the oauth-openshift deployment successfully rolled out, and the test-user user can log in to OpenShift but cannot create a new project.
+
+Switch to a terminal, log in to OpenShift as the newdev user, and verify you can create new projects. This proves again that the pipeline applied to the cluster all settings that you made to the configuration files in your Git repository.
+
+[student@workstation gitops-gitops]$ oc login -u newdev -p redhat123
+Login successful.
+...output omitted...
+[student@workstation gitops-gitops]$ oc new-project test-newdev
+Now using project "test-newdev" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Log in to OpenShift as a cluster administrator, verify that the newdev user is a member of the project-leaders group, and delete the test-newdev project before proceeding to the next step.
+
+[student@workstation gitops-gitops]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+[student@workstation gitops-gitops]$ oc get group
+NAME              USERS
+project-leaders   developer, newdev
+[student@workstation gitops-gitops]$ oc delete project test-newdev
+Now using project "test-newdev" on server "https://api.ocp4.example.com:6443".
+project.project.openshift.io "test-newdev" deleted
+Complete a Jenkinsfile for the Drift Pipeline.
+
+Configure the pipeline to build every 5 minutes using a Node.js agent. Also, add steps to the Check stage and to the post actions that generate either a no-drift.txt or a drift-report.txt file and fire the Apply pipeline, depending on the success status of the Check stage.
+
+Use a text editor to open the file named Jenkinsfile-drift in the ~/gitops-gitops folder and complete the triggers directive.
+
+pipeline {
+  triggers {
+    cron ('H/5 * * * *')
+  }
+  agent {
+    node {
+      label 'nodejs'
+    }
+  }
+  stages {
+  ...output omitted...
+Complete the Check stage using the oc diff command with Kustomize, and save the output to a text file. Make sure that the stage fails if the text file is not empty.
+
+pipeline {
+  ...output omitted...
+  stages {
+    stage ('Check resource drift') {
+      steps {
+        sh 'oc diff -k config | tee drift-report.txt'
+        sh '! test -s drift-report.txt'
+      }
+    }
+  }
+  ...output omitted...
+Complete the post directive to either save the drift report text file and fire the Apply Pipeline, or to create and save a no-drift report text file.
+
+pipeline {
+  ...output omitted...
+  post {
+    failure {
+      archiveArtifacts artifacts: '*.txt'
+      build job: 'apply/master'
+    }
+    success {
+      sh 'rm drift-report.txt'
+      sh 'echo \'There is no configuration drift\' > no-drift.txt'
+      archiveArtifacts artifacts: '*.txt'
+    }
+  }
+}
+Save your changes, commit, and push to GitHub.
+
+Before you commit and push, you can compare your new Jenkinsfile-drift file with the contents of Jenkinsfile-drift in the ~/DO380/solutions/gitops-gitops folder.
+
+[student@workstation gitops-gitops]$ diff Jenkinsfile-drift \
+> ~/DO380/solutions/gitops-gitops/Jenkinsfile-drift
+[student@workstation gitops-gitops]$ git add Jenkinsfile-drift
+[student@workstation gitops-gitops]$ git commit -m 'Drift Pipeline definition'
+...output omitted...
+[student@workstation gitops-gitops]$ git push
+...output omitted...
+Create and test a project in Jenkins for the Drift pipeline.
+
+Switch to the Jenkins web UI and create a new pipeline project for the Drift pipeline.
+
+Click Jenkins to enter the Jenkins Dashboard page. Click New Item and type drift as the item name. Select Pipeline, and then click Ok.
+
+Under the Pipeline heading, select Pipeline script from SCM. Select Git in the SCM field and type the HTTPS URL of your GitHub repository, https://github.com/youraccount/gitops-gitops.git, in the Repository URL field. Then type Jenkinsfile-drift in the Script Path field.
+
+Clear the Lightweight checkout field. If you forget to do that, Jenkins will not be able to fetch your Jenkinsfile from GitHub.
+
+Do not set any other fields and click Save.
+
+Verify that Jenkins can successfully build the Drift pipeline.
+
+Jenkins should be on the Builds page for the Drift pipeline. Click Build Now to start a new build and wait until it finishes successfully.
+
+If you see errors during the build, then hover the mouse over each stage of the build and click Logs to find clues about what caused these errors. Fix your Jenkinsfile, commit, and push your changes.
+
+After you have a successful build, hover the mouse over the down arrow icon of the build to verify it produced an artifact named no-drift.txt
+
+Remove the newdev user from the project-leaders group in your cluster and verify that the Drift pipeline restores group membership.
+
+Change the live group in your cluster using the oc adm groups command to remove the newdev member.
+
+[student@workstation gitops-gitops]$ oc adm groups remove-users \
+> project-leaders newdev
+group.user.openshift.io./project-leaders removed: "newdev"
+Verify that the project-leaders group does not contain the newdev user.
+
+The Drift pipeline might fire and restore group membership between this and the previous step. If that happens, then ignore the difference in outputs and proceed to the next step.
+
+[student@workstation gitops-gitops]$ oc get group project-leaders
+NAME              USERS
+project-leaders   developer
+Wait until Jenkins starts a new build of the Drift pipeline, and the Drift pipeline starts a new build of the Apply pipeline to restore cluster settings.
+
+Switch to the Jenkins web UI and enter the drift project if you are not already there.
+
+Wait until a new build starts and terminates with a failure. When you switch to your web browser, Jenkins might already be finished with the build.
+
+Verify that the down arrow icon of the build displays a drift-report.txt file. Verify also that the Check resource drift stage failed, its logs show the same information as the drift-report.txt file, and the newdev user was removed from the project-leaders group.
+
+In the logs of the Declarative: post actions stage, verify that it scheduled a build of the apply/master project. Make a note of the build number so you can verify that build of the Apply pipeline.
+
+By the time you finish verifying stages and logs, you will likely see a new build of the Drift pipeline that finds no drift.
+
+Verify that a build of the Apply pipeline was started by the Drift pipeline.
+
+Click Jenkins, then apply, then master, and then click the number of the build you got from the previous step.
+
+A page displays with the message "Started by upstream project drift" and the build number of the project.
+
+Switch to the terminal and verify that the newdev user is again a member of the project-leaders group
+
+[student@workstation gitops-gitops]$ oc get group project-leaders
+NAME              USERS
+project-leaders   developer, newdev
+Clean up your Jenkins instance and remove it from your OpenShift cluster. Also remove your repository from GitHub.
+
+Switch to the Jenkins web UI and remove the Drift pipeline first, followed by the Apply pipeline.
+
+Click Jenkins, click the down arrow close to drift, click Delete Pipeline, and then click Yes to confirm the operation.
+
+Click Jenkins, click the down arrow close to apply, click Delete Multibranch Pipeline and then click Yes to confirm the operation.
+
+Switch to the GitHub repository page, and click Settings and scroll down until you find the Danger Zone header. Click Delete this repository and follow the instructions to confirm deleting the repository.
+
+Switch to the terminal, enter your home folder, and revoke cluster administration privileges from the Jenkins service account.
+
+The role binding remains even after the project and the service account are removed, so any developer could create new projects reusing these names to get cluster administrator privileges.
+
+[student@workstation gitops-gitops]$ cd ~
+[student@workstation ~]$ oc adm policy remove-cluster-role-from-user \
+> cluster-admin -z jenkins -n gitops-deploy
+...output omitted...
+clusterrole.rbac.authorization.k8s.io/cluster-admin removed: "jenkins"
+Delete the gitops-deploy project.
+
+[student@workstation ~]$ oc delete project gitops-deploy
+project.project.openshift.io "gitops-deploy" deleted
+Delete the gitops-gitops local folder.
+
+[student@workstation ~]$ rm -rf ~/gitops-gitops
+Restore your cluster initial authentication settings:
+
+[student@workstation ~]$ oc apply -k ~/DO380/labs/gitops-gitops/orig
+clusterrolebinding.rbac.authorization.k8s.io/self-provisioners configured
+secret/htpasswd-secret configured
+oauth.config.openshift.io/cluster unchanged
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab gitops-gitops finish
+This concludes the section.

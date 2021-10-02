@@ -1,0 +1,96 @@
+Appendix D. Useful Git Commands
+Abstract
+
+Goal	Describe useful Git commands that are used for the labs in this course.
+Git Commands
+Objectives
+After completing this section, you should be able to restart and redo exercises in this course. You should also be able to switch from one incomplete exercise to perform another, and later continue the previous exercise where you left off.
+
+Working with Git Branches
+This course uses a Git repository hosted on GitHub to store the application course code source code. At the beginning of the course, you create your own fork of this repository, which is also hosted on GitHub.
+
+During this course, you work with a local copy of your fork, which you clone to the workstation VM. The term origin refers to the remote repository from which a local repository is cloned.
+
+As you work through the exercises in the course, you use separate Git branches for each exercise. All changes you make to the source code happen in a new branch that you create only for that exercise. Never make any changes on the master branch.
+
+A list of scenarios and the corresponding Git commands that you can use to work with branches, and to recover to a known good state are listed below.
+
+Redoing an Exercise from Scratch
+
+To redo an exercise from scratch after you have completed it, perform the following steps:
+
+You commit and push all the changes in your local branch as part of performing the exercise. You finished the exercise by running its finish subcommand to clean up all resources:
+
+[student@workstation ~]$ lab your-exercise finish
+Change to your local clone of the DO180-apps repository and switch to the master branch:
+
+[student@workstation ~]$ cd ~/DO180-apps
+[student@workstation DO180-apps]$ git checkout master
+Delete your local branch:
+
+[student@workstation DO180-apps]$ git branch -d your-branch
+Delete the remote branch on your personal GitHub account:
+
+[student@workstation DO180-apps]$ git push origin --delete your-branch
+Use the start subcommand to restart the exercise:
+
+[student@workstation DO180-apps]$ cd ~
+[student@workstation ~]$ lab your-exercise start
+Abandoning a Partially Completed Exercise and Restarting it from Scratch
+
+You may run into a scenario where you have partially completed a few steps in the exercise, and you want to abandon the current attempt, and restart it from scratch. Perform the following steps:
+
+Run the exercise's finish subcommand to clean up all resources.
+
+[student@workstation ~]$ lab your-exercise finish
+Enter your local clone of the DO180-apps repository and discard any pending changes on the current branch using git stash:
+
+[student@workstation ~]$ cd ~/DO180-apps
+[student@workstation DO180-apps]$ git stash
+Switch to the master branch of your local repository:
+
+[student@workstation DO180-apps]$ git checkout master
+Delete your local branch:
+
+[student@workstation DO180-apps]$ git branch -d your-branch
+Delete the remote branch on your personal GitHub account:
+
+[student@workstation DO180-apps]$ git push origin --delete your-branch
+You can now restart the exercise by running its start subcommand:
+
+[student@workstation DO180-apps]$ cd ~
+[student@workstation ~]$ lab your-exercise start
+Switching to a Different Exercise from an Incomplete Exercise
+
+You may run into a scenario where you have partially completed a few steps in an exercise, but you want to switch to a different exercise, and revisit the current exercise at a later time.
+
+Avoid leaving too many exercises uncompleted to revisit later. These exercises tie up cloud resources and you may use up your allotted quota on the cloud provider and on the OpenShift cluster you share with other students. If you think it may be a while until you can go back to the current exercise, consider abandoning it and later restarting from scratch.
+
+If you prefer to pause the current exercise and work on the next one, perform the following steps:
+
+Commit any pending changes in your local repository and push them to your personal GitHub account. You may want to record the step where you stopped the exercise:
+
+[student@workstation ~]$ cd ~/DO180-apps
+[student@workstation DO180-apps]$ git commit -a -m 'Paused at step X.Y'
+[student@workstation DO180-apps]$ git push
+Do not run the finish command of the original exercise. This is important to leave your existing OpenShift projects unchanged, so you can resume later.
+
+Start the next exercise by running its start subcommand:
+
+[student@workstation ~]$ lab your-exercise start
+The next exercise switches to the master branch and optionally creates a new branch for its changes. This means the changes made to the original exercise in the original branch are left untouched.
+
+Later, after you have completed the next exercise, and you want to go back to the original exercise, switch back to its branch:
+
+[student@workstation ~]$ git checkout original-branch
+Then you can continue with the original exercise at the step where you left off.
+
+REFERENCES
+Git branch man page
+https://git-scm.com/docs/git-branch
+
+What is a Git branch?
+https://git-scm.com/book/en/v2/Git-Branching-Branches-in-a-Nutshell
+
+Git Tools - Stashing
+https://git-scm.com/book/en/v2/Git-Tools-Stashing-and-Cleaning

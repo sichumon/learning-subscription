@@ -1,0 +1,469 @@
+Guided Exercise: Provisioning Block Storage for Databases
+In this exercise you will create block storage resources for the cluster and deploy a database that uses block storage.
+
+Outcomes
+
+You should be able to:
+
+Create a storage class to make block storage resources visible to non-privileged cluster users.
+
+Use a storage class in a persistent volume claim to request block storage.
+
+Create a storage quota that restricts storage resources by storage class.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+On the workstation machine, use the lab command to prepare your system for this exercise. The command ensures that the cluster API is reachable.
+
+[student@workstation ~]$ lab storage-block start
+Procedure 8.2. Instructions
+
+The ~/DO380/labs/storage-block/iscsi directory contains playbooks to configure iSCSI block storage resources for the cluster. Review and execute the site.yml playbook.
+
+Change to the ~/DO380/labs/storage-block/iscsi directory and display the site.yml file.
+
+[student@workstation ~]$ cd ~/DO380/labs/storage-block/iscsi
+[student@workstation iscsi]$ cat site.yml
+- name: Install iSCSI packages
+  import_playbook: install-iscsi.yml
+
+- name: Configure a logical volume for each PV
+  import_playbook: configure-lvm.yml
+
+- name: Configure each logical volume as an iSCSI LUN
+  import_playbook: configure-iscsi.yml
+
+- name: Create a PV resource file for each LUN
+  import_playbook: render-templates.yml
+The site.yml file executes four other playbooks:
+
+The install-iscsi.yml playbook ensures that iSCSI packages are installed on the iSCSI server.
+
+The configure-lvm.yml playbook configures Logical Volume Management on the iSCSI server. Each persistent volume resource corresponds to one logical volume on the iSCSI server. The playbook creates the logical volumes in the iSCSI_vg volume group.
+
+The configure-iscsi.yml playbook configures each logical volume in the iSCSI_vg volume group as an iSCSI LUN.
+
+The render-templates.yml playbook creates a persistent volume resource file in the ~/DO380/labs/storage-block/PVs directory for each iSCSI LUN. The playbook also creates a storageclass.yml file and a kustomization.yml file in the same directory.
+
+Execute the site.yml playbook.
+
+The first time you execute the playbook, the task "Check if iSCSI target already seems configured" fails. You can safely ignore this error.
+
+[student@workstation iscsi]$ ansible-playbook site.yml
+...output omitted...
+
+TASK [Render PV YAML files] ****************************************************
+changed: [workstation] => (item=1G)
+changed: [workstation] => (item=2G)
+...output omitted...
+
+TASK [Render kustomization.yml] ************************************************
+changed: [workstation] => (item=kustomization.yml)
+changed: [workstation] => (item=storageclass.yml)
+
+PLAY RECAP *********************************************************************
+utility.lab.example.com  : ok=14  changed=11  ...  rescued=1    ignored=0
+workstation              : ok=3    changed=3  ...  rescued=0    ignored=0
+The render-templates.yml playbook creates a resource file for each persistent volume in the ~/DO380/labs/storage-block/PVs directory. Review one of the persistent volume resource files. Use the oc apply -k command to create persistent volumes from the resource files, and then verify that iSCSI persistent volumes exist in the cluster.
+
+Change to the ~/DO380/labs/storage-block/PVs directory. List the files in the directory.
+
+[student@workstation iscsi]$ cd ~/DO380/labs/storage-block/PVs
+[student@workstation PVs]$ ls
+iscsi_pv_00.yml  iscsi_pv_03.yml  iscsi_pv_06.yml  kustomization.yml
+iscsi_pv_01.yml  iscsi_pv_04.yml  iscsi_pv_07.yml  storageclass.yml
+iscsi_pv_02.yml  iscsi_pv_05.yml  iscsi_pv_08.yml
+Display the content of the iscsi_pv_00.yml file.
+
+[student@workstation PVs]$ cat iscsi_pv_00.yml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: iscsi-pv-00  1
+spec:
+  capacity:
+    storage: 1Gi  2
+  volumeMode: Filesystem
+  storageClassName: iscsi-blk  3
+  accessModes:
+    - ReadWriteOnce
+  iscsi:  4
+     targetPortal: 172.25.250.253:3260
+     iqn: iqn.2020-06.com.example:utility.lab.example.com
+     lun: 0
+     initiatorName: iqn.2020-06.com.example:openshift
+     fsType: 'ext4'
+     readOnly: false
+1
+
+The persistent volume name is iscsi-pv-00.
+
+2
+
+The size of persistent volume is set to equal the size of the corresponding logical volume on the iSCSI server.
+
+3
+
+The persistent volume has a storage class label of iscsi-blk.
+
+4
+
+The persistent volume uses the iSCSI volume plug-in. This section defines parameters that OpenShift requires to mount an iSCSI volume. Each persistent volume uses a different iSCSI LUN.
+
+Log in as the admin user.
+
+[student@workstation PVs]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Use the oc apply -k command to create persistent volumes from the resource definitions in the ~/DO380/labs/storage-block/PVs directory.
+
+[student@workstation PVs]$ oc apply -k ~/DO380/labs/storage-block/PVs
+persistentvolume/iscsi-pv-00 created
+persistentvolume/iscsi-pv-01 created
+persistentvolume/iscsi-pv-02 created
+persistentvolume/iscsi-pv-03 created
+persistentvolume/iscsi-pv-04 created
+persistentvolume/iscsi-pv-05 created
+persistentvolume/iscsi-pv-06 created
+persistentvolume/iscsi-pv-07 created
+persistentvolume/iscsi-pv-08 created
+Verify that nine persistent volumes exist with an iscsi-blk storage class attribute value.
+
+[student@workstation PVs]$ oc get pv \
+>  -o=custom-columns='NAME:metadata.name,STORAGECLASS:spec.storageClassName'
+NAME                            STORAGECLASS
+iscsi-pv-00                     iscsi-blk
+iscsi-pv-01                     iscsi-blk
+iscsi-pv-02                     iscsi-blk
+iscsi-pv-03                     iscsi-blk
+iscsi-pv-04                     iscsi-blk
+iscsi-pv-05                     iscsi-blk
+iscsi-pv-06                     iscsi-blk
+iscsi-pv-07                     iscsi-blk
+iscsi-pv-08                     iscsi-blk
+...output omitted...
+Display the list of storage classes.
+
+[student@workstation PVs]$ oc get storageclass
+NAME                   PROVISIONER              RECLAIMPOLICY   ...
+nfs-storage (default)  nfs-storage-provisioner  Delete          ...
+An iscsi-blk storage class resource does not exist, yet nine persistent volumes exist with an iscsi-blk storage class label.
+
+NOTE
+If a persistent volume claim contains a storageClassName value of iscsi-blk, then OpenShift binds one of the nine iscsi-blk persistent volumes to the claim.
+
+Non-privileged users do not know that iSCSI persistent volumes exist in the cluster because they can not inspect persistent volumes.
+
+You did not create an iscsi-blk storage class resource in this step to simulate the preceding scenario. In a later step, you request iSCSI storage as a non-privileged user when no iSCSI storage class exists.
+
+IMPORTANT
+You must create an iSCSI storage class resource to ensure that non-privileged users know that iSCSI storage is available in the cluster. You create the iscsi-blk storage class resource in a later step.
+
+As the admin user, create a storage-block project with a restriction of two persistent volume claims and 6 GB of storage. Further restrict the project to a single persistent volume claim for the iscsi-blk storage class. Add the developer user as a project administrator.
+
+Create the storage-block project.
+
+[student@workstation PVs]$ oc whoami
+admin
+[student@workstation PVs]$ oc new-project storage-block
+Now using project "storage-block" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create a storage quota resource for the project. Restrict the project to: 2 persistent volume claims, 6 GB of requested storage, and 1 persistent volume claim for the iscsi-blk storage class.
+
+[student@workstation PVs]$ limit1="requests.storage=6G"
+[student@workstation PVs]$ limit2="persistentvolumeclaims=2"
+[student@workstation PVs]$ sclass="iscsi-blk.storageclass.storage.k8s.io"
+[student@workstation PVs]$ limit3="${sclass}/persistentvolumeclaims=1"
+[student@workstation PVs]$ oc create quota storage \
+>  --hard=${limit1},${limit2},${limit3}
+resourcequota/storage created
+Use the oc describe command to review the storage quota resource.
+
+[student@workstation PVs]$ oc describe quota storage
+Name:                                                         storage
+Namespace:                                                    storage-block
+Resource                                                      Used  Hard
+--------                                                      ----  ----
+iscsi-blk.storageclass.storage.k8s.io/persistentvolumeclaims  0     1      1
+persistentvolumeclaims                                        0     2      2
+requests.storage                                              0     6G     3
+1
+
+The project is restricted to one persistent volume claim for the iscsi-blk storage class.
+
+2
+
+The project is restricted to two persistent volume claims, regardless of storage class.
+
+3
+
+The project is restricted to 6 GB of requested storage, across all persistent volume claims.
+
+Add the developer user as a storage-block project administrator.
+
+[student@workstation PVs]$ oc policy add-role-to-user admin developer
+clusterrole.rbac.authorization.k8s.io/admin added: "developer"
+NOTE
+If you have not previously authenticated as the developer user, then you see a warning message that indicates the developer user is not found.
+
+You can safely ignore this message.
+
+The developer user manages a set of applications to operate a database. The database requires block storage, while the backup and restore applications can use shared storage.
+
+As the developer user, switch to the storage-block project. Review storage resources that are available to the storage-block project.
+
+Login as the developer user and ensure you are using the storage-block project.
+
+[student@workstation PVs]$ oc login -u developer -p developer
+Login successful.
+
+You have one project on this server: "storage-block"
+
+Using project "storage-block".
+Display a list of persistent volumes.
+
+[student@workstation PVs]$ oc get pv
+Error from server (Forbidden): persistentvolumes is forbidden: User "developer" cannot list resource "persistentvolumes" in API group "" at the cluster scope
+NOTE
+Persistent volume resources can contain sensitive information, such as connection credentials to remote storage. For this reason, non-privileged users do not have access to persistent volume resources.
+
+Display the list of storage class resources.
+
+[student@workstation PVs]$ oc get storageclass
+NAME                   PROVISIONER              RECLAIMPOLICY  ...
+nfs-storage (default)  nfs-storage-provisioner  Delete         ...
+Only the nfs-storage storage class resource exists. The developer user is not aware that iSCSI persistent volumes exist in the cluster.
+
+NOTE
+Each of the iSCSI persistent volumes declare a storage class value of iscsi-blk.
+
+OpenShift does not create a storage class resource from persistent volume resource definitions. As an administrator, you must ensure a storage class resource exists for any persistent volumes that you manually provision.
+
+As the developer user, use the oc describe command to review the storage quota resource.
+
+[student@workstation PVs]$ oc describe quota storage
+Name:                                                         storage
+Namespace:                                                    storage-block
+Resource                                                      Used  Hard
+--------                                                      ----  ----
+iscsi-blk.storageclass.storage.k8s.io/persistentvolumeclaims  0     1   1
+persistentvolumeclaims                                        0     2
+requests.storage                                              0     6G
+1
+
+For the developer user, the storage quota provides the only indication that an iSCSI storage class exists.
+
+The ~/DO380/labs/storage-block/test-db directory contains resource definitions to deploy database management applications.
+
+The postgres subdirectory contains resource definition files to deploy a Postgresql database. Ensure that the database uses iSCSI block storage, which is defined in the postgres/statefulset.yml file. Deploy the database.
+
+Inspect the storage quota object, which updates after you deploy the database.
+
+Change to the ~/DO380/labs/storage-block/test-db subdirectory.
+
+[student@workstation PVs]$ cd ~/DO380/labs/storage-block/test-db
+[student@workstation test-db]$
+Edit the volumeClaimTemplates section of the postgres/statefulset.yml file to match the following:
+
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      storageClassName: iscsi-blk
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 2Gi
+Save the file.
+
+NOTE
+A solution file is available at: ~/DO380/solutions/storage-block/test-db/postgres/statefulset.yml.
+
+Deploy the database.
+
+[student@workstation test-db]$ oc apply -k postgres/
+secret/postgresql created
+service/postgresql created
+statefulset.apps/postgresql created
+Verify that the persistent volume claim binds to one of the iSCSI persistent volumes.
+
+[student@workstation test-db]$ oc get pvc
+NAME               STATUS  VOLUME       CAPACITY  ACCESS MODES  STORAGECLASS ...
+data-postgresql-0  Bound   iscsi-pv-01  2Gi       RWO           iscsi-blk    ...
+Inspect the storage quota resource after deploying the database.
+
+[student@workstation test-db]$ oc describe quota storage
+Name:                                                         storage
+Namespace:                                                    storage-block
+Resource                                                      Used  Hard
+--------                                                      ----  ----
+iscsi-blk.storageclass.storage.k8s.io/persistentvolumeclaims  1     1      1
+persistentvolumeclaims                                        1     2
+requests.storage                                              2Gi   6G
+1
+
+The database persistent volume claim increments the persistent volume claim count for the iscsi-blk storage class.
+
+As the admin user, create an iscsi-blk storage class resource.
+
+The ~/DO380/labs/storage-block/PVs/storageclass.yml file contains a resource definition for the iscsi-blk storage class.
+
+Change to the ~/DO380/labs/storage-block/PVs directory. Display the contents of the storageclass.yml file.
+
+[student@workstation test-db]$ cd ~/DO380/labs/storage-block/PVs
+[student@workstation PVs]$ cat storageclass.yml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: iscsi-blk  1
+provisioner: kubernetes.io/no-provisioner  2
+allowVolumeExpansion: false
+1
+
+The storage class name is iscsi-blk.
+
+2
+
+The storage class does not provision volumes on demand.
+
+Log in as the admin user.
+
+[student@workstation PVs]$ oc login -u admin
+Logged into "https://api.ocp4.example.com:6443" as "admin" ...
+
+...output omitted...
+Use the storageclass.yml file to create the iscsi-blk storage class.
+
+[student@workstation PVs]$ oc create -f storageclass.yml
+storageclass.storage.k8s.io/iscsi-blk created
+As the developer user, verify that the iscsi-blk storage class displays in the storage class list.
+
+Log in as the developer user, and then switch to the storage-block project.
+
+[student@workstation PVs]$ oc login -u developer
+Logged into "https://api.ocp4.example.com:6443" as "developer" ...
+
+...output omitted...
+[student@workstation PVs]$ oc project storage-block
+...output omitted...
+Display the list of storage classes.
+
+[student@workstation PVs]$ oc get storageclass
+NAME                   PROVISIONER                   RECLAIMPOLICY  ...
+iscsi-blk              kubernetes.io/no-provisioner  Delete         ...
+nfs-storage (default)  nfs-storage-provisioner       Delete         ...
+[OPTIONAL] Simulate database operations.
+
+The ~/DO380/labs/storage-block/test-db directory contains subdirectories, each with resource definitions to deploy a job that implements a specific database operation. These jobs demonstrate how to share different types of persistent volumes between pods.
+
+In the storage-block project, use the oc apply -k command to:
+
+Deploy a job to initialize the database. Resources for the initialization job are in the init_job subdirectory. This job does not mount any persistent volumes.
+
+Deploy a database backup job. Resources for the backup job are in the backup_job subdirectory. This job mounts a shared storage persistent volume, different than the database block storage persistent volume.
+
+Deploy a database restoration job. Resources for the database restoration job are in the restore_job subdirectory. This job creates a pod that mounts both the shared storage and block storage persistent volumes.
+
+As the developer user, use the oc apply -k command to deploy a database initialization job. The initialization job resources are in the init_job subdirectory.
+
+[student@workstation PVs]$ cd ~/DO380/labs/storage-block/test-db
+[student@workstation test-db]$ oc whoami
+developer
+[student@workstation test-db]$ oc apply -k init_job/
+configmap/db-init created
+job.batch/database-init created
+After the initialization job completes, execute the get_all.sh script to retrieve all data from the database table.
+
+[student@workstation test-db]$ oc get pods
+NAME                  READY   STATUS      RESTARTS   AGE
+database-init-b5sr7   0/1     Completed   0          20s
+postgresql-0          1/1     Running     0          18m
+[student@workstation test-db]$ ./get_all.sh
+You are now connected to database "sampledb" as user "postgres".
+ id | first_name | last_name | age |       email
+----+------------+-----------+-----+-------------------
+  1 | John       | Doe       |  99 | jdoe@example.com
+  2 | Jane       | Doe       |  99 | jdoe2@example.com
+(2 rows)
+Use the oc apply -k command to deploy a database backup job. The backup job resources are in the backup_job subdirectory.
+
+[student@workstation test-db]$ oc apply -k backup_job/
+serviceaccount/backup created
+role.rbac.authorization.k8s.io/pod-exec created
+rolebinding.rbac.authorization.k8s.io/pod-exec created
+configmap/backup-scripts created
+job.batch/backup created
+persistentvolumeclaim/data-postgresql-backup created
+After the backup job completes, execute the add_new.sh script to add new data to the database.
+
+[student@workstation test-db]$ oc get pods
+NAME                  READY   STATUS      RESTARTS   AGE
+backup-g2d2v          0/1     Completed   0          8s
+database-init-b5sr7   0/1     Completed   0          19m
+postgresql-0          1/1     Running     0          28m
+[student@workstation test-db]$ ./add_new.sh
+You are now connected to database "sampledb" as user "postgres".
+INSERT 0 1
+Because the new data is not present in the backup, the database does not contain this data when you restore from the backup.
+
+Execute the get_all.sh script to retrieve all data from the database table.
+
+[student@workstation test-db]$ ./get_all.sh
+You are now connected to database "sampledb" as user "postgres".
+ id | first_name | last_name | age |        email
+----+------------+-----------+-----+----------------------
+  1 | John       | Doe       |  99 | jdoe@example.com
+  2 | Jane       | Doe       |  99 | jdoe2@example.com
+  3 | Anna       | Smith     |  98 | someuser@example.com
+(3 rows)
+Use the oc apply -k command to deploy a database restoration job. The restoration job resources are in the restore_job subdirectory.
+
+[student@workstation test-db]$ oc apply -k restore_job/
+serviceaccount/backup unchanged
+role.rbac.authorization.k8s.io/create-jobs created
+role.rbac.authorization.k8s.io/scale-statefulsets created
+rolebinding.rbac.authorization.k8s.io/create-jobs created
+rolebinding.rbac.authorization.k8s.io/scale-statefulsets created
+configmap/restore-scripts created
+job.batch/restore-controller created
+Wait for the restoration job to complete.
+
+NOTE
+The restoration job deploys a restore-controller pod. First, the controller pod scales the database pod to zero pods, which takes the database offline. After the database is offline, another pod can mount the database volume.
+
+Second, the controller pod deploys a restore-db pod, which mounts the database and backup volumes. The restore-db pod then copies the backup archive to the database volume.
+
+Third, the controller pod deletes the restore-db pod, which allows the database pod to remount the database volume.
+
+Finally, the controller pod scales the database pod back to one pod. The restoration job is complete when the restore-controller pod has a Completed status and the postgresql-0 pod has a Running status.
+
+[student@workstation test-db]$ oc get pods
+NAME                       READY   STATUS      RESTARTS   AGE
+backup-g2d2v               0/1     Completed   0          8m14s
+database-init-b5sr7        0/1     Completed   0          27m
+postgresql-0               1/1     Running     0          33s
+restore-controller-527b4   0/1     Completed   0          52s
+Execute the get_all.sh script to retrieve all data from the restored database table.
+
+[student@workstation test-db]$ ./get_all.sh
+You are now connected to database "sampledb" as user "postgres".
+ id | first_name | last_name | age |       email
+----+------------+-----------+-----+-------------------
+  1 | John       | Doe       |  99 | jdoe@example.com
+  2 | Jane       | Doe       |  99 | jdoe2@example.com
+(2 rows)
+The database does not contain any data added after the backup job executes.
+
+Change to the /home/student/ directory.
+
+[student@workstation test-db]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab storage-block finish
+This concludes the section.

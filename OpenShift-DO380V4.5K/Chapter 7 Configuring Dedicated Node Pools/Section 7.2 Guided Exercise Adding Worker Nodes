@@ -1,0 +1,186 @@
+
+Guided Exercise: Adding Worker Nodes
+In this exercise you will add worker nodes to an OpenShift cluster.
+
+Outcomes
+
+You should be able to:
+
+Examine PXE and Ignition files required for adding new nodes to a cluster.
+
+Update the worker Ignition file with a new certificate.
+
+Update the HAProxy configuration to add the new workers to the load balancer.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+[student@workstation ~]$ lab pools-adding-workers start
+Procedure 7.1. Instructions
+
+From workstation, use ssh to connect to the utility machine as the lab user.
+
+[student@workstation ~]$ ssh lab@utility
+Examine the PXE files in the /var/lib/tftpboot/pxelinux.cfg directory.
+
+List the files, and notice that three of the file names end with -NOOP. Worker machines attempt to load a file that matches 01- followed by the MAC address of the machine. The -NOOP suffix prevents the new workers from loading the file.
+
+[lab@utility ~]$ ls /var/lib/tftpboot/pxelinux.cfg/
+01-52-54-00-00-32-09  01-52-54-00-00-32-0b  01-52-54-00-00-32-0d
+01-52-54-00-00-32-0f  01-52-54-00-00-32-0a  01-52-54-00-00-32-0c
+01-52-54-00-00-32-0e  01-52-54-00-00-32-10-NOOP  01-52-54-00-00-32-11-NOOP
+01-52-54-00-00-32-12-NOOP
+View the contents of one of the PXE files.
+
+[lab@utility ~]$ cat /var/lib/tftpboot/pxelinux.cfg/01-52-54-00-00-32-10-NOOP
+default menu.c32
+prompt 0
+timeout 50
+menu title **** OpenShift 4 Worker PXE Boot Menu ****
+
+label Install CoreOS 4.5.4 Worker Node
+ kernel /openshift4/4.5.4/rhcos-4.5.2-x86_64-installer-kernel-x86_64
+ append ip=dhcp rd.neednet=1 coreos.inst.install_dev=vda console=tty0 console=ttyS0 coreos.inst=yes coreos.inst.image_url=http://192.168.50.254:8080/openshift4/images/rhcos-4.5.2-x86_64-metal.x86_64.raw.gz coreos.inst.ignition_url=http://192.168.50.254:8080/openshift4/4.5.4/ignitions/worker.ign initrd=/openshift4/4.5.4/rhcos-4.5.2-x86_64-installer-initramfs.x86_64.img
+The PXE file references an Ignition file that is also hosted on the utility machine.
+
+View the worker Ignition file and examine the embedded certificate.
+
+List the contents of the /var/www/html/openshift4/4.5.4/ignitions/worker.ign Ignition file. Pipe the output to jq for readability.
+
+[lab@utility ~]$ ls /var/www/html/openshift4/4.5.4/ignitions/
+bootstrap.ign  master.ign  worker.ign
+[lab@utility ~]$ cat /var/www/html/openshift4/4.5.4/ignitions/worker.ign | jq
+{
+  "ignition": {
+    ...output omitted...
+    "security": {
+      "tls": {
+        "certificateAuthorities": [
+          {
+            "source": "data:text/plain;charset=utf-8;base64,LS0t...Cg==",
+            "verification": {}
+          }
+...output omitted...
+Copy the base64-encoded value of the source data to your clipboard by selecting it and pressing Ctrl+Shift+C. Do not include the data:text/plain;charset=utf-8;base64, prefix.
+
+Use the echo command to print the copied base64-encoded certificate and pipe the output to the base64 -d command.
+
+[lab@utility ~]$ echo "LS0tL...g==" | base64 -d
+-----BEGIN CERTIFICATE-----
+MIIDEDCCAfigAwIBAgIIZeDuWKYIu6YwDQYJKoZIhvcNAQELBQAwJjESMBAGA1UE
+CxMJb3BlbnNoaWZ0MRAwDgYDVQQDEwdyb290LWNhMB4XDTIwMDUyODE5MTAwNFoX
+...ouput omitted...
+O1PU1obMUx/pTZerQb0067kcMPo=
+-----END CERTIFICATE-----
+Use the openssl command to examine the x509 certificate.
+
+[lab@utility ~]$ echo "LS0tL...g==" | base64 -d | openssl x509 -noout -text
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 7341129457124031398 (0x65e0ee58a608bba6)
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: OU = openshift, CN = root-ca
+        Validity
+            Not Before: May 28 19:10:04 2020 GMT
+            Not After : May 26 19:10:04 2030 GMT
+        Subject: OU = openshift, CN = root-ca
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+...output omitted...
+In a production environment, the certificate embedded in the worker Ignition file might expire 24 hours after initial installation.
+
+Exit the SSH session on utility to return to workstation.
+
+Inspect and then run the prep-utility.yml Ansible Playbook.
+
+Change to the ~/DO380/labs/pools-adding-workers/ directory and open the prep-utility.yml file.
+
+[student@workstation ~]$ cd ~/DO380/labs/pools-adding-workers/
+[student@workstation pools-adding-workers]$ vim prep-utility.yml
+Review the tasks defined in the playbook. Ansible updates the worker Ignition file with a new certificate from api-int.ocp4.example.com, copies the PXE files to paths without the "-NOOP" suffix, and restarts the TFTP socket. The final playbook tasks update the HAProxy configuration to include the new workers.
+
+Run the Ansible Playbook.
+
+[student@workstation pools-adding-workers]$ ansible-playbook prep-utility.yml
+
+PLAY [Add new workers] *******************************************************
+
+TASK [Find OpenShift version directory] **************************************
+ok: [utility]
+
+...output omitted...
+
+PLAY RECAP *******************************************************************
+utility       : ok=10  changed=6   unreachable=0  failed=0  skipped=0 ...
+Reboot workers 04-06 using the ROL Lab Environment controls. The unconfigured machines automatically reboot every five minutes. Manually reboot the machines from ROL to avoid waiting.
+
+Navigate to the ROL Lab Environment tab to control the classroom virtual machines.
+
+Click Open Console next to worker04, and then press any key or press Ctrl+Alt+Del to reboot the machine. Return to the ROL Lab Environment tab and repeat the process for worker05 and worker06.
+
+NOTE
+The workers will reboot a couple times during the PXE boot process.
+
+Review the HAProxy configuration on the utility machine to view the new worker nodes. The classroom runs HAProxy to round-robin load balance ingress traffic to the worker nodes. In a previous step, the Ansible Playbook added the workers to the ingress back end.
+
+From workstation, use ssh to run the cat command on the utility machine as the lab user.
+
+[student@workstation pools-adding-workers]$ ssh lab@utility \
+>  cat /etc/haproxy/haproxy.cfg
+...output omitted...
+Find and review the servers listed for the ingress_insecure_backend and ingress_secure_backend, located near the end of the file.
+
+Inspect and then run the approve-csrs.sh Bash script to approve the worker CSRs.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation pools-adding-workers]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Review the approve-csrs.sh script. The script approves pending CSRs in a while loop until it counts six worker nodes.
+
+Execute the script.
+
+NOTE
+It will take several minutes for the new worker machines to join the cluster.
+
+[student@workstation pools-adding-workers]$ ./approve-csrs.sh
+Worker count is 3.
+certificatesigningrequest.certificates.k8s.io/csr-8mstv approved
+Worker count is 4.
+certificatesigningrequest.certificates.k8s.io/csr-g6sjn approved
+certificatesigningrequest.certificates.k8s.io/csr-4j84s approved
+certificatesigningrequest.certificates.k8s.io/csr-n4hhq approved
+Worker count is 5.
+certificatesigningrequest.certificates.k8s.io/csr-wh64h approved
+Worker count is 6.
+certificatesigningrequest.certificates.k8s.io/csr-kvhtg approved
+Run oc get nodes to list the three new nodes.
+
+NOTE
+It will take a minute or two for all workers to reach a Ready state.
+
+[student@workstation pools-adding-workers]$ oc get nodes
+NAME       STATUS     ROLES    AGE   VERSION
+master01   Ready      master   15d   v1.18.3+012b3ec
+master02   Ready      master   15d   v1.18.3+012b3ec
+master03   Ready      master   15d   v1.18.3+012b3ec
+worker01   Ready      worker   15d   v1.18.3+012b3ec
+worker02   Ready      worker   15d   v1.18.3+012b3ec
+worker03   Ready      worker   15d   v1.18.3+012b3ec
+worker04   NotReady   worker   14s   v1.18.3+012b3ec
+worker05   NotReady   worker   14s   v1.18.3+012b3ec
+worker06   NotReady   worker   15s   v1.18.3+012b3ec
+Change to the /home/student/ directory.
+
+[student@workstation pools-adding-workers]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+The workers added in this exercise will remain available for the rest of the course. They are used in subsequent chapters.
+
+[student@workstation ~]$ lab pools-adding-workers finish
+This concludes the section.

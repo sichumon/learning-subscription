@@ -1,0 +1,114 @@
+Guided Exercise: Configuring the LDAP Identity Provider
+In this exercise you will configure an LDAP Identity provider for OpenShift.
+
+Outcomes
+
+You should be able to:
+
+Add an LDAP Identity Provider (IdP) to the OAuth operator.
+
+Show logs of failed and successful log in attempts.
+
+To perform this exercise, ensure you have:
+
+A running OpenShift cluster.
+
+Administrative access to the OpenShift cluster.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the environment for this lab is properly setup.
+
+[student@workstation ~]$ lab auth-ldap start
+Procedure 5.1. Instructions
+
+Allow users stored in an Identity Management (IdM) system to log in to the OpenShift Cluster.
+
+Create the support resources for the identity provider configuration.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Create a Secret with the LDAP bind password, which is required for identity provider configuration.
+
+[student@workstation ~]$ oc create secret generic ldap-secret \
+>   --from-literal=bindPassword='Redhat123@!' \
+>   -n openshift-config
+secret/ldap-secret created
+Create a ConfigMap containing the IdM certificate to trust.
+
+[student@workstation ~]$ curl -O http://idm.ocp4.example.com/ipa/config/ca.crt
+...output omitted...
+[student@workstation ~]$ oc create configmap -n openshift-config \
+>   ca-config-map --from-file=ca.crt
+configmap/ca-config-map created
+Modify the OpenShift OAuth configuration.
+
+Change to the ~/DO380/labs/auth-ldap/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/auth-ldap/
+Edit the ldap-cr.yml file and change the dn, mail, cn, uid, ldap-secret and ca-config-map values as shown.
+
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  name: cluster
+spec:
+  identityProviders:
+  - htpasswd:
+      fileData:
+        name: htpasswd-secret
+    mappingMethod: claim
+    name: htpasswd_provider
+    type: HTPasswd
+  - name: ldapidp
+    mappingMethod: claim
+    type: LDAP
+    ldap:
+      attributes:
+        id:
+        - dn
+        email:
+        - mail
+        name:
+        - cn
+        preferredUsername:
+        - uid
+      bindDN: "uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com"
+      bindPassword:
+        name: ldap-secret
+      ca:
+        name: ca-config-map
+      insecure: false
+      url: "ldaps://idm.ocp4.example.com/cn=users,cn=accounts,dc=ocp4,dc=example,dc=com?uid"
+NOTE
+The url: "ldaps://…​?uid" fragment must be typed as a single line.
+
+The htpasswd_provider identity provider defines the admin user that you use in exercises and labs. The ldap-cr.yml file includes the htpasswd_provider identity provider so that the admin user is always available.
+
+Apply the custom resource. You can safely ignore the warning that displays.
+
+[student@workstation auth-ldap]$ oc apply -f ldap-cr.yml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+oauth.config.openshift.io/cluster configured
+Wait until the oauth-openshift pods in the openshift-authentication namespace finish redeploying. Press Ctrl+C to exit the watch command.
+
+[student@workstation auth-ldap]$ watch oc get pods -n openshift-authentication
+NAME                               READY   STATUS    RESTARTS   AGE
+oauth-openshift-6d57946ff7-757k8   1/1     Running   0          45s
+oauth-openshift-6d57946ff7-fxcbg   1/1     Running   0          39s
+Change to the /home/student/ directory.
+
+[student@workstation auth-ldap]$ cd
+To verify the configuration, log in as the LDAP user openshift-user and the password openshift-user.
+
+[student@workstation ~]$ oc login -u openshift-user -p openshift-user
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab auth-ldap finish

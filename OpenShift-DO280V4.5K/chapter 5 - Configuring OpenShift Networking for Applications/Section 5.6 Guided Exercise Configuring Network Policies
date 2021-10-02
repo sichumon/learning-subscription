@@ -1,0 +1,297 @@
+
+Guided Exercise: Configuring Network Policies
+In this exercise, you will create network policies and review pod isolation created by these network policies.
+
+Outcomes
+
+You should be able to:
+
+Create network policies to control communication between pods.
+
+Verify ingress traffic is limited to pods.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the environment is ready and downloads the resource files necessary for the exercise.
+
+[student@workstation ~]$ lab network-policy start
+Log in to the OpenShift cluster and create the network-policy project.
+
+Log in to the cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Create the network-policy project.
+
+[student@workstation ~]$ oc new-project network-policy
+Now using project "network-policy" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create two deployments and create a route for one of them.
+
+Create two deployments using the oc new-app command with the quay.io/redhattraining/hello-world-nginx:v1.0 image. Name the first deployment hello and the second deployment test.
+
+[student@workstation ~]$ oc new-app --name hello --docker-image \
+>    quay.io/redhattraining/hello-world-nginx:v1.0
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "hello" created
+    deployment.apps "hello" created
+    service "hello" created
+--> Success
+...output omitted...
+[student@workstation ~]$ oc new-app --name test --docker-image \
+>    quay.io/redhattraining/hello-world-nginx:v1.0
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "test" created
+    deployment.apps "test" created
+    service "test" created
+--> Success
+...output omitted...
+Use the oc expose command to create a route to the hello service.
+
+[student@workstation ~]$ oc expose service hello
+route.route.openshift.io/hello exposed
+Verify access to the hello pod with the oc rsh and curl commands.
+
+Open a second terminal and run the script located at ~/DO280/labs/network-policy/display-project-info.sh. This script provides information about the pods, service, and route used in the rest of this exercise.
+
+[student@workstation ~]$ ~/DO280/labs/network-policy/display-project-info.sh
+===================================================================
+PROJECT: network-policy
+
+POD NAME                 IP ADDRESS
+hello-6c4984d949-g28c4   10.8.0.13
+test-c4d74c9d5-5pq9s     10.8.0.14
+
+SERVICE NAME   CLUSTER-IP
+hello          172.30.137.226
+test           172.30.159.119
+
+ROUTE NAME   HOSTNAME                                     PORT
+hello        hello-network-policy.apps.ocp4.example.com   8080-tcp
+
+===================================================================
+Use the oc rsh and curl commands to confirm that the test pod can access the IP address of the hello pod.
+
+[student@workstation ~]$ oc rsh test-c4d74c9d5-5pq9s curl 10.8.0.13:8080 | \
+>    grep Hello
+    <h1>Hello, world from nginx!</h1>
+Use the oc rsh and curl commands to confirm that the test pod can access the IP address of the hello service.
+
+[student@workstation ~]$ oc rsh test-c4d74c9d5-5pq9s curl 172.30.137.226:8080 | \
+>    grep Hello
+    <h1>Hello, world from nginx!</h1>
+Verify access to the hello pod using the curl command against the URL of the hello route.
+
+[student@workstation ~]$ curl -s hello-network-policy.apps.ocp4.example.com | \
+>    grep Hello
+    <h1>Hello, world from nginx!</h1>
+Create the network-test project and a deployment named sample-app.
+
+Create the network-test project.
+
+[student@workstation ~]$ oc new-project network-test
+Now using project "network-test" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create the sample-app deployment with the quay.io/redhattraining/hello-world-nginx:v1.0 image. The web app listens on port 8080.
+
+[student@workstation ~]$ oc new-app --name sample-app --docker-image \
+>    quay.io/redhattraining/hello-world-nginx:v1.0
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "sample-app" created
+    deployment.apps "sample-app" created
+    service "sample-app" created
+--> Success
+...output omitted...
+Verify that pods in a different namespace can access the hello and test pods in the network-policy namespace.
+
+In the second terminal, run the display-project-info.sh script again to view the full name of the sample-app pod.
+
+[student@workstation ~]$ ~/DO280/labs/network-policy/display-project-info.sh
+...output omitted...
+PROJECT: network-test
+
+POD NAME
+sample-app-d5f945-spx9q
+
+===================================================================
+Returning to the first terminal, use the oc rsh and curl commands to confirm that the sample-app pod can access the IP address of the hello pod.
+
+[student@workstation ~]$ oc rsh sample-app-d5f945-spx9q curl 10.8.0.13:8080 | \
+>    grep Hello
+    <h1>Hello, world from nginx!</h1>
+Use the oc rsh and curl commands to confirm access to the test pod from the sample-app pod. Target the IP address previously retrieved for the test pod.
+
+[student@workstation ~]$ oc rsh sample-app-d5f945-spx9q curl 10.8.0.14:8080 | \
+>    grep Hello
+    <h1>Hello, world from nginx!</h1>
+From the network-policy project, create the deny-all network policy using the resource file available at ~/DO280/labs/network-policy/deny-all.yaml.
+
+Switch to the network-policy project.
+
+[student@workstation ~]$ oc project network-policy
+Now using project "network-policy" on server "https://api.ocp4.example.com:6443".
+Go to the ~/DO280/labs/network-policy/ directory.
+
+[student@workstation ~]$ cd ~/DO280/labs/network-policy/
+Use a text editor to update the deny-all.yaml file with an empty podSelector to target all pods in the namespace. A solution is provided at ~/DO280/solutions/network-policy/deny-all.yaml.
+
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: deny-all
+spec:
+  podSelector: {}
+Create the network policy with the oc create command.
+
+[student@workstation network-policy]$ oc create -f deny-all.yaml
+networkpolicy.networking.k8s.io/deny-all created
+Verify there is no longer access to the pods in the network-policy namespace.
+
+Verify there is no longer access to the hello pod via the exposed route. Wait a few seconds, and then press Ctrl+C to exit the curl command that does not reply.
+
+[student@workstation network-policy]$ curl -s \
+>    hello-network-policy.apps.ocp4.example.com | grep Hello
+^C
+IMPORTANT
+If the hello pod lands on the same node as a router-default pod, then the curl command works when traffic goes through that router pod. This is only the case with three-node clusters. In a traditional OpenShift cluster, where the control plane or infrastructure nodes are separated from the worker nodes, the network policy would apply to all the router pods in the cluster.
+
+If the curl command succeeds, then run the command again to validate the network policy works as expected. This second attempt should go through the other router pod in the cluster.
+
+Verify that the test pod can no longer access the IP address of the hello pod. Wait a few seconds, and then press Ctrl+C to exit the curl command that does not reply.
+
+[student@workstation network-policy]$ oc rsh test-c4d74c9d5-5pq9s curl \
+>    10.8.0.13:8080 | grep Hello
+^Ccommand terminated with exit code 130
+From the network-test project, confirm that the sample-app pod can no longer access the IP address of the test pod. Wait a few seconds, and then press Ctrl+C to exit the curl command that does not reply.
+
+[student@workstation network-policy]$ oc project network-test
+Now using project "network-test" on server "https://api.ocp4.example.com:6443".
+[student@workstation network-policy]$ oc rsh sample-app-d5f945-spx9q curl \
+>    10.8.0.14:8080 | grep Hello
+^Ccommand terminated with exit code 130
+Create a network policy to allow traffic to the hello pod in the network-policy namespace from the sample-app pod in the network-test namespace over TCP on port 8080. Use the resource file available at ~/DO280/labs/network-policy/allow-specific.yaml.
+
+Use a text editor to replace the CHANGE_ME sections in the allow-specific.yaml file as follows. A solution has been provided at ~/DO280/solutions/network-policy/allow-specific.yaml.
+
+...output omitted...
+spec:
+  podSelector:
+    matchLabels:
+      deployment: hello
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: network-test
+        podSelector:
+          matchLabels:
+            deployment: sample-app
+      ports:
+      - port: 8080
+        protocol: TCP
+Create the network policy with the oc create command.
+
+[student@workstation network-policy]$ oc create -n network-policy -f \
+>    allow-specific.yaml
+networkpolicy.networking.k8s.io/allow-specific created
+View the network policies in the network-policy namespace.
+
+[student@workstation network-policy]$ oc get networkpolicies -n network-policy
+NAME             POD-SELECTOR       AGE
+allow-specific   deployment=hello   11s
+deny-all         <none>             5m6s
+As the admin user, label the network-test namespace with the name=network-test label.
+
+Log in as the admin user.
+
+[student@workstation network-policy]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Use the oc label command to apply the name=network-test label.
+
+[student@workstation network-policy]$ oc label namespace network-test \
+>    name=network-test
+namespace/network-test labeled
+IMPORTANT
+The allow-specific network policy uses labels to match the name of a namespace. By default, namespaces and projects do not get any labels automatically.
+
+Confirm the label was applied and log in as the developer user.
+
+[student@workstation network-policy]$ oc describe namespace network-test
+Name:         network-test
+Labels:       name=network-test
+...output omitted...
+[student@workstation network-policy]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+Verify that the sample-app pod can access the IP address of the hello pod, but cannot access the IP address of the test pod.
+
+Verify access to the hello pod in the network-policy namespace.
+
+[student@workstation network-policy]$ oc rsh sample-app-d5f945-spx9q curl \
+>    10.8.0.13:8080 | grep Hello
+    <h1>Hello, world from nginx!</h1>
+Verify there is no response from the hello pod on another port. Because the network policy only allows access to port 8080 on the hello pod, requests made to any other port are ignored and eventually time out. Wait a few seconds, and then press Ctrl+C to exit the curl command that does not reply.
+
+[student@workstation network-policy]$ oc rsh sample-app-d5f945-spx9q curl \
+>    10.8.0.13:8181 | grep Hello
+^Ccommand terminated with exit code 130
+Verify there is no access to the test pod. Wait a few seconds, and then press Ctrl+C to exit the curl command that does not reply.
+
+[student@workstation network-policy]$ oc rsh sample-app-d5f945-spx9q curl \
+>    10.8.0.14:8080 | grep Hello
+^Ccommand terminated with exit code 130
+Create a network policy to allow traffic to the hello pod from the exposed route. Use the resource file available at ~/DO280/labs/network-policy/allow-from-openshift-ingress.yaml.
+
+Use a text editor to replace the CHANGE_ME values in the allow-from-openshift-ingress.yaml file as follows. A solution is provided at ~/DO280/solutions/network-policy/allow-from-openshift-ingress.yaml.
+
+...output omitted...
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: ingress
+Create the network policy with the oc create command.
+
+[student@workstation network-policy]$ oc create -n network-policy -f \
+>    allow-from-openshift-ingress.yaml
+networkpolicy.networking.k8s.io/allow-from-openshift-ingress created
+View the network policies in the network-policy namespace.
+
+[student@workstation network-policy]$ oc get networkpolicies -n network-policy
+NAME                           POD-SELECTOR       AGE
+allow-from-openshift-ingress   <none>             10s
+allow-specific                 deployment=hello   8m16s
+deny-all                       <none>             13m
+As the admin user, label the default namespace with the network.openshift.io/policy-group=ingress label.
+
+[student@workstation network-policy]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+[student@workstation network-policy]$ oc label namespace default \
+>    network.openshift.io/policy-group=ingress
+namespace/default labeled
+NOTE
+Applying this label to the default namespace is only necessary because the classroom's default Ingress Controller uses the HostNetwork endpoint publishing strategy.
+
+Verify access to the hello pod via the exposed route.
+
+[student@workstation network-policy]$ curl -s \
+>    hello-network-policy.apps.ocp4.example.com | grep Hello
+        <h1>Hello, world from nginx!</h1>
+Close the terminal window that has the output of the display-project-info.sh script. Navigate to the home directory.
+
+[student@workstation network-policy]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab network-policy finish
+This concludes the guided exercise.

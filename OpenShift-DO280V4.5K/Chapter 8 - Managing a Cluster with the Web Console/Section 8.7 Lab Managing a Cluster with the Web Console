@@ -1,0 +1,304 @@
+Lab: Managing a Cluster with the Web Console
+In this lab, you will manage the OpenShift cluster using the web console.
+
+Outcomes
+
+You should be able to use the OpenShift web console to:
+
+Modify a secret to add htpasswd entries for new users.
+
+Configure a new project with role-based access controls and resource quotas.
+
+Use an OperatorHub operator to deploy a database.
+
+Create a deployment, service, and route for a web application.
+
+Troubleshoot an application using events and logs.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and creates a directory for the exercise files.
+
+[student@workstation ~]$ lab console-review start
+Log in to the OpenShift web console as the admin user.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Identify the URL for the web console.
+
+[student@workstation ~]$ oc whoami --show-console
+https://console-openshift-console.apps.ocp4.example.com
+Open a web browser and navigate to https://console-openshift-console.apps.ocp4.example.com.
+
+NOTE
+If prompted with an untrusted certificate message, click Add Exception and then click Confirm Security Exception.
+
+Click localusers and log in as the admin user with redhat as the password.
+
+Add htpasswd entries to the localusers secret for users named dba and tester using redhat as the password.
+
+In the Red Hat OpenShift Container Platform web UI, click Workloads → Secrets, and then select openshift-config from the Project search list to display the secrets for the openshift-config project.
+
+Scroll to the bottom of the page and click the localusers link to display the localusers Secret Details.
+
+Click Actions → Edit Secret at the top of the page to navigate to the Edit Key/Value Secret tool.
+
+Use the workstation terminal to generate an encrypted htpasswd entry for both users.
+
+[student@workstation ~]$ htpasswd -n -b dba redhat
+dba:$apr1$YF4aCK.9$qhoOTHlWTC.cLByNEHDaV
+[student@workstation ~]$ htpasswd -n -b tester redhat
+tester:$apr1$XdTSqET7$i0hkC5bIs7PhYUm2KhiI.0
+Append the terminal output from the htpasswd commands to the htpasswd value in the OpenShift web console's secrets editor and then click Save.
+
+admin:$apr1$Au9.fFr$0k5wvUBd3eeBt0baa77.dae
+leader:$apr1$/abo4Hybn7a.tG5ZoOBn.QWefXckiy1
+developer:$apr1$RjqTY4cv$xql3.BQfg42moSxwnTNkh.
+dba:$apr1$YF4aCK.9$qhoOTHlWTC.cLByNEHDaV
+tester:$apr1$XdTSqET7$i0hkC5bIs7PhYUm2KhiI.0
+            
+Create a new app-team group that contains the developer and dba users.
+
+Click User Management → Groups, and then click Create Group. Use the YAML editor to define a Group resource as follows:
+
+apiVersion: user.openshift.io/v1
+kind: Group
+metadata:
+  name: app-team
+users:
+  - developer
+  - dba
+Click Create to add the new app-team group.
+
+Create a new console-review project with a view role binding for the tester user and an edit role binding for the app-team group. Set a resource quota that limits the project to four pods.
+
+Click Home → Projects to view the Projects page, and then click Create Project. Type console-review in the Name field, and then provide an optional Display Name and Description. Click Create.
+
+Click Role Bindings and then click Create Binding. Complete the form as follows to create a namespaced Role Binding for the app-team group.
+
+Table 8.5. App Team Role Binding Form
+
+Field	Value
+Name	app-team
+Namespace	console-review
+Role Name	edit
+Subject	Group
+Subject Name	app-team
+
+Click Create to create the namespaced RoleBinding.
+
+Click the Role Bindings link to return to the Role Bindings page, and then click Create Binding. Complete the form as follows to create a namespaced Role Binding for the tester user.
+
+Table 8.6. Tester Role Binding Form
+
+Field	Value
+Binding Type	Namespace Role Binding (RoleBinding)
+Name	tester
+Namespace	console-review
+Role Name	view
+Subject	User
+Subject Name	tester
+
+Click Create to create the namespaced RoleBinding.
+
+Click Administration → Resource Quotas, and then click Create Resource Quota. Modify the YAML document to specify a limit of four pods as follows:
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota
+  namespace: console-review
+spec:
+  hard:
+    pods: '4'
+Remove the CPU and memory requests and limits, and then click Create.
+
+Install the certified version of the Cockroach Operator for use in the console-review namespace.
+
+Click Operators → OperatorHub, and then click Database to display the list of database operators available from OperatorHub.
+
+Filter the Provider Type to display only Certified operators, and then click Cockroach Operator.
+
+Click Install on the Cockroach Operator page. On the Install Operator page, select console-review under Installed Namespace, and then click Install.
+
+Create a RoleBinding that allows the dba user to view resources in the openshift-operators project.
+
+Click User Management → Role Bindings, and then click Create Binding. Fill out the form as follows.
+
+Table 8.7. DBA OpenShift-Operators Role Binding Form
+
+Field	Value
+Binding Type	Namespace Role Binding (RoleBinding)
+Name	dba
+Namespace	openshift-operators
+Role Name	view
+Subject	User
+Subject Name	dba
+
+Click Create to add the namespaced RoleBinding.
+
+As the dba user, deploy a CockroachDB Cluster database instance into the console-review project using the OpenShift web console. You must modify the CrdbCluster resource to disable TLS. From the YAML View, ensure the tlsEnabled setting has a value of false.
+
+Click admin → Log out, and then log in as the dba user with the password redhat.
+
+Click Home → Projects, and click the console-review project link to switch to the console-review project.
+
+Click Operators → Installed Operators, and then click the Cockroach Operator name.
+
+From the Operator Details page, click Create Instance. Use the YAML View to configure the CrdbCluster resource. Use the name crdb-example, and ensure the tlsEnabled setting has a value of false. Click Create to create the CrdbCluster resource.
+
+apiVersion: crdb.cockroachlabs.com/v1alpha1
+kind: CrdbCluster
+metadata:
+  name: crdb-example
+  namespace: console-review
+spec:
+  tlsEnabled: false
+  nodes: 3
+  dataStore:
+    pvc:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        volumeMode: Filesystem
+As the developer user, create a deployment, service, and route in the console-review project with issues that you will troubleshoot in the next step. Use the quay.io/redhattraining/exoplanets:v1.0 image, and name all of the new resources exoplanets. When correctly configured, the exoplanets application connects to the CockroachDB cluster and displays a list of planets located outside of our solar system.
+
+NOTE
+You can copy the deployment and service YAML resources from ~/DO280/labs/console-review/ on the workstation machine.
+
+Specify the following environment variables in the deployment:
+
+Table 8.8. Deployment Environment Variables
+
+Name	Value
+DB_HOST	localhost
+DB_PORT	'26257'
+DB_USER	root
+DB_NAME	postgres
+
+IMPORTANT
+You will troubleshoot issues with the deployment in the next step.
+
+Click dba → Log out, and then log in as the developer user with the password of developer.
+
+Click Home → Projects, and then click the console-review project to switch to the console-review project.
+
+Click Workloads → Deployments, and then click Create Deployment to display the web console YAML editor. Update the YAML as follows and then click Create:
+
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: exoplanets
+  namespace: console-review
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: exoplanets
+  template:
+    metadata:
+      labels:
+        app: exoplanets
+    spec:
+      containers:
+        - name: exoplanets
+          image: 'quay.io/redhattraining/exoplanets:v1.0'
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          env:
+            - name: DB_HOST
+              value: localhost
+            - name: DB_PORT
+              value: '26257'
+            - name: DB_USER
+              value: root
+            - name: DB_NAME
+              value: postgres
+Click Networking → Services, and then click Create Service to display the web console YAML editor. Update the YAML as follows and then click Create:
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: exoplanets
+  namespace: console-review
+spec:
+  selector:
+    app: exoplanets
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+Click Networking → Routes, and then click Create Route. Complete the form as follows, leaving the other fields unchanged, and then click Create:
+
+Table 8.9. Create Route Form
+
+Field	Value
+Name	exoplanets
+Service	exoplanets
+Target Port	8080 → 8080 (TCP)
+
+Troubleshoot and fix the deployment issues.
+
+Click developer → Log out, and then log in as the admin user with the password redhat.
+
+Click Home → Events, and then select console-review from the project list filter at the top. Notice the exoplanets quota error:
+
+(combined from similar events): Error creating: pods "exoplanets-5f88574546-lsnmx" is forbidden: exceeded quota: quota, requested: pods=1, used: pods=4, limited: pods=4
+Click Administration → Resource Quotas, and then select console-review from the Project filter list.
+
+Click the quota link in the list of resource quotas, and then click the YAML tab. Modify the spec to specify a limit of six pods as follows, and then click Save.
+
+kind: ResourceQuota
+apiVersion: v1
+metadata:
+  name: quota
+  namespace: console-review
+...output omitted...
+spec:
+  hard:
+    pods: '6'
+...output omitted...
+NOTE
+The project requires a pod for the exoplanet's specified replica and an additional pod in order to roll out a change.
+
+Click Workloads → Pods, and review the list of pods. The exoplanets pod may take a minute or two to appear on the list and display a CrashLoopBackOff status.
+
+Click the pod name, and then click the Logs tab. Notice the connection error.
+
+2020/09/25 13:33:25 Connecting to database with: host=localhost port=26257 user=root password= dbname=postgres sslmode=disable
+2020/09/25 13:33:25 dial tcp [::1]:26257: connect: connection refused
+Click Networking → Services to view the services in the console-review namespace. There are two services related to the Cockroach database. The service name with the -public suffix is the only Cockroach service with an IP address, and the service uses port 26257.
+
+The exoplanets pod attempts to connect to port 26257 on the localhost instead of port 26257 on the database server. Copy the name of the service with the -public suffix to the clipboard.
+
+Click Workloads → Deployments, and then click the exoplanets Deployment link. Click the Environment tab and change the DB_HOST value from localhost to the name of the Cockroach service that you previously copied. Click Save.
+
+Click the Pods tab to verify that the new exoplanets pod updates to a Running status.
+
+Navigate to the exoplanets website in a browser and observe the working application.
+
+Click Networking → Routes, click the exoplanets route name, and then click the link in the Location column. Firefox will open a new tab rendering a table of exoplanets.
+
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab console-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab console-review finish
+This concludes the section.

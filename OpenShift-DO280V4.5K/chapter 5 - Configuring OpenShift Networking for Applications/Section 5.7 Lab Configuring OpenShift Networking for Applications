@@ -1,0 +1,327 @@
+Lab: Configuring OpenShift Networking for Applications
+In this lab, you will configure a TLS passthrough route for your application.
+
+Outcomes
+
+You should be able to:
+
+Deploy an application and configure an insecure route.
+
+Restrict traffic to the applications.
+
+Generate a TLS certificate for an application.
+
+Configure a passthrough route for an application with a TLS certificate.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable and creates the self-signed certificate authority (CA) that you use in this lab.
+
+[student@workstation ~]$ lab network-review start
+In this review, you deploy a PHP application that prints some information about the system. The application is available with two different configurations: one that runs with an unencrypted network that listens on port 8080, and one that uses a TLS certificate to encrypt the network traffic, which listens on port 8443.
+
+The container image for this review is accessible at quay.io/redhattraining/php-ssl. It has two tags: v1.0 for the insecure version of the application, and v1.1 for the secure version.
+
+As the OpenShift developer user, create the network-review project.
+
+Log in to the cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Create the network-review project.
+
+[student@workstation ~]$ oc new-project network-review
+Now using project "network-review" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+As the developer user, deploy the insecure version of the PHP application to the network-review project. Use the resource file available at ~/DO280/labs/network-review/php-http.yaml.
+
+Before deploying the application, make the necessary changes to the file, specifically, the location of the container image and the port on which it listens.
+
+After creating the application, wait a few moments to ensure that one pod is running.
+
+Go to the ~/DO280/labs/network-review/ directory.
+
+[student@workstation ~]$ cd ~/DO280/labs/network-review/
+Use a text editor to update the php-http.yaml file as follows:
+
+Locate the image entry. Set it to use the container image accessible at quay.io/redhattraining/php-ssl:v1.0.
+
+...output omitted...
+      cpu: '0.5'
+  image: 'quay.io/redhattraining/php-ssl:v1.0'
+  name: php-http
+...output omitted...
+Locate the containerPort entry. Set it to 8080, which corresponds to the insecure endpoint.
+
+...output omitted...
+  ports:
+  - containerPort: 8080
+    name: php-http
+...output omitted...
+After making your changes, save and exit the file.
+
+Use the oc create command to deploy the application. This creates a deployment and a service.
+
+[student@workstation network-review]$ oc create -f php-http.yaml
+deployment.apps/php-http created
+service/php-http created
+Wait a few moments, and then run the oc get pods command to ensure that there is a pod running.
+
+[student@workstation network-review]$ oc get pods
+NAME                       READY   STATUS    RESTARTS   AGE
+php-http-6cb58c847b-7qsbd  1/1     Running   0          8m11s
+Create a route named php-http, with a hostname of php-http.apps.ocp4.example.com, to access the application.
+
+From the workstation machine, use Firefox to access http://php-http.apps.ocp4.example.com. Confirm the availability of the application before proceeding to the next step.
+
+Run the oc expose command to create a route for accessing the application. Give the route a hostname of php-http.apps.ocp4.example.com.
+
+[student@workstation network-review]$ oc expose svc php-http \
+>    --hostname php-http.apps.ocp4.example.com
+route.route.openshift.io/php-http exposed
+Retrieve the name of the route and copy it to the clipboard.
+
+[student@workstation network-review]$ oc get routes
+NAME       HOST/PORT                        PATH   SERVICES   PORT   ...
+php-http   php-http.apps.ocp4.example.com          php-http   8080   ...
+From the workstation machine, open Firefox and access http://php-http.apps.ocp4.example.com.
+
+Confirm that you can see the application.
+
+
+Create a network policy in the network-review namespace to deny all ingress traffic by default. When configured correctly, the network policy also prevents pods within the network-review namespace from communicating with each other.
+
+Use the resource file available at ~/DO280/labs/network-review/deny-all.yaml. Make the necessary changes to target all pods in the namespace.
+
+Use a text editor to update the deny-all.yaml file with an empty pod selector to target all pods in the namespace.
+
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: deny-all
+spec:
+  podSelector: {}
+Use the oc create command to create the network policy.
+
+[student@workstation network-review]$ oc create -f deny-all.yaml
+networkpolicy.networking.k8s.io/deny-all created
+Use the curl command to verify that there is no access to the php-http pod from the route. Wait a few seconds, and then press Ctrl+C to exit the curl command.
+
+[student@workstation network-review]$ curl http://php-http.apps.ocp4.example.com
+^C
+IMPORTANT
+If the php-http pod landed on the same node as a router-default pod, then the curl command works when traffic goes through that router pod. This is only the case with three-node clusters. In a traditional OpenShift cluster, where the control plane or infrastructure nodes are separated from the worker nodes, the network policy would apply to all the router pods in the cluster.
+
+If the curl command succeeds, then run the command again to validate the network policy works as expected. This second attempt should go through the other router pod in the cluster.
+
+Create a network policy to allow ingress traffic to routes in the network-review namespace.
+
+Use the resource file available at ~/DO280/labs/network-review/allow-from-openshift-ingress.yaml. Make the necessary changes to target all pods in the namespace and allow traffic from the default ingress controller.
+
+Because the classroom environment uses the HostNetwork endpoint strategy, label the default namespace with the network.openshift.io/policy-group=ingress label. This action must be performed as the admin user.
+
+Use a text editor to update the allow-from-openshift-ingress.yaml file with an empty pod selector to target all pods in the namespace. Include a namespace selector to match the network.openshift.io/policy-group=ingress label.
+
+...output omitted...
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: ingress
+Use the oc create command to create the network policy.
+
+[student@workstation network-review]$ oc create -f \
+>    allow-from-openshift-ingress.yaml
+networkpolicy.networking.k8s.io/allow-from-openshift-ingress created
+As the admin user, label the default namespace with the network.openshift.io/policy-group=ingress label.
+
+[student@workstation network-review]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+[student@workstation network-policy]$ oc label namespace default \
+>    network.openshift.io/policy-group=ingress
+namespace/default labeled
+Use the curl command to verify there is access to the php-http pod from the route. Because the classroom is running a three-node cluster, run the curl command multiple times to validate access through all router pods.
+
+[student@workstation network-review]$ for X in {1..4}
+>    do
+>    curl -s http://php-http.apps.ocp4.example.com | grep "PHP"
+>    done
+    <title>PHP Application</title>
+    <title>PHP Application</title>
+    <title>PHP Application</title>
+    <title>PHP Application</title>
+As the developer user, generate and sign a TLS certificate for the encrypted version of the application.
+
+Create a certificate signing request (CSR) for the php-https.apps.ocp4.example.com hostname. Save the CSR to ~/DO280/labs/network-review/certs/training.csr.
+
+Use the CSR to generate a certificate and save it to ~/DO280/labs/network-review/certs/training.crt. To generate the certificate, pass as arguments the CA certificate accessible at ~/DO280/labs/network-review/certs/training-CA.pem and the CSR.
+
+You can use the ~/DO280/labs/network-review/certs/openssl-commands.txt text file for help. This file contains the commands for generating the certificate signing request and the certificate. Make sure to replace the values in the file before copying and running the OpenSSL commands.
+
+Log in as the developer user to complete the rest of this lab.
+
+[student@workstation network-review]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+Go to the ~/DO280/labs/network-review/certs directory.
+
+[student@workstation network-review]$ cd certs
+Generate the certificate signing request (CSR) for php-https.apps.ocp4.example.com. Make sure to type the subject of the request on one line. Alternatively, remove the -subj option and its content. This command prompts you for the values; make sure to indicate a common name (CN) of php-https.apps.ocp4.example.com.
+
+NOTE
+Make sure there is no space after the trailing slash of the organization (Red Hat) and the common name (CN).
+
+[student@workstation certs]$ openssl req -new -key training.key \
+>    -subj "/C=US/ST=North Carolina/L=Raleigh/O=Red Hat/\
+>    CN=php-https.apps.ocp4.example.com" \
+>    -out training.csr
+Alternatively, open the openssl-commands.txt text file. Copy and paste the first openssl command to your terminal. Replace the wildcard domain with apps.ocp4.example.com and the output file with training.csr.
+
+NOTE
+The command does not generate any output.
+
+Generate the signed certificate. Notice the usage of the -CA and -CAkey options for signing the certificate with the CA.
+
+[student@workstation certs]$ openssl x509 -req -in training.csr \
+>    -CA training-CA.pem -CAkey training-CA.key -CAcreateserial \
+>    -passin file:passphrase.txt \
+>    -out training.crt -days 3650 -sha256 -extfile training.ext
+Signature ok
+subject=C = US, ST = North Carolina, L = Raleigh, O = Red Hat, CN = php-https.apps.ocp4.example.com
+Getting CA Private Key
+Alternatively, copy and paste the second openssl command in the openssl-commands.txt file to your terminal. Replace the CSR file with training.csr, the CA with training-CA.pem, and the output certificate with training.crt.
+
+Ensure that the newly created certificate and the key are present in the current directory.
+
+[student@workstation certs]$ ls -l
+total 36
+-rw-r--r--. 1 student student  564 Jul 31 09:35 openssl-commands.txt
+-rw-r--r--. 1 student student   33 Aug  3 13:59 passphrase.txt
+-rw-------. 1 student student 1751 Aug  3 13:59 training-CA.key
+-rw-r--r--. 1 student student 1334 Aug  3 13:59 training-CA.pem
+-rw-rw-r--. 1 student student   41 Aug  3 14:20 training-CA.srl
+-rw-rw-r--. 1 student student 1395 Aug  3 14:20 training.crt
+-rw-rw-r--. 1 student student 1021 Aug  3 14:16 training.csr
+-rw-r--r--. 1 student student  352 Aug  3 13:59 training.ext
+-rw-------. 1 student student 1675 Aug  3 13:59 training.key
+Return to the network-review directory. This is important as the next step involves the creation of a route using the signed certificate.
+
+[student@workstation certs]$ cd ~/DO280/labs/network-review
+Create an OpenShift TLS secret named php-certs in the network-review project. Use the ~/DO280/labs/network-review/certs/training.crt file for the certificate and the ~/DO280/labs/network-review/certs/training.key file for the key.
+
+Use the oc create secret command to create the php-certs TLS secret. Pass the training.csr file as the certificate, and training.key as the key.
+
+[student@workstation network-review]$ oc create secret tls php-certs \
+>    --cert certs/training.crt \
+>    --key certs/training.key
+secret/php-certs created
+Retrieve the list of secrets to make sure that it is present.
+
+[student@workstation network-review]$ oc get secrets
+NAME        TYPE                    DATA   AGE
+...output omitted...
+php-certs   kubernetes.io/tls       2      93s
+Use the resource file, available at ~/DO280/labs/network-review/php-https.yaml, to deploy the secure version of the PHP application. Deploy the application to the network-review project.
+
+Before deploying the application, make the necessary changes to the resources file, specifically:
+
+The location of the container.
+
+The port the application listens on.
+
+The name of the secret to mount as a volume.
+
+Use a text editor to update the php-https.yaml file as follows:
+
+Locate the image entry. Set it to use the container image accessible at quay.io/redhattraining/php-ssl:v1.1.
+
+...output omitted...
+      cpu: '0.5'
+  image: 'quay.io/redhattraining/php-ssl:v1.1'
+  name: php-https
+...output omitted...
+Locate the containerPort entry. Set it to 8443, which corresponds to the secure endpoint.
+
+...output omitted...
+  name: php-https
+  ports:
+  - containerPort: 8443
+    name: php-https
+...output omitted...
+Locate the secretName entry. Set it to php-certs, which corresponds to the name of the secret that you created in a previous step.
+
+...output omitted...
+volumes:
+- name: tls-certs
+  secret:
+    secretName: php-certs
+...output omitted...
+After making your changes, save and exit the file.
+
+Use the oc create command to deploy the secure application. This creates a deployment and a service.
+
+[student@workstation network-review]$ oc create -f php-https.yaml
+deployment.apps/php-https created
+service/php-https created
+Wait a few moments, and then run the oc get pods command to ensure that the php-https pod is running.
+
+[student@workstation network-review]$ oc get pods
+NAME                        READY   STATUS    RESTARTS   AGE
+php-http-6cb58c847b-7qsbd   1/1     Running   0          8m11s
+php-https-84498cd794-hvf7w  1/1     Running   0          26s
+Create a secure passthrough route named php-https, with a hostname of php-https.apps.ocp4.example.com, to access the secure version of the application.
+
+From the workstation machine, use Firefox to access https://php-https.apps.ocp4.example.com. Accept the signed certificate and confirm the availability of the application.
+
+Run the oc create route command to create a passthrough route for accessing the application. Give the route a hostname of php-https.apps.ocp4.example.com. Use the port option to indicate the secure port 8443.
+
+[student@workstation network-review]$ oc create route passthrough php-https \
+>    --service php-https --port 8443 --hostname php-https.apps.ocp4.example.com
+route.route.openshift.io/php-https created
+Retrieve the name of the route and copy it to the clipboard.
+
+[student@workstation network-review]$ oc get routes
+NAME       HOST/PORT                        ...  SERVICES   PORT  TERMINATION
+php-http   php-http.apps.ocp4.example.com   ...  php-http   8080
+php-https  php-https.apps.ocp4.example.com  ...  php-https  8443  passthrough
+From the workstation machine, open Firefox and access https://php-https.apps.ocp4.example.com.
+
+Accept the signed certificate and confirm that you can see secure version of the application.
+
+
+Optional step: from the workstation machine, use the curl command to access the HTTPS version of the application.
+
+Pass the CA certificate to the curl command to validate the secure connection.
+
+Use the --cacert option to pass the CA certificate to the curl command.
+
+[student@workstation network-review]$ curl -v --cacert certs/training-CA.pem \
+>    https://php-https.apps.ocp4.example.com
+...output omitted...
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+...output omitted...
+* Server certificate:
+*  subject: C=US; ST=North Carolina; L=Raleigh; O=Red Hat; \
+CN=php-https.apps.ocp4.example.com
+...output omitted...
+  The application is currently served over TLS        </span></strong>
+...output omitted...
+Return to the home directory because the lab network-review finish command will delete the network-review directory.
+
+[student@workstation network-review]$ cd
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab network-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab network-review finish
+This concludes the lab.

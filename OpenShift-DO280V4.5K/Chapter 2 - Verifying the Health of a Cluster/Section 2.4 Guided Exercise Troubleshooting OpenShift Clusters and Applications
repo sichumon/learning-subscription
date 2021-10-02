@@ -1,0 +1,221 @@
+Guided Exercise: Troubleshooting OpenShift Clusters and Applications
+In this exercise, you will execute commands that assist in troubleshooting common problems with the OpenShift control plane and with application deployments.
+
+Outcomes
+
+You should be able to:
+
+Inspect the general state of an OpenShift cluster.
+
+Inspect local services and pods running in an OpenShift worker node.
+
+Diagnose and fix issues with the deployment of an application.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable, and creates the resource files that you will be using in the activity. It also creates the execute-troubleshoot project with an application that you will diagnose and fix during this exercise.
+
+[student@workstation ~]$ lab execute-troubleshoot start
+Log in to the OpenShift cluster and inspect the status of your cluster nodes.
+
+Source the classroom configuration file that is accessible at /usr/local/etc/ocp4.config.
+
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+Log in to the cluster as the kubeadmin user. When prompted, accept the insecure certificate.
+
+[student@workstation ~]$ oc login -u kubeadmin -p ${RHT_OCP4_KUBEADM_PASSWD} \
+>    https://api.ocp4.example.com:6443
+The server uses a certificate signed by an unknown authority.
+You can bypass the certificate check, but any data you send to the server could be intercepted by others.
+Use insecure connections? (y/n): y
+
+Login successful.
+...output omitted...
+Verify that all nodes on your cluster are ready.
+
+[student@workstation ~]$ oc get nodes
+NAME       STATUS   ROLES           AGE   VERSION
+master01   Ready    master,worker   2d    v1.18.3+012b3ec
+master02   Ready    master,worker   2d    v1.18.3+012b3ec
+master03   Ready    master,worker   2d    v1.18.3+012b3ec
+Verify whether any of your nodes are close to using all of the CPU and memory available to them.
+
+Repeat the following command a few times to prove that you see actual usage of CPU and memory from your nodes. The numbers you see should change slightly each time you repeat the command.
+
+[student@workstation ~]$ oc adm top node
+NAME       CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+master01   499m         14%    3235Mi          21%
+master02   769m         21%    4933Mi          33%
+master03   1016m        29%    6087Mi          40%
+Use the oc describe command to verify that all of the conditions that might indicate problems are false.
+
+[student@workstation ~]$ oc describe node master01
+...output omitted...
+Conditions:
+  Type             Status  ...  Message
+  ----             ------  ...  -------
+  MemoryPressure   False   ...  kubelet has sufficient memory available
+  DiskPressure     False   ...  kubelet has no disk pressure
+  PIDPressure      False   ...  kubelet has sufficient PID available
+  Ready            True    ...  kubelet is posting ready status
+Addresses:
+...output omitted...
+Review the logs of the internal registry operator, the internal registry server, and the Kubelet of a node. You are not looking for anything in these logs, but you must be able to find them.
+
+List all pods inside the openshift-image-registry project, and then identify the pod that runs the operator and the pod that runs the internal registry server.
+
+[student@workstation ~]$ oc get pod -n openshift-image-registry
+NAME                                               READY   STATUS    ...
+cluster-image-registry-operator-564bd5dd8f-s46bz   2/2     Running   ...
+image-registry-794dfc7978-w7w69                    1/1     Running   ...
+...output omitted...
+Follow the logs of the operator pod (cluster-image-registry-operator-xxx). The following command fails because that pod has two containers.
+
+[student@workstation ~]$ oc logs --tail 3 -n openshift-image-registry \
+>    cluster-image-registry-operator-564bd5dd8f-s46bz
+Error from server (BadRequest): a container name must be specified for pod cluster-image-registry-operator-564bd5dd8f-s46bz, choose one of: [cluster-image-registry-operator cluster-image-registry-operator-watch]
+Follow the logs of the first container of the operator pod. Your output might be different than the following example.
+
+[student@workstation ~]$ oc logs --tail 3 -n openshift-image-registry \
+>    -c cluster-image-registry-operator \
+>    cluster-image-registry-operator-564bd5dd8f-s46bz
+I0925 13:15:48.252294      13 controller.go:260] event from workqueue successfully processed
+I0925 13:15:51.261479      13 controller.go:260] event from workqueue successfully processed
+I0925 13:15:54.273422      13 controller.go:260] event from workqueue successfully processed
+Follow the logs of the image registry server pod (image-registry-xxx from the output of the oc get pod command run previously). Your output might be different than the following example.
+
+[student@workstation ~]$ oc logs --tail 1 -n openshift-image-registry \
+>    image-registry-794dfc7978-w7w69
+time="2019-09-25T21:18:06.827703727Z" level=info msg=response go.version=go1.11.6 http.request.host="10.129.2.44:5000" http.request.id=f4d83df5-8ed7-4651-81d4-4ed9f758c67d http.request.method=GET http.request.remoteaddr="10.129.2.50:59500" http.request.uri=/extensions/v2/metrics http.request.useragent=Prometheus/2.11.0 http.response.contenttype="text/plain; version=0.0.4" http.response.duration=12.141585ms http.response.status=200 http.response.written=2326
+Follow the logs of the Kubelet from the same node that you inspected for CPU and memory usage in the previous step. Your output might be different than the following example.
+
+[student@workstation ~]$ oc adm node-logs --tail 1 -u kubelet master01
+-- Logs begin at Wed 2020-07-29 18:24:47 UTC, end at Fri 2020-07-31 20:55:53 UTC. --
+Jul 31 16:23:27.420689 master01 systemd[1]: kubelet.service: Consumed 11min 12.108s CPU time
+-- Logs begin at Wed 2020-07-29 18:24:47 UTC, end at Fri 2020-07-31 20:55:53 UTC. --
+Jul 31 20:55:53.080133 master01 hyperkube[1524]: I0731 20:55:53.080122    1524 prober.go:133] Liveness probe for "ovs-22g2c_openshift-sdn(d118e034-2de7-447f-a79b-fed5f9863840):openvswitch" succeeded
+Start a shell session to the same node that you previously used to inspect its OpenShift services and pods. Do not make any change to the node, such as stopping services or editing configuration files.
+
+Start a shell session on the node, and then use the chroot command to enter the local file system of the host.
+
+[student@workstation ~]$ oc debug node/master01
+Starting pod/master01-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 192.168.50.10
+If you don't see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.2# 
+Still using the same shell session, verify that the Kubelet and the CRI-O container engine are running. Type q to exit the command.
+
+sh-4.2# systemctl status kubelet
+● kubelet.service - MCO environment configuration
+   Loaded: loaded (/etc/systemd/system/kubelet.service; enabled; vendor preset: enabled)
+  Drop-In: /etc/systemd/system/kubelet.service.d
+           └─10-mco-default-env.conf
+   Active: active (running) since Fri 2020-07-31 16:26:57 UTC; 4h 32min ago
+...output omitted...
+q
+Rerun the same command against the cri-o service. Type q to exit from the command.
+
+sh-4.2# systemctl status cri-o
+● crio.service - MCO environment configuration
+   Loaded: loaded (/usr/lib/systemd/system/crio.service; disabled; vendor preset: disabled)
+  Drop-In: /etc/systemd/system/crio.service.d
+           └─10-mco-default-env.conf
+   Active: active (running) since Fri 2020-07-31 16:26:50 UTC; 4h 35min ago
+...output omitted...
+q
+Still using the same shell session, verify that the openvswitch pod is running.
+
+sh-4.2# crictl ps --name openvswitch
+CONTAINER ID    ...   STATE     NAME          ATTEMPT   POD ID
+13f0b0ed3497a   ...   Running   openvswitch   0         4bc278dddf007
+Terminate the chroot session and shell session to the node. This also terminates the oc debug node command.
+
+sh-4.4# exit
+exit
+sh-4.2# exit
+exit
+
+Removing debug pod ...
+[student@workstation ~]$
+Enter the execute-troubleshoot project to diagnose a pod that is in an error state.
+
+Use the execute-troubleshoot project.
+
+[student@workstation ~]$ oc project execute-troubleshoot
+Now using project "execute-troubleshoot" on server
+"https://api.ocp4.example.com:6443".
+Verify that the project has a single pod in either the ErrImagePull or ImagePullBackOff status.
+
+[student@workstation ~]$ oc get pod
+NAME                   READY   STATUS             ...
+psql-7d4cc9d6d-m5r59   0/1     ImagePullBackOff   ...
+Verify that the project includes a Kubernetes deployment that manages the pod.
+
+[student@workstation ~]$ oc status
+...output omitted...
+deployment/psql deploys registry.access.redhat.com/rhscl/postgresq-96-rhel7:1
+  deployment #1 running for 8 minutes - 0/1 pods
+...output omitted...
+List all events from the current project and look for error messages related to the pod.
+
+[student@workstation ~]$ oc get events
+LAST SEEN   TYPE      REASON              OBJECT                      MESSAGE
+112s        Normal    Scheduled           pod/psql-7d4cc9d6d-m5r59    Successfully assigned execute-troubleshoot/psql-7d4cc9d6d-m5r59 to ip-10-0-143-197.us-west-1.compute.internal
+21s         Normal    Pulling             pod/psql-7d4cc9d6d-m5r59    Pulling image "registry.access.redhat.com/rhscl/postgresq-96-rhel7:1"
+21s         Warning   Failed              pod/psql-7d4cc9d6d-m5r59    Failed to pull image "registry.access.redhat.com/rhscl/postgresq-96-rhel7:1": rpc error: code = Unknown desc = Error reading manifest 1 in registry.access.redhat.com/rhscl/postgresq-96-rhel7: name unknown: Repo not found
+21s         Warning   Failed              pod/psql-7d4cc9d6d-m5r59    Error: ErrImagePull
+8s          Normal    BackOff             pod/psql-7d4cc9d6d-m5r59    Back-off pulling image "registry.access.redhat.com/rhscl/postgresq-96-rhel7:1"
+8s          Warning   Failed              pod/psql-7d4cc9d6d-m5r59    Error: ImagePullBackOff
+112s        Normal    SuccessfulCreate    replicaset/psql-7d4cc9d6d   Created pod: psql-7d4cc9d6d-m5r59
+112s        Normal    ScalingReplicaSet   deployment/psql             Scaled up replica set psql-7d4cc9d6d to 1
+This output also indicates a problem getting the image for deploying the pod.
+
+Use Skopeo to find information about the container image from the events.
+
+[student@workstation ~]$ skopeo inspect \
+>    docker://registry.access.redhat.com/rhscl/postgresq-96-rhel7:1
+FATA[0000] Error parsing image name "docker://registry.access.redhat.com/rhscl/postgresq-96-rhel7:1": Error reading manifest 1 in registry.access.redhat.com/rhscl/postgresq-96-rhel7: name unknown: Repo not found
+It looks like the container image is misspelled. Verify that it works if you replace postgresq-96-rhel7 with postgresql-96-rhel7.
+
+[student@workstation ~]$ skopeo inspect \
+>    docker://registry.access.redhat.com/rhscl/postgresql-96-rhel7:1
+{
+    "Name": "registry.access.redhat.com/rhscl/postgresql-96-rhel7",
+...output omitted...
+To verify that the image name is the root cause of the error, edit the psql deployment to correct the name of the container image. The oc edit commands uses vi as the default editor.
+
+WARNING
+In a real-world scenario, you would ask whoever deployed the PostgreSQL database to fix their YAML and redeploy their application.
+
+[student@workstation ~]$ oc edit deployment/psql
+...output omitted...
+    spec:
+      containers:
+      - env:
+        - name: POSTGRESQL_DATABASE
+          value: db
+        - name: POSTGRESQL_PASSWORD
+          value: pass
+        - name: POSTGRESQL_USER
+          value: user
+        image: registry.access.redhat.com/rhscl/postgresql-96-rhel7:1
+...output omitted...
+Verify that a new deployment is active.
+
+[student@workstation ~]$ oc status
+...output omitted...
+  deployment #2 running for 10 seconds - 0/1 pods
+  deployment #1 deployed 5 minutes ago
+List all pods in the current project. You might see both the old failing pod and the new pod for a few moments. Repeat the following command until you see that the new pod is ready and running, and you no longer see the old pod.
+
+[student@workstation ~]$ oc get pods
+NAME                             READY   STATUS    RESTARTS   AGE
+psql-544c9c666f-btlw8  1/1     Running   0          55s
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab execute-troubleshoot finish
+This concludes the guided exercise.

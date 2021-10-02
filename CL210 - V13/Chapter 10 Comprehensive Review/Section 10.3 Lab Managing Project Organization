@@ -1,0 +1,237 @@
+
+Lab: Managing Project Organization
+Performance Checklist
+
+In this review, you will create nested projects within a domain and assign roles in OpenStack to users authenticated by the Identity Service.
+
+Outcomes
+
+You should be able to:
+
+Create domains, projects, and subprojects.
+
+Create users and assign user roles.
+
+Create groups and assign group roles.
+
+Identify roles assigned to users in a domain.
+
+WARNING
+Before starting the following exercises, you must reset your workstation, director, and overcloud virtual machines. This will destroy any data stored on those machines from previous exercises. If you want to keep any data from the lab environment, save it before resetting your machines. You must reset all machines in the lab environment for the following exercises to work as expected.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab identity-cr setup command. This command will ensure that the OpenStack services are running and the environment is properly configured for the lab.
+
+[studentworkstation ~]$ lab identity-cr setup
+Instructions
+
+Use the following instructions to set up the nested projects within a domain and assign roles in OpenStack to users authenticated by the Identity Service.
+
+Create a new domain named Lab
+
+Create a project named marketing in the Lab domain.
+
+Create a subproject named development in the marketing project.
+
+Create a new user group named developers and admins within the Lab domain.
+
+Assign the developers group in the Lab domain the _member_ role for the development project.
+
+Assign the admins group in the Lab domain the admin role for the development project.
+
+Create two users named operator1, and architect1 in the Lab domain. Set the password for both users to redhat.
+
+Add the operator1 user to the developers user group of the Lab domain.
+
+Add the architect1 user to the admins user group of the Lab domain.
+
+Assign the operator1 user in the Lab domain the _member_ role for the marketing project in the Lab domain.
+
+Assign the architect1 user in the Lab domain the admin role for the marketing project in the Lab domain.
+
+Verify the role assigned to the operator1 and architect1 users in the different projects.
+
+On workstation, source the admin environment file, /home/student/admin-rc. Create a domain named Lab.
+
+[student@workstation ~]$ source ~/admin-rc
+[student@workstation ~]$ openstack domain create Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| enabled     | True                             |
+| id          | f4b6864041e945dfa55af34592919c8a |
+| name        | Lab                              |
+| tags        | []                               |
++-------------+----------------------------------+
+Create a project named marketing and a subproject named development within the Lab domain.
+
+Create a project named marketing within the Lab domain.
+
+[student@workstation ~]$ openstack project create marketing --domain Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | f4b6864041e945dfa55af34592919c8a |
+| enabled     | True                             |
+| id          | 5e2af53627d24004a218989be21262de |
+| is_domain   | False                            |
+| name        | marketing                        |
+| parent_id   | f4b6864041e945dfa55af34592919c8a |
+| tags        | []                               |
++-------------+----------------------------------+
+Create a subproject named development with the marketing project as the parent within the Lab domain.
+
+[student@workstation ~]$ openstack project create \
+development --parent marketing --domain Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | f4b6864041e945dfa55af34592919c8a |
+| enabled     | True                             |
+| id          | dbdbfec36b164c6ab64376c2ae4c3c22 |
+| is_domain   | False                            |
+| name        | development                      |
+| parent_id   | 5e2af53627d24004a218989be21262de |
+| tags        | []                               |
++-------------+----------------------------------+
+Create user groups named developers and admins within the Lab domain.
+
+Create a user group named developers within the Lab domain.
+
+[student@workstation ~]$ openstack group create developers --domain Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | f4b6864041e945dfa55af34592919c8a |
+| id          | 6dfb18c4553144eab0efb7ca268c2432 |
+| name        | developers                       |
++-------------+----------------------------------+
+Create a user group named admins within the Lab domain.
+
+[student@workstation ~]$ openstack group create admins --domain Lab
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description |                                  |
+| domain_id   | f4b6864041e945dfa55af34592919c8a |
+| id          | e856ac04b487473c8af240eb138cc124 |
+| name        | admins                           |
++-------------+----------------------------------+
+Assign the developers group in the Lab domain the _member_ role for the development project in the Lab domain.
+
+[student@workstation ~]$ openstack role add \
+--project development --project-domain Lab \
+--group developers --group-domain Lab \
+_member_
+Assign the admins group in the Lab domain the admin role for the development project in the Lab domain.
+
+[student@workstation ~]$ openstack role add \
+--project development --project-domain Lab \
+--group admins --group-domain Lab \
+admin
+Create two users named operator1 and architect1 in the Lab domain. Set the password for both users to redhat.
+
+Create a user named operator1 in the Lab domain. Set the password for the user to redhat.
+
+[student@workstation ~]$ openstack user create \
+--domain Lab --password redhat operator1
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | f4b6864041e945dfa55af34592919c8a |
+| enabled             | True                             |
+| id                  | 88b7672f6a1e4f47a843a6d39f2aec19 |
+| name                | operator1                        |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+Create a user named architect1 in the Lab domain. Set the password for the user to redhat.
+
+[student@workstation ~]$ openstack user create \
+--domain Lab --password redhat architect1
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | f4b6864041e945dfa55af34592919c8a |
+| enabled             | True                             |
+| id                  | 557e0d11f6d14a4795bf9f781d09cfdb |
+| name                | architect1                       |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+Add the operator1 user to the developers user group, and the architect1 user to the admins user group in the Lab domain.
+
+Add the operator1 user of the Lab domain to the developers user group of the Lab domain.
+
+[student@workstation ~]$ openstack group add user \
+--group-domain Lab --user-domain Lab \
+developers operator1
+Add the architect1 user of the Lab domain to the admins user group of the Lab domain.
+
+[student@workstation ~]$ openstack group add user \
+--group-domain Lab --user-domain Lab \
+admins architect1
+Assign the _member_ role for the marketing project to the operator1 user.
+
+[student@workstation ~]$ openstack role add \
+--project marketing --project-domain Lab \
+--user operator1 --user-domain Lab \
+_member_
+Assign the admin role for the marketing project to the architect1 user.
+
+[student@workstation ~]$ openstack role add \
+--project marketing --project-domain Lab \
+--user architect1 --user-domain Lab \
+admin
+Verify the role assignment to the operator1 user in the marketing and development projects.
+
+Verify the role assignment for the operator1 user in the marketing project.
+
+[student@workstation ~]$ openstack role assignment list \
+--project marketing --project-domain Lab \
+--user operator1 --user-domain Lab \
+--names --effective
++----------+---------------+-------+---------------+--------+-----------+
+| Role     | User          | Group | Project       | Domain | Inherited |
++----------+---------------+-------+---------------+--------+-----------+
+| _member_ | operator1@Lab |       | marketing@Lab |        | False     |
++----------+---------------+-------+---------------+--------+-----------+
+Verify the role assignment for the operator1 user in the development project.
+
+[student@workstation ~]$ openstack role assignment list \
+--project development --project-domain Lab \
+--user operator1 --user-domain Lab \
+--names --effective
++----------+---------------+-------+-----------------+--------+-----------+
+| Role     | User          | Group | Project         | Domain | Inherited |
++----------+---------------+-------+-----------------+--------+-----------+
+| _member_ | operator1@Lab |       | development@Lab |        | False     |
++----------+---------------+-------+-----------------+--------+-----------+
+Log in to the dashboard to verify the role assigned to the architect1 user.
+
+On workstation, launch the Firefox web browser and connect to the dashboard at http://dashboard.overcloud.example.com/.
+
+Enter Lab for the Domain, architect1 for the User Name, and redhat for the Password to authenticate.
+
+After you have logged in to the dashboard, observe that the top navigation menu displays the Project, Admin, and Identity tabs.
+
+Choose development from the Project menu to switch from the marketing project to the development project. Observe that the top navigation menu displays the Project, Admin, and Identity tabs.
+
+Log out of the dashboard.
+
+Evaluation
+
+On workstation, run the lab identity-cr grade command to confirm success of this exercise. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab identity-cr grade
+Cleanup
+
+On workstation, run the lab identity-cr cleanup command to clean up this exercise.
+
+[student@workstation ~]$ lab identity-cr cleanup
+This concludes the lab.

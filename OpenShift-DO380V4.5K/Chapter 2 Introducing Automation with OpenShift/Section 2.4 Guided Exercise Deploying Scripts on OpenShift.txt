@@ -1,0 +1,145 @@
+Guided Exercise: Deploying Scripts on OpenShift
+In this exercise, you will execute a cluster operation script from both inside and outside of OpenShift.
+
+Outcomes
+
+You should be able to:
+
+Run a cluster operation script from outside of OpenShift.
+
+Create a service account and custom role for unattended authentication.
+
+Deploy a cluster operation script to run as a CronJob.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command provides starter files used throughout the exercise and solutions to compare against.
+
+[student@workstation ~]$ lab automation-scripts start
+Procedure 2.2. Instructions
+
+As a cluster administrator, you are tasked with running an audit script, which the security team uses to list all container images used in the cluster. First, test the script by executing it from outside of the cluster. Then, create a CronJob so the script automatically runs in the cluster at regular intervals.
+
+Review and execute the shell script.
+
+Change to the ~/DO380/labs/automation-scripts/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/automation-scripts/
+Open audit.sh and review the contents.
+
+The script fetches a list of all of the pods in the cluster and uses the jsonpath argument to filter the results to only the container images. sed replaces spaces with newlines. The script then removes duplicates and sorts the entries before printing the list.
+
+#!/usr/bin/env bash
+oc get pods --all-namespaces \
+    -o jsonpath="{.items[*].spec.containers[*].image}"  \
+    | sed 's/ /\n/g' \
+    | sort \
+    | uniq
+From the workstation machine, log in to OpenShift as the admin user and run the audit script locally.
+
+[student@workstation automation-scripts]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+You have access to 58 projects, the list has been suppressed. You can list all projects with 'oc projects'
+
+Using project "default".
+
+[student@workstation automation-scripts]$ ./audit.sh
+quay.io/external_storage/nfs-client-provisioner:latest
+quay.io/openshift-release-dev/ocp-release@sha256:b51a...c035
+quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c945...1c0d
+quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:ef5c...26af
+...output omitted...
+Create a new project named automation-scripts.
+
+[student@workstation automation-scripts]$ oc new-project automation-scripts
+Now using project "automation-scripts" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create a service account with suitable minimal permissions to read pods from all namespaces.
+
+Ensure that the file named rbac.yml specifies an auditor service account, a cluster role with read access to pods, and a cluster role binding.
+
+Define an auditor service account for the job to use for API authentication, and then bind the auditor service account to the auditor cluster role with a cluster role binding. Edit the file and replace each CHANGE_ME entry for all name keys with the text auditor.
+
+Restrict the cluster role to allow only get and list actions on pod resources by replacing each CHANGE_ME entry for the verbs key with the text ["get", "list"].
+
+Verify the completed file by comparing it to the solution located at /home/student/DO380/solutions/automation-scripts/rbac.yml.
+
+Deploy the OpenShift resources.
+
+[student@workstation automation-scripts]$ oc create -f rbac.yml
+serviceaccount/auditor created
+clusterrole.rbac.authorization.k8s.io/auditor created
+clusterrolebinding.rbac.authorization.k8s.io/auditor created
+Deploy an OpenShift job that executes the shell script.
+
+In the job.yml file, specify auditor as the service account by replacing CHANGE_ME for the serviceAccountName keys with the text auditor.
+
+Verify the completed file by comparing it to the solution located at /home/student/DO380/solutions/automation-scripts/job.yml.
+
+Deploy the job to OpenShift.
+
+[student@workstation automation-scripts]$ oc create -f job.yml
+job.batch/audit-sh created
+Verify that the job completed successfully.
+
+[student@workstation automation-scripts]$ oc get jobs,pods
+NAME                 COMPLETIONS   DURATION   AGE
+job.batch/audit-sh   1/1           9s         16m
+
+NAME                         READY   STATUS      RESTARTS   AGE
+pod/audit-sh-k2c4q           0/1     Completed   0          16m
+Check the logs to review the audit report.
+
+[student@workstation automation-scripts]$ oc logs job.batch/audit-sh
+quay.io/external_storage/nfs-client-provisioner:latest
+quay.io/openshift-release-dev/ocp-release@sha256:b51a...c035
+quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c945...1c0d
+quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:ef5c...26af
+...output omitted...
+Create a CronJob to automatically run the audit script on a schedule.
+
+In the cronjob.yml file, replace CHANGE_ME for the apiVersion with the value batch/v1beta1.
+
+Schedule the job to run every two minutes by replacing CHANGE_ME for the schedule with the text "*/2 * * * *".
+
+Specify auditor as the service account by replacing CHANGE_ME for the serviceAccountName keys with the text auditor.
+
+Verify the completed file by comparing it to the solution located at /home/student/DO380/solutions/automation-scripts/cronjob.yml.
+
+Create the CronJob.
+
+[student@workstation automation-scripts]$ oc create -f cronjob.yml
+cronjob.batch/audit-cron created
+Watch the CronJob, Job, and Pod resources until the audit-cron script completes.
+
+[student@workstation automation-scripts]$ watch oc get cronjobs,jobs,pods
+NAME                       SCHEDULE	 SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob.batch/audit-cron   */2 * * * *   False     0        45s             2m20
+s
+
+NAME                              COMPLETIONS   DURATION   AGE
+job.batch/audit-cron-1594932720   1/1           13s        40s
+job.batch/audit-sh                1/1           25s        3m21s
+
+NAME                              READY   STATUS      RESTARTS   AGE
+pod/audit-cron-1594932720-kp9q7   0/1     Completed   0          40s
+pod/audit-sh-9d7cd                0/1     Completed   0          3m21s
+Verify the results of the script by viewing the logs.
+
+[student@workstation automation-scripts]$ oc logs job.batch/audit-cron-1594932720
+quay.io/external_storage/nfs-client-provisioner:latest
+quay.io/openshift-release-dev/ocp-release@sha256:b51a...c035
+quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c945...1c0d
+quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:ef5c...26af
+...output omitted...
+Change to the /home/student/ directory.
+
+[student@workstation automation-scripts]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab automation-scripts finish
+This concludes the section.

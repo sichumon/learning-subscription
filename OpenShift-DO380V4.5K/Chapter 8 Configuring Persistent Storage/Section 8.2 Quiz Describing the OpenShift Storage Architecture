@@ -1,0 +1,15 @@
+
+Quiz: Describing the OpenShift Storage Architecture
+Match the items below to their counterparts in the table.
+
+Drag and drop the items to the cell next to the correct answer. Each cell should contain one answer. To change an answer, either drag it to another location, or click btn:[reset] to return the quiz to its original settings.
+
+When you have completed the quiz, click check. Correct answers have a green background; incorrect answers have a red background. To try the quiz again, click reset. Note: if you have trouble getting the quiz to function a second time, try refreshing your browser. Click show solution to see all of the correct answers.
+
+OpenShift Storage Component	Description
+Provisioner	Code that OpenShift uses to create a storage resource.
+Persistent Volume	A cluster resource that defines the information that OpenShift requires to mount a volume to a node.
+Storage Class	A cluster resource that defines characteristics for a particular type of storage, which users can request.
+Persistent Volume Claim	A project resource that defines a request for storage with specific storage characteristics.
+Volume Plug-in	Code that OpenShift uses to mount a storage resource on a node.
+This concludes the section.

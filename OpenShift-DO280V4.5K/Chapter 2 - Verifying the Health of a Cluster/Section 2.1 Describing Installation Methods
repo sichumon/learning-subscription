@@ -1,0 +1,84 @@
+Chapter 2. Verifying the Health of a Cluster
+Describing Installation Methods
+Quiz: Describing Installation Methods
+Troubleshooting OpenShift Clusters and Applications
+Guided Exercise: Troubleshooting OpenShift Clusters and Applications
+Introducing OpenShift Dynamic Storage
+Guided Exercise: Introducing OpenShift Dynamic Storage
+Summary
+Abstract
+
+Goal	Describe OpenShift installation methods and verify the health of a newly installed cluster.
+Objectives	
+Describe the OpenShift installation process, full-stack automation, and pre-existing infastructure installation methods.
+
+Execute commands that assist in troubleshooting common problems.
+
+Identify the components and resources of persistent storage and deploy an application that uses a persistent volume claim.
+
+Sections	
+Describing Installation Methods (and Quiz)
+
+Troubleshooting OpenShift Clusters and Applications (and Guided Exercise)
+
+Introducing OpenShift Dynamic Storage (and Guided Exercise)
+
+Describing Installation Methods
+Objectives
+After completing this section, you should be able to describe the OpenShift installation process, full-stack automation, and pre-existing infrastructure installation methods.
+
+Introducing OpenShift Installation Methods
+Red Hat OpenShift Container Platform provides two main installation methods:
+
+Full-stack Automation
+With this method, the OpenShift installer provisions all compute, storage, and network resources from a cloud or virtualization provider. You provide the installer with minimum data, such as credentials to a cloud provider and the size of the initial cluster, and then the installer deploys a fully functional OpenShift cluster.
+
+Pre-existing Infrastructure
+With this method, you configure a set of compute, storage, and network resources and the OpenShift installer configures an initial cluster using these resources. You can use this method to set up an OpenShift cluster using bare-metal servers and cloud or virtualization providers that are not supported by the full-stack automation method.
+
+When using a pre-existing infrastructure, you must provide all of the cluster infrastructure and resources, including the bootstrap node. You must run the installation program to generate the required configuration files, and then run the installation program again to deploy an OpenShift cluster on your infrastructure.
+
+At the time of the Red Hat OpenShift Container Platform 4.5 release, the set of cloud providers supported for the full-stack automation method includes Amazon Web Services (AWS), Google Cloud Platform (GCP), Microsoft Azure, and Red Hat OpenStack Platform using the standard Intel architecture (x86). Supported virtualization providers and architectures for full-stack automation include VMware, Red Hat Virtualization, IBM Power, and IBM System Z.
+
+Every minor release of the 4.x stream adds more capabilities and more support for customizations, such as reusing precreated cloud resources.
+
+Comparing OpenShift Installation Methods
+Certain features of OpenShift require using the full-stack automation method, for example, cluster automatic scaling. However, it is expected that future releases might relax such requirements.
+
+Using the full-stack automation method, all nodes of the new cluster run Red Hat Enterprise Linux CoreOS (RHEL CoreOS). Using the pre-existing infrastructure method, worker nodes can be set up using Red Hat Enterprise Linux (RHEL), but the control plane (master nodes) still requires RHEL CoreOS.
+
+Describing the Deployment Process
+The installation takes place in several stages, starting with the creation of a bootstrap machine that runs Red Hat Enterprise Linux CoreOS using the assets that the installer generates.
+
+The bootstrapping process for the cluster is as follows:
+
+The bootstrap machine boots, and then starts hosting the remote resources required for booting the control plane machines.
+
+The control plane machines fetch the remote resources from the bootstrap machine and finish booting.
+
+The control plane machines form an Etcd cluster.
+
+The bootstrap machine starts a temporary Kubernetes control plane using the newly-created Etcd cluster.
+
+The temporary control plane schedules the control plane to the control plane machines.
+
+The temporary control plane shuts down and yields to the control plane.
+
+The bootstrap node injects components specific to OpenShift into the control plane.
+
+Finally, the installer tears down the bootstrap machine.
+
+The result of this bootstrapping process is a fully running OpenShift control plane, which includes the API server, the controllers (such as the SDN), and the Etcd cluster. The cluster then downloads and configures the remaining components needed for day-to-day operation via the Cluster Version operator, including the automated creation of compute machines on supported platforms.
+
+Customizing an OpenShift Installation
+The OpenShift installer allows very little customization of the initial cluster that it provisions. Most customization is performed after installation, including:
+
+Defining custom storage classes for dynamic storage provisioning.
+
+Changing the custom resources of cluster operators.
+
+Adding new operators to a cluster.
+
+Defining new machine sets.
+
+ 

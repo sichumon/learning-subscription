@@ -1,0 +1,86 @@
+
+Quiz: Introducing Jenkins Declarative Pipelines Quiz
+Choose the correct answers to the following questions:
+
+1.		
+Which two of the following statements about Jenkins, CI/CD, and GitOps are correct? (Choose two.)
+
+A		
+Jenkins is a general-purpose process automation server that is popular among software developers.
+
+B		
+Jenkins is a container-native automation service that orchestrates containers as part of a larger process.
+
+C		
+Jenkins is an automation server created to manage CI processes.
+
+D		
+Jenkins is an automation server created to manage GitOps processes.
+
+2.		
+Choose the correct statement about Jenkins nodes:
+
+A		
+Master nodes can only manage projects and cannot run builds.
+
+B		
+Both master and agent nodes can manage projects and run builds.
+
+C		
+Agent nodes cannot manage projects nor run builds.
+
+D		
+Both master and agent nodes can run builds.
+
+3.		
+Choose the correct statement about managing Jenkins:
+
+A		
+A standard Jenkins deployment requires using a web UI to perform most management tasks.
+
+B		
+The Jenkins REST API provides easy access to all settings of a Jenkins instance and its agent nodes.
+
+C		
+The Jenkins CLI can automatically generate pipelines for common scenarios.
+
+D		
+The properties directive of a declarative pipeline offers a limited subset of the project settings available through the Jenkins web UI.
+
+4.		
+Choose the correct statement about Jenkins pipeline projects:
+
+A		
+Scripted pipelines are designed for CI/CD processes and declarative pipelines are designed for GitOps projects.
+
+B		
+Writing scripted pipelines requires basic knowledge of Groovy programming.
+
+C		
+Only declarative pipelines support running builds on containerized agents.
+
+D		
+Only scripted pipelines can make use of most Jenkins plug-ins.
+
+5.		
+Given the structure of Jenkinsfiles and declarative pipelines, which two statements are correct? (Choose two.)
+
+A		
+The agent directive allows selecting an agent that is preconfigured with requirements of the pipeline.
+
+B		
+The stage directive provides shortcuts for performing common development tasks without any coding.
+
+C		
+The steps directive contains statements that perform that the actual tasks of building, testing, and deploying pieces of software.
+
+D		
+All directives except steps are optional in a declarative pipeline.
+
+E		
+All statements inside a steps directive come from specialized plug-ins and there is no way of running standard shell commands.
+
+F		
+The post directive includes statements that are executed only after all stages are successful.
+
+This concludes the section.

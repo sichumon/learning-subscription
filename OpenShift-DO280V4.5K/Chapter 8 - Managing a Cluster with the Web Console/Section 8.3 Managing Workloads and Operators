@@ -1,0 +1,74 @@
+
+Managing Workloads and Operators
+Objectives
+After completing this section, you should be able to manage applications and Kubernetes Operators with the web console.
+
+Exploring Workload Resources
+Workload resources such as Pods, Deployments, Stateful Sets, and Config Maps are listed under the Workloads menu. Click a resource type to see a list of resources, and then click the name of the resource to navigate to the details page for that resource.
+
+For example, to navigate to the OpenShift DNS operator pod, click Workloads → Pods, select openshift-dns-operator from the Project list at the top of the page, and click the name of the pod listed in the table.
+
+
+There are often multiple ways to navigate to common resources. Throughout the web UI, associated resources will often link to each other. The deployment details page displays a list of pods. Click any pod name in that list to display the pod details page for that pod.
+
+Managing Workloads
+The web console provides specialized editor pages for many workload resources. Use the Actions menu on the resource's details page to navigate to the specialized editor pages.
+
+
+Figure 8.8: Using the Actions menu to modify a deployment.
+Some useful action pages are described below:
+
+All resources feature Edit Labels and Edit Annotations editors.
+
+Click Actions → Add Storage to add a Persistent Volume Claim (PVC) to a deployment.
+
+To edit the replica count, navigate to the Deployment Details page and click Actions → Edit Pod Count.
+
+To modify the update strategy for a deployment, such as changing rolling update parameters, navigate to the Deployment Details page and click Actions → Edit Update Strategy. To modify the update strategy for a deployment configuration, navigate to the Deployment Config Details page and click Actions → Edit Deployment Config.
+
+Navigate to the Secret Details page and click Actions → Edit Secret to display the Edit Key/Value Secret tool, which automatically uses Base64 to encode and decode values.
+
+You can also use the embedded YAML editor to create or modify workload resources. Drag and drop a JSON or YAML file into the browser-based editor to update the resource from a file without using the oc command.
+
+
+Figure 8.9: Editing a resource using the embedded YAML editor.
+Along with the ability to edit resources in a dedicated page or the embedded YAML editor, you can perform many other common operations directly from the OpenShift web console.
+
+For example, to delete a resource, navigate to the resource's details page and click Actions → Delete Resource Type.
+
+There is often more than one way to perform a particular task. For example, to manually scale a deployment you can navigate to the Deployment Details page and then click Actions → Edit Pod Count, or you can click the arrows next to the pod count without leaving the page.
+
+Deploying Applications
+You can create deployments and deployment configurations from the Workloads → Deployments and Workloads → Deployment Configs pages, respectively. Each of these sections provides a YAML editor with a prepopulated specification to define your YAML resource.
+
+The Builds section contains tools for:
+
+Creating build configurations for Source-to-Image (S2I), Dockerfile, or custom builds.
+
+Listing and inspecting builds.
+
+Managing image streams.
+
+After you initiate a deployment or build, use the resource's details and events pages to verify success, or start investigating the cause of a deployment failure.
+
+Installing and Using Operators
+Explore community and partner operators on the OpenShift web console's Operators → OperatorHub page. Over 360 operators are available for installation from the web UI. This includes community operators, which Red Hat does not support.
+
+Operators add features and services to your cluster along with automation traditionally performed by human operators, such as deployment coordination or automatic backups. Operators cover a broad range of categories including:
+
+Traditional databases such as PostgreSQL and MySQL.
+
+Popular big data frameworks such as Apache Spark.
+
+Kafka-based streaming platforms such as Red Hat AMQ streams.
+
+The Knative serverless framework OpenShift Serverless Operator.
+
+Click the operator listing to view details about the operator, such as its version and where to find documentation.
+
+When you are ready to install an operator, click Install to start the installation. Complete the Operator Installation form to select the target namespace and operator approval strategy. You can install operators to target all namespaces or only specific namespaces. Be aware, however, that not all operators support all installation target options.
+
+After you have installed an operator, it appears on the Operators → Installed Operators page. If it is installed for a specific namespace, make sure you select the correct project using the project filter at the top of the page.
+
+
+The operator details page lists the APIs provided by the operator and allows you to create instances of those resources. For example, from the etcd operator page you can create instances of an etcd cluster, backup request, or restore request

@@ -1,0 +1,252 @@
+
+Guided Exercise: Implementing Block Storage
+In this exercise, you will verify the health of a Ceph cluster. You will also verify and test the settings to use the Ceph cluster as the back end for the OpenStack image service and the OpenStack Block Storage service.
+
+Outcomes
+
+You should be able to:
+
+Check Ceph health and configuration (from controller).
+
+Create an image and locate it in Ceph.
+
+Create a volume and locate it in Ceph.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab storage-backend setup command. This ensures that the appropriate flavor, network, subnet, security group, and the user's environment file exist to support the steps involved in this guided exercise.
+
+[student@workstation ~]$ lab storage-backend setup
+From controller0 as root, verify that the ceph-mon service is active and running.
+
+Open an SSH session to controller0 as root.
+
+[student@workstation ~]$ ssh root@controller0
+Use the systemctl command to view the status of the ceph-mon service.
+
+[root@controller0 ~]# systemctl list-units -t service ceph\*
+UNIT                         LOAD   ACTIVE SUB     DESCRIPTION
+ceph-mds@controller0.service loaded active running Ceph MDS
+ceph-mgr@controller0.service loaded active running Ceph Manager
+ceph-mon@controller0.service loaded active running Ceph Monitor
+
+LOAD   = Reflects whether the unit definition was properly loaded.
+ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
+SUB    = The low-level unit activation state, values depend on unit type.
+
+3 loaded units listed. Pass --all to see loaded but inactive units, too.
+To show all installed unit files use 'systemctl list-unit-files'.
+View the status of the Ceph cluster in the classroom environment. Run the ceph -s command to view the status of the Ceph cluster.
+
+[root@controller0 ~]# ceph -s
+  cluster:
+    id:     817893a8-b2f5-11e8-8087-52540001fac8
+    health: HEALTH_OK
+
+  services:
+    mon: 1 daemons, quorum controller0
+    mgr: controller0(active)
+    mds: cephfs-1/1/1 up  {0=controller0=up:active}
+    osd: 3 osds: 3 up, 3 in
+
+  data:
+    pools:   7 pools, 416 pgs
+    objects: 603 objects, 4498 MB
+    usage:   4830 MB used, 53504 MB / 58334 MB avail
+    pgs:     416 active+clean
+Notice that the current health status of the cluster is HEALTH_OK. This indicates that the Ceph cluster is operational.
+
+Verify that the Ceph settings are appropriately defined with the right pool name such that the OpenStack image service uses the Ceph storage as the back-end storage provider to accommodate an image.
+
+Retrieve the Ceph settings from the configuration file of the OpenStack image service API container.
+
+[root@controller0 ~]# docker \
+exec -it glance_api grep -Ei 'rbd|ceph' \
+/etc/glance/glance-api.conf | grep -v ^#
+stores=http,rbd
+default_store=rbd
+rbd_store_pool=images
+rbd_store_user=openstack
+rbd_store_ceph_conf=/etc/ceph/ceph.conf
+Verify that the required images Ceph pool and the cephx user account client.openstack are available to configure Ceph storage as the back-end storage provider for the OpenStack image service.
+
+On controller0, verify that the images pool is available using the ceph osd lspools command.
+
+[root@controller0 ~]# ceph osd lspools
+1 images,2 metrics,3 backups,4 vms,5 volumes,6 manila_data,7 manila_metadata,
+NOTE
+The later steps of this guided exercise use the volumes pool as well.
+
+Verify that the cephx user account client.openstack is available using the ceph auth list command.
+
+[root@controller0 ~]# ceph auth list
+...output omitted...
+client.openstack
+	key: AQA+CZNbAAAAABAAXpuXxzqYw3mwT7Vz2TQ8jQ==
+	caps: [mds]
+	caps: [mgr] allow *
+	caps: [mon] profile rbd
+	caps: [osd] profile rbd pool=volumes, profile rbd pool=backups, profile rbd pool=vms, profile rbd pool=images, profile rbd pool=metrics
+...output omitted...
+Notice that the cephx user client.openstack has block-based access to the Ceph storage as defined by the rbd capability profile for the images pool.
+
+Log off from controller0.
+
+[root@controller0 ~]# logout
+[student@workstation ~]$ 
+On workstation, create an OpenStack glance image as developer1 in the finance project. The image file is available at http://materials.example.com/osp-small.qcow2.
+
+Source the credential file of developer1.
+
+[student@workstation ~]$ source developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ 
+NOTE
+The credential file for developer1 is created while setting up for the activity during the initial steps.
+
+Download the image file from http://materials.example.com/osp-small.qcow2.
+
+[student@workstation ~(developer1-finance)]$ wget \
+http://materials.example.com/osp-small.qcow2
+...output omitted...
+Saving to: ‘osp-small.qcow2’
+
+100%[=======================================>] 1,528,233,984 58.2MB/s   in 26s
+...output omitted...
+Create the OpenStack glance image with the downloaded /home/student/osp-small.qcow2 file and name it finance-image.
+
+[student@workstation ~(developer1-finance)]$ openstack image create \
+--disk-format qcow2 \
+--file osp-small.qcow2 \
+finance-image
+...output omitted...
+Verify that the new finance-image image is in an active state.
+
+[student@workstation ~(developer1-finance)]$ openstack image list
++--------------------------------------+---------------+--------+
+| ID                                   | Name          | Status |
++--------------------------------------+---------------+--------+
+| d0712086-6594-4620-b936-e58573e9c451 | finance-image | active |
+| 988c81e7-bfd7-45eb-8d51-c429be83315b | rhel7         | active |
+| b76aef5f-3bc2-4297-a448-cff9b80c56cf | rhel7-db      | active |
+| dbe819bc-a82e-4462-9711-8005760f0c90 | rhel7-web     | active |
++--------------------------------------+---------------+--------+
+View the contents of the images Ceph pool to verify that the image ID from the pool matches what the OpenStack image service displays.
+
+Open an SSH session to controller0 as root.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0
+[root@controller0 ~]# 
+View the contents of the images Ceph pool to verify the image ID.
+
+The image ID may differ in your environment and you need to use the image ID of your environment in the preceding command.
+
+[root@controller0 ~]# rados -p images ls | grep \
+d0712086-6594-4620-b936-e58573e9c451
+rbd_id.d0712086-6594-4620-b936-e58573e9c451
+Log off from controller0.
+
+[root@controller0 ~]# logout
+[student@workstation ~(developer1-finance)]$ 
+Launch a new instance as developer1 in the finance project with the following attributes:
+
+Flavor: default
+
+Image: finance-image
+
+Network: finance-network1
+
+Security Group: default
+
+Server Name: finance-server1
+
+Run the following command to launch the new instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server \
+create --flavor default \
+--image finance-image \
+--nic net-id=finance-network1 \
+--security-group default \
+finance-server1
+...output omitted...
+Verify that the new instance finance-server1 is in an ACTIVE state.
+
+[student@workstation ~(developer1-finance)]$ openstack server \
+list -c Name -c Status
++-----------------+--------+
+| Name            | Status |
++-----------------+--------+
+| finance-server1 | ACTIVE |
++-----------------+--------+
+As developer1, create a 1 GB volume called finance-volume1 in the finance project. Attach the finance-volume1 volume to the finance-server1 instance.
+
+Run the following command to create the volume.
+
+[student@workstation ~(developer1-finance)]$ openstack volume \
+create --size 1 \
+finance-volume1
+...output omitted...
+Verify that the new finance-volume1 volume is available to use.
+
+[student@workstation ~(developer1-finance)]$ openstack volume list
++-------------+-----------------+-----------+------+-------------+
+| ID          | Name            | Status    | Size | Attached to |
++-------------+-----------------+-----------+------+-------------+
+| 92ef...4f4f | finance-volume1 | available |    1 |             |
++-------------+-----------------+-----------+------+-------------+
+Attach finance-volume1 to finance-server1.
+
+[student@workstation ~(developer1-finance)]$ openstack server \
+add volume \
+finance-server1 finance-volume1
+Open the console URL of the finance-server1 instance in a browser. Log in as root with redhat as the password in the console of the instance and confirm that the new volume appears among the disks of the system. You can use the lsblk command to view the disk.
+
+NOTE
+Use the openstack console url show command to get the console URL of the instance.
+
+[student@workstation ~(developer1-finance)]$ openstack console url show \
+finance-server1 -f json
+{
+  "url": "http://172.25.250.50:6080/vnc_auto.html?token=0081acd7-be8b-4eef-83a9-3c79a47adbc7",
+  "type": "novnc"
+}
+Verify that the volume finance-volume1 exists in the volumes Ceph pool as an object.
+
+On workstation, open an SSH session to controller0 as root.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0
+[root@controller0 ~]# 
+Use the rados command to view the contents of the volumes pool.
+
+[root@controller0 ~]# rados -p volumes ls
+rbd_header.101fe33e645f4
+rbd_object_map.101fe33e645f4
+rbd_directory
+rbd_info
+rbd_id.volume-92ef6080-60ec-4017-b5ca-5e44485f4f4f
+Confirm that the volume ID from the output of the preceding command matches what the OpenStack Block Storage service displays in the output of the openstack volume list command as in step 8.2. The volume ID may differ in your environment.
+
+Verify that the Ceph settings are appropriately defined with the right pool name such that the OpenStack Block Storage service uses the Ceph storage as the back-end storage provider to accommodate a volume.
+
+Run the following command to retrieve the Ceph settings from the configuration file of the OpenStack Block Storage service API container.
+
+[root@controller0 ~]# docker \
+exec -it cinder_api \
+grep -Ei 'rbd|ceph' \
+/etc/cinder/cinder.conf | grep -v ^#
+enabled_backends=tripleo_ceph
+[tripleo_ceph]
+volume_backend_name=tripleo_ceph
+volume_driver=cinder.volume.drivers.rbd.RBDDriver
+rbd_ceph_conf=/etc/ceph/ceph.conf
+rbd_user=openstack
+rbd_pool=volumes
+Log off from controller0.
+
+[root@controller0 ~]# logout
+[student@workstation ~(developer1-finance)]$ 
+Cleanup
+
+On workstation, run the lab storage-backend cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab storage-backend cleanup
+This concludes the guided exercise.

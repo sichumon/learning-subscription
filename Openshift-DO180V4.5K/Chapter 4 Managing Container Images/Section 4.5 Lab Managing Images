@@ -1,0 +1,209 @@
+Lab: Managing Images
+
+Performance Checklist
+
+In this lab, you will create and manage container images.
+
+Outcomes
+
+You should be able to create a custom container image and manage container images.
+
+Open a terminal on workstation as the student user and run the following command:
+
+[student@workstation ~]$ lab image-review start
+Use the podman pull command to download the quay.io/redhattraining/nginx:1.17 container image. This image is a copy of the official container image availabe at docker.io/library/nginx:1.17.
+
+Ensure that you successfully downloaded the image.
+
+Use the podman pull command to pull the Nginx container image.
+
+[student@workstation ~]$ sudo podman pull quay.io/redhattraining/nginx:1.17
+Trying to pull Trying to pull quay.io/redhattraining/nginx:1.17...
+...output omitted...
+Storing signatures
+9beeba249f3ee158d3e495a6ac25c5667ae2de8a43ac2a8bfd2bf687a58c06c9
+Ensure that the container image exists on the local system by running the podman images command.
+
+[student@workstation ~]$ sudo podman images
+This command produces output similar to the following:
+
+REPOSITORY                     TAG    IMAGE ID       CREATED        SIZE
+quay.io/redhattraining/nginx   1.17   9beeba249f3e   6 months ago   131MB
+Start a new container using the Nginx image, according to the specifications listed in the following list.
+
+Name: official-nginx
+
+Run as daemon: yes
+
+Container image: nginx
+
+Port forward: from host port 8080 to container port 80.
+
+On workstation, use the podman run command to create a container named official-nginx.
+
+[student@workstation ~]$ sudo podman run --name official-nginx \
+> -d -p 8080:80 quay.io/redhattraining/nginx:1.17
+b9d5739af239914b371025c38340352ac1657358561e7ebbd5472dfd5ff97788
+Log in to the container using the podman exec command. Replace the contents of the index.html file with DO180. The web server directory is located at /usr/share/nginx/html.
+
+After the file has been updated, exit the container and use the curl command to access the web page.
+
+Log in to the container by using the podman exec command.
+
+[student@workstation ~]$ sudo podman exec -it official-nginx /bin/bash
+root@b9d5739af239:/# 
+Update the index.html file located at /usr/share/nginx/html. The file should read DO180.
+
+root@b9d5739af239:/# echo 'DO180' > /usr/share/nginx/html/index.html
+Exit the container.
+
+root@b9d5739af239:/# exit
+Use the curl command to ensure that the index.html file is updated.
+
+[student@workstation ~]$ curl 127.0.0.1:8080
+DO180
+Stop the running container and commit your changes to create a new container image. Give the new image a name of do180/mynginx and a tag of v1.0-SNAPSHOT. Use the following specifications:
+
+Image name: do180/mynginx
+
+Image tag: v1.0-SNAPSHOT
+
+Author name: your name
+
+Use the sudo podman stop command to stop the official-nginx container.
+
+[student@workstation ~]$ sudo podman stop official-nginx
+b9d5739af239914b371025c38340352ac1657358561e7ebbd5472dfd5ff97788
+Commit your changes to a new container image. Use your name as the author of the changes.
+
+[student@workstation ~]$ sudo podman commit -a 'Your Name' \
+> official-nginx do180/mynginx:v1.0-SNAPSHOT
+Getting image source signatures
+...output omitted...
+Storing signatures
+d6d10f52e258e4e88c181a56c51637789424e9261b208338404e82a26c960751
+List the available container images to locate your newly created image.
+
+[student@workstation ~]$ sudo podman images
+REPOSITORY                    TAG            IMAGE ID      CREATED         ...
+localhost/do180/mynginx       v1.0-SNAPSHOT  d6d10f52e258  30 seconds ago  ...
+quay.io/redhattraining/nginx  1.17           9beeba249f3e  6 months ago    ...
+Start a new container using the updated Nginx image, according to the specifications listed in the following list.
+
+Name: official-nginx-dev
+
+Run as daemon: yes
+
+Container image: do180/mynginx:v1.0-SNAPSHOT
+
+Port forward: from host port 8080 to container port 80.
+
+On workstation, use the podman run command to create a container named official-nginx-dev.
+
+[student@workstation ~]$ sudo podman run --name official-nginx-dev \
+> -d -p 8080:80 do180/mynginx:v1.0-SNAPSHOT
+cfa21f02a77d0e46e438c255f83dea2dfb89bb5aa72413a28866156671f0bbbb
+Log in to the container using the podman exec command, and introduce a final change. Replace the contents of the file /usr/share/nginx/html/index.html file with DO180 Page.
+
+After the file has been updated, exit the container and use the curl command to verify the changes.
+
+Log in to the container by using the podman exec command.
+
+[student@workstation ~]$ sudo podman exec -it official-nginx-dev /bin/bash
+root@cfa21f02a77d:/# 
+Update the index.html file located at /usr/share/nginx/html. The file should read DO180 Page.
+
+root@cfa21f02a77d:/# echo 'DO180 Page' > /usr/share/nginx/html/index.html
+Exit the container.
+
+root@cfa21f02a77d:/# exit
+Use the curl command to ensure that the index.html file is updated.
+
+[student@workstation ~]$ curl 127.0.0.1:8080
+DO180 Page
+Stop the running container and commit your changes to create the final container image. Give the new image a name of do180/mynginx and a tag of v1.0. Use the following specifications:
+
+Image name: do180/mynginx
+
+Image tag: v1.0
+
+Author name: your name
+
+Use the sudo podman stop command to stop the official-nginx-dev container.
+
+[student@workstation ~]$ sudo podman stop official-nginx-dev
+cfa21f02a77d0e46e438c255f83dea2dfb89bb5aa72413a28866156671f0bbbb
+Commit your changes to a new container image. Use your name as the author of the changes.
+
+[student@workstation ~]$ sudo podman commit -a 'Your Name' \
+> official-nginx-dev do180/mynginx:v1.0
+Getting image source signatures
+...output omitted...
+Storing signatures
+90915976c33de534e06778a74d2a8969c25ef5f8f58c0c1ab7aeaac19abd18af
+List the available container images in order to locate your newly created image.
+
+[student@workstation ~]$ sudo podman images
+REPOSITORY                     TAG             IMAGE ID       CREATED        ...
+localhost/do180/mynginx        v1.0            90915976c33d   6 seconds ago  ...
+localhost/do180/mynginx        v1.0-SNAPSHOT   d6d10f52e258   8 minutes ago  ...
+quay.io/redhattraining/nginx   1.17            9beeba249f3e   6 months ago   ...
+Remove the development image do180/mynginx:v1.0-SNAPSHOT from local image storage.
+
+Despite being stopped, the official-nginx-dev is still present. Display the container with the podman ps command with the -a flag.
+
+[student@workstation ~]$ sudo podman ps -a \
+> --format="{{.ID}} {{.Names}} {{.Status}}"
+cfa21f02a77d   official-nginx-dev   Exited (0) 9 minutes ago
+b9d5739af239   official-nginx       Exited (0) 12 minutes ago
+Remove the container with the podman rm command.
+
+[student@workstation ~]$ sudo podman rm official-nginx-dev
+cfa21f02a77d0e46e438c255f83dea2dfb89bb5aa72413a28866156671f0bbbb
+Verify that the container is deleted by resubmitting the same podman ps command.
+
+[student@workstation ~]$ sudo podman ps -a \
+> --format="{{.ID}} {{.Names}} {{.Status}}"
+b9d5739af239   official-nginx       Exited (0) 12 minutes ago
+Use the sudo podman rmi command to remove the do180/mynginx:v1.0-SNAPSHOT image.
+
+[student@workstation ~]$ sudo podman rmi do180/mynginx:v1.0-SNAPSHOT
+Untagged: localhost/do180/mynginx:v1.0-SNAPSHOT
+Verify that the image is no longer present by listing all images using the podman images command.
+
+[student@workstation ~]$ sudo podman images
+REPOSITORY                     TAG    IMAGE ID       CREATED         SIZE
+localhost/do180/mynginx        v1.0   90915976c33d   5 minutes ago   131MB
+quay.io/redhattraining/nginx   1.17   9beeba249f3e   6 months ago    131MB
+Use the image tagged do180/mynginx:v1.0 to create a new container with the following specifications:
+
+Container name: my-nginx
+
+Run as daemon: yes
+
+Container image: do180/mynginx:v1.0
+
+Port forward: from host port 8280 to container port 80
+
+On workstation, use the curl command to access the web server, accessible from the port 8280.
+
+Use the sudo podman run command to create the my-nginx container, according to the specifications.
+
+[student@workstation ~]$ sudo podman run -d --name my-nginx \
+> -p 8280:80 do180/mynginx:v1.0
+51958c8ec8d2613bd26f85194c66ca96c95d23b82c43b23b0f0fb9fded74da20
+Use the curl command to ensure that the index.html page is available and returns the custom content.
+
+[student@workstation ~]$ curl 127.0.0.1:8280
+DO180 Page
+Evaluation
+
+Grade your work by running the lab image-review grade command on your workstation machine. Correct any reported failures and rerun the script until successful.
+
+[student@workstation ~]$ lab image-review grade
+Finish
+
+On workstation, run the lab image-review finish command to complete this lab.
+
+[student@workstation ~]$ lab image-review finish
+This concludes the lab.

@@ -1,0 +1,186 @@
+Lab: Configuring Persistent Storage
+In this lab, you will create local block storage resources for the cluster and deploy a database that uses local block storage.
+
+Outcomes
+
+You should be able to:
+
+Use a storage class in a persistent volume claim to request block storage.
+
+Create a storage quota that restricts storage resources by storage class.
+
+Install the Local Storage Operator.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+The additional worker nodes (worker04, worker05, and worker06), which are active and in a Ready state. If the additional worker nodes are not active, then ensure you have completed the section called “Guided Exercise: Adding Worker Nodes”.
+
+On the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable.
+
+[student@workstation ~]$ lab storage-review start
+Procedure 8.4. Instructions
+
+Create an operator group, to start the installation of the Local Storage Operator.
+
+As the admin user, create a local-storage operator group resource in the storage-local project. Ensure that the operator group targets the storage-local namespace.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Create the storage-local project.
+
+[student@workstation ~]$ oc new-project storage-local
+Now using project "storage-local" on server "https://api.ocp4.example.com:6443".
+
+...output omitted...
+Create a resource file for the local-storage operator group, which contains the following:
+
+apiVersion: operators.coreos.com/v1alpha2
+kind: OperatorGroup
+metadata:
+  name: local-storage
+  namespace: storage-local
+spec:
+  targetNamespaces:
+    - storage-local
+Create the operator group resource from the resource definition file you created.
+
+The following command assumes that the resource definition file is the operatorgroup.yml file.
+
+[student@workstation ~]$ oc apply -f operatorgroup.yml
+operatorgroup.operators.coreos.com/local-storage created
+To finish operator installation, create a subscription resource for the Local Storage Operator in the storage-local project.
+
+Verify that a cluster service version resource exists after you create the subscription.
+
+Create a subscription resource file for the local storage operator, which contains the following:
+
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: local-storage-operator
+  namespace: storage-local
+spec:
+  channel: "4.5"
+  installApproval: automatic
+  name: local-storage-operator
+  source:  redhat-operators
+  sourceNamespace: openshift-marketplace
+Create the subscription resource from the resource definition file you created.
+
+The following command assumes that the resource definition file is the subscription.yml file.
+
+[student@workstation ~]$ oc apply -f subscription.yml
+subscription.operators.coreos.com/local-storage-operator created
+Verify the cluster service version resource exists for the local storage operator:
+
+[student@workstation ~]$ oc get csv
+NAME                                   DISPLAY         ...     PHASE
+local-storage-operator.4.5.0-2020...   Local Storage   ...     Succeeded
+The Local Storage Operator uses configuration from LocalVolume resources to create and manage local persistent volumes.
+
+Create a LocalVolume resource. Ensure that the operator creates a persistent volume for each /dev/vdb device that is attached to the cluster nodes.
+
+Further ensure that each persistent volume:
+
+corresponds to the local-blk storage class.
+
+uses a Filesystem volume mode.
+
+Create a LocalVolume resource definition file, which contains the following:
+
+apiVersion: local.storage.openshift.io/v1
+kind: LocalVolume
+metadata:
+  name: local-storage
+spec:
+  storageClassDevices:
+    - devicePaths:
+        - /dev/vdb
+      fsType: ext4
+      storageClassName: local-blk
+      volumeMode: Filesystem
+Create the LocalVolume resource from the resource definition file you created.
+
+The following command assumes that the resource definition file is the localvolume.yml file.
+
+[student@workstation ~]$ oc apply -f localvolume.yml
+localvolume.local.storage.openshift.io/local-storage created
+As the admin user, create a storage-review project. Add the developer user as an administrator for the project.
+
+Create a storage quota that restricts the project to:
+
+1 persistent volume claim for storage from the local-blk storage class.
+
+10 GB of requested storage, regardless of storage class.
+
+Create the storage-review project.
+
+[student@workstation ~]$ oc new-project storage-review
+Now using project "storage-review" on server ...
+
+...output omitted...
+Add the developer user as a project administrator.
+
+[student@workstation ~]$ oc policy add-role-to-user admin developer
+clusterrole.rbac.authorization.k8s.io/admin added: "developer"
+Create a storage quota for the storage-review project:
+
+[student@workstation ~]$ sclass=local-blk.storageclass.storage.k8s.io
+[student@workstation ~]$ limit1=${sclass}/persistentvolumeclaims=1
+[student@workstation ~]$ limit2=requests.storage=10G
+[student@workstation ~]$ oc create quota storage \
+>  --hard=${limit1},${limit2}
+resourcequota/storage created
+As the developer user, deploy a postgres database in the storage-review project.
+
+The ~/DO380/labs/storage-review directory contains a postgres subdirectory. This subdirectory contains resources to deploy a postgres database.
+
+Modify the postgres/statefulset.yml file to ensure that the database uses a local-blk persistent volume.
+
+Log in as the developer user.
+
+[student@workstation ~]$ oc login -u developer \
+>  -p developer https://api.ocp4.example.com:6443
+...output omitted...
+Ensure the storage-review project is the active project.
+
+[student@workstation ~]$ oc project storage-review
+...output omitted...
+Modify the volumeClaimTemplates section of the ~/DO380/labs/storage-review/postgres/statefulset.yml file to match the following:
+
+...output omitted...
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      storageClassName: local-blk
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 2Gi
+Deploy the database.
+
+[student@workstation ~]$ oc apply -k ~/DO380/labs/storage-review/postgres/
+secret/postgresql created
+service/postgresql created
+statefuleset.apps/postgresql created
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab storage-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab storage-review finish
+This concludes the section.

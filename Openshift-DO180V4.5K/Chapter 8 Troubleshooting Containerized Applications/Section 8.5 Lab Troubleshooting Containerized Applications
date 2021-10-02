@@ -1,0 +1,351 @@
+Lab: Troubleshooting Containerized Applications
+Performance Checklist
+
+In this lab, you will troubleshoot the OpenShift build and deployment process for a Node.js application.
+
+Outcomes
+
+You should be able to identify and solve the problems raised during the build and deployment process of a Node.js application.
+
+A running OpenShift cluster.
+
+Open a terminal on workstation as the student user and run the following command:
+
+[student@workstation ~]$ lab troubleshoot-review start
+Load the configuration of your classroom environment. Run the following command to load the environment variables created in the first guided exercise:
+
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+Enter your local clone of the DO180-apps Git repository and checkout the master branch of the course's repository to ensure you start this exercise from a known good state:
+
+[student@workstation ~]$ cd ~/DO180-apps
+[student@workstation DO180-apps]$ git checkout master
+...output omitted...
+Create a new branch to save any changes you make during this exercise:
+
+[student@workstation DO180-apps]$ git checkout -b troubleshoot-review
+Switched to a new branch 'troubleshoot-review'
+[student@workstation DO180-apps]$ git push -u origin troubleshoot-review
+...output omitted...
+* [new branch]      troubleshoot-review -> troubleshoot-review
+Branch 'troubleshoot-review' set up to track remote branch 'troubleshoot-review' from 'origin'.
+Log in to OpenShift using the configured user, password and Master API URL.
+
+[student@workstation DO180-apps]$ oc login -u "${RHT_OCP4_DEV_USER}" \
+> -p "${RHT_OCP4_DEV_PASSWORD}" "${RHT_OCP4_MASTER_API}"
+Login successful.
+...output omitted...
+Create a new project named youruser-nodejs-app:
+
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-nodejs-app
+Now using project "youruser-nodejs-app" on server "https://api.cluster.lab.example.com"
+...output omitted...
+In the youruser-nodejs-app OpenShift project, create a new application from the source code located nodejs-app directory in the Git repository at https://github.com/yourgituser/DO180-apps. Name the application nodejs-dev.
+
+Expect the build process for the application to fail. Monitor the build process and identify the build failure.
+
+Run the oc new-app command to create the Node.js application.
+
+[student@workstation ~]$ oc new-app --as-deployment-config --name nodejs-dev \
+> https://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps#troubleshoot-review \
+> -i nodejs:12 --context-dir=nodejs-app --build-env \
+> npm_config_registry=http://${RHT_OCP4_NEXUS_SERVER}/repository/npm-proxy
+--> Found image a2b5ec2 ...output omitted...
+
+  Node.js 12
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "nodejs-dev" created
+    buildconfig.build.openshift.io "nodejs-dev" created
+    deploymentconfig.apps.openshift.io "nodejs-dev" created
+    service "nodejs-dev" created
+--> Success
+    Build scheduled, use 'oc logs -f bc/nodejs-dev' to track its progress.
+    Application is not exposed. You can expose services to the outside world by executing one or more of the commands below:
+     'oc expose svc/nodejs-dev'
+    Run 'oc status' to view your app.
+Monitor build progress with the oc logs -f bc/nodejs-dev command:
+
+[student@workstation ~]$ oc logs -f bc/nodejs-dev
+Cloning "https://github.com/yourgituser/DO180-apps" ...
+...output omitted...
+STEP 8: RUN /usr/libexec/s2i/assemble
+---> Installing application source ...
+---> Installing all dependencies
+npm ERR! code ETARGET
+npm ERR! notarget No matching version found for express@4.20.
+npm ERR! notarget In most cases you or one of your dependencies are requesting
+npm ERR! notarget a package version that doesn't exist.
+npm ERR! notarget
+npm ERR! notarget It was specified as a dependency of 'src'
+npm ERR! notarget
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /opt/app-root/src/.npm/_logs/2019-10-28T11_30_27_657Z-debug.log
+subprocess exited with status 1
+subprocess exited with status 1
+error: build error: error building at STEP "RUN /usr/libexec/s2i/assemble": exit status 1
+The build process fails, and therefore no application is running. The build log indicates that there is no version of the express package that matches a version specification of 4.20.x.
+
+Use the oc get pods command to confirm that the application is not deployed:
+
+[student@workstation ~]$ oc get pods
+NAME                 READY   STATUS   RESTARTS   AGE
+nodejs-dev-1-build   0/1     Error    0          2m
+Update the version of the express dependency in the package.json file with a value of 4.x. Commit and push the changes to the Git repository.
+
+Edit the package.json file in the nodejs-app subdirectory, and change the version of the express dependency to 4.x. Save the file.
+
+[student@workstation DO180-apps]$ cd nodejs-app
+[student@workstation nodejs-app]$ sed -i s/4.20/4.x/ package.json
+The file contains the following content:
+
+[student@workstation nodejs-app]$ cat package.json
+{
+  "name": "nodejs-app",
+  "version": "1.0.0",
+  "description": "Hello World App",
+  "main": "server.js",
+  "author": "Red Hat Training",
+  "license": "ASL",
+  "dependencies": {
+    "express": "4.x",
+    "html-errors": "latest"
+  }
+}
+Commit and push the changes made to the project.
+
+From the terminal window, run the following command to commit and push the changes:
+
+[student@workstation nodejs-app]$ git commit -am "Fixed Express release"
+...output omitted...
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[student@workstation nodejs-app]$ git push
+...output omitted...
+To https://github.com/yourgituser/DO180-apps/
+   ef6557d..73a82cd  troubleshoot-review -> troubleshoot-review
+Rebuild the application. Verify that the application builds without errors.
+
+Use the oc start-build command to rebuild the application.
+
+[student@workstation nodejs-app]$ oc start-build bc/nodejs-dev
+build.build.openshift.io/nodejs-dev-2 started
+Use the oc logs command to monitor the build process logs:
+
+[student@workstation nodejs-app]$ oc logs -f bc/nodejs-dev
+Cloning "https://github.com/yourgituser/DO180-apps" ...
+...output omitted...
+Pushing image ...image-registry.svc:5000/nodejs-app/nodejs-dev:latest ...
+...output omitted...
+Push successful
+The build succeeds if an image is pushed to the internal OpenShift registry.
+
+Verify that the application is not running because of a runtime error. Review the logs and identify the problem.
+
+Use the oc get pods command to check the status of the deployment of the application pod. Eventually, you see that the first application deployment has a status of CrashLoopBackoff.
+
+[student@workstation nodejs-app]$ oc get pods
+NAME                  READY   STATUS             RESTARTS   AGE
+nodejs-dev-1-build    0/1     Error              0          4m27s
+nodejs-dev-1-deploy   0/1     Completed          0          28s
+nodejs-dev-1-skf56    0/1     CrashLoopBackOff   2          25s
+nodejs-dev-2-build    0/1     Completed          0          58s
+Use the oc logs -f dc/nodejs-dev command to follow the logs for the application deployment:
+
+[student@workstation nodejs-app]$ oc logs -f dc/nodejs-dev
+Environment:
+  DEV_MODE=false
+  NODE_ENV=production
+  DEBUG_PORT=5858
+...output omitted...
+
+Error: Cannot find module 'http-error'
+
+...output omitted...
+
+npm info nodejs-app@1.0.0 Failed to exec start script
+...output omitted...
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! nodejs-app@1.0.0 start: `node server.js`
+npm ERR! Exit status 1
+npm ERR!
+npm ERR! Failed at the nodejs-app@1.0.0 start script.
+npm ERR! This is probably not a problem with npm. There is likely additional logging output above.
+npm timing npm Completed in 159ms
+...output omitted...
+The log indicates that the server.js file attempts to load a module named http-error. The dependencies variable in the packages file indicates that the module name is html-errors, not http-error.
+
+Correct the spelling of the dependency in the first line of the server.js file. Commit and push changes to the application to the Git repository. Rebuild the application. After the application builds, verify that the application is running.
+
+Correct the spelling of the module in the first line of the server.js from http-error to html-errors. Save the file.
+
+[student@workstation nodejs-app]$ sed -i s/http-error/html-errors/ server.js
+The file contains the following content:
+
+[student@workstation nodejs-app]$ cat server.js
+var createError = require('html-errors');
+
+var express = require('express');
+app = express();
+
+app.get('/', function (req, res) {
+  res.send('Hello World from pod: ' + process.environment.HOSTNAME + '\n')
+});
+
+app.listen(8080, function () {
+  console.log('Example app listening on port 8080!');
+});
+Commit and push the changes made to the project.
+
+[student@workstation nodejs-app]$ git commit -am "Fixed module typo"
+...output omitted...
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[student@workstation nodejs-app]$ git push
+...output omitted...
+To https://github.com/yourgituser/DO180-apps/
+   ef6557d..73a82cd  troubleshoot-review -> troubleshoot-review
+Use the oc start-build command to rebuild the application.
+
+[student@workstation nodejs-app]$ oc start-build bc/nodejs-dev
+build.build.openshift.io/nodejs-dev-3 started
+Use the oc logs command to monitor the build process logs:
+
+[student@workstation nodejs-app]$ oc logs -f bc/nodejs-dev
+Cloning "https://github.com/yourgituser/DO180-apps" ...
+...output omitted...
+Pushing image ...-image-registry.svc:5000/nodejs-app/nodejs-dev:latest ...
+...output omitted...
+Push successful
+Use the oc get pods -w command to monitor the deployment of pods for the nodejs-dev application:
+
+[student@workstation nodejs-app]$ oc get pods -w
+NAME                  READY   STATUS      RESTARTS   AGE
+nodejs-dev-1-build    0/1     Error       0          11m
+nodejs-dev-1-deploy   0/1     Completed   0          7m11s
+nodejs-dev-2-9nds4    1/1     Running     0          56s
+nodejs-dev-2-build    0/1     Completed   0          7m41s
+nodejs-dev-2-deploy   0/1     Completed   0          61s
+nodejs-dev-3-build    0/1     Completed   0          94s
+After a third build, the second deployment results in a status of Running.
+
+Create a route for the application and test access to the application. Expect an error message. Review the logs to identify the error.
+
+Use the oc expose command to create a route for the nodejs-dev application:
+
+[student@workstation nodejs-app]$ oc expose svc nodejs-dev
+route.route.openshift.io/nodejs-dev exposed
+Use the oc get route command to retrieve the URL of nodejs-dev route:
+
+[student@workstation nodejs-app]$ oc get route
+NAME         HOST/PORT                                          ...
+nodejs-dev   nodejs-dev-your_user-nodejs-app.wildcard_domain    ...
+Use the curl to access the route. Expect an error message to display.
+
+[student@workstation nodejs-app]$ curl \
+> nodejs-dev-${RHT_OCP4_DEV_USER}-nodejs-app.${RHT_OCP4_WILDCARD_DOMAIN}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Internal Server Error</pre>
+</body>
+</html>
+Review the logs for the nodejs-dev deployment configuration:
+
+[student@workstation nodejs-app]$ oc logs dc/nodejs-dev
+Environment:
+	DEV_MODE=false
+	NODE_ENV=production
+	DEBUG_PORT=5858
+Launching via npm...
+npm info it worked if it ends with ok
+npm info using npm@6.14.5
+npm info using node@v12.18.2
+npm info lifecycle nodejs-app@1.0.0~prestart: nodejs-app@1.0.0
+npm info lifecycle nodejs-app@1.0.0~start: nodejs-app@1.0.0
+
+Example app listening on port 8080!
+TypeError: Cannot read property 'HOSTNAME' of undefined
+...output omitted...
+The corresponding section of the server.js file is:
+
+app.get('/', function (req, res) {
+  res.send('Hello World from pod: ' + process.environment.HOSTNAME + '\n')
+});
+A process object in Node.js contains a reference to a env object, not a environment object.
+
+Replace process.environment with process.env in the server.js file to fix the error. Commit and push the application changes to the Git repository. Rebuild the application. When the new application deploys, verify that application does not generate errors when you access the application URL.
+
+Replace process.environment with process.env in the server.js file to fix the error.
+
+[student@workstation nodejs-app]$ sed -i \
+> s/process.environment/process.env/ server.js
+The file contains the following content:
+
+[student@workstation nodejs-app]$ cat server.js
+var createError = require('html-errors');
+
+var express = require('express');
+app = express();
+
+app.get('/', function (req, res) {
+  res.send('Hello World from pod: ' + process.env.HOSTNAME + '\n')
+});
+
+app.listen(8080, function () {
+  console.log('Example app listening on port 8080!');
+});
+Commit and push the changes made to the project.
+
+[student@workstation nodejs-app]$ git commit -am "Fixed process.env"
+...output omitted...
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[student@workstation nodejs-app]$ git push
+...output omitted...
+To https://github.com/yourgituser/DO180-apps/
+   ef6557d..73a82cd  troubleshoot-review -> troubleshoot-review
+Use the oc start-build command to rebuild the application.
+
+[student@workstation nodejs-app]$ oc start-build bc/nodejs-dev
+build.build.openshift.io/nodejs-dev-4 started
+Use the oc logs command to monitor the build process logs:
+
+[student@workstation nodejs-app]$ oc logs -f bc/nodejs-dev
+Cloning "https://github.com/yourgituser/DO180-apps" ...
+...output omitted...
+Pushing image ...image-registry.svc:5000/nodejs-app/nodejs-dev:latest ...
+...output omitted...
+Push successful
+Use the oc get pods command to monitor the deployment of pods for the nodejs-dev application:
+
+[student@workstation nodejs-app]$ oc get pods
+NAME                  READY   STATUS      RESTARTS   AGE
+nodejs-dev-1-build    0/1     Error       0          21m
+nodejs-dev-1-deploy   0/1     Completed   0          17m
+nodejs-dev-2-build    0/1     Completed   0          17m
+nodejs-dev-2-deploy   0/1     Completed   0          11m
+nodejs-dev-3-build    0/1     Completed   0          11m
+nodejs-dev-3-deploy   0/1     Completed   0          20s
+nodejs-dev-3-wlpps    1/1     Running     0          17s
+nodejs-dev-4-build    0/1     Completed   0          48s
+After a fourth build, the third deployment has a status of Running.
+
+Use the curl command to test the application. The application displays a Hello World message containing the host name of the application pod:
+
+[student@workstation nodejs-app]$ curl \
+> nodejs-dev-${RHT_OCP4_DEV_USER}-nodejs-app.${RHT_OCP4_WILDCARD_DOMAIN}
+Hello World from pod: nodejs-dev-3-wlpps
+Evaluation
+
+Grade your work by running the lab troubleshoot-review grade command from your workstation machine. Correct any reported failures and rerun the script until successful.
+
+[student@workstation nodejs-app]$ lab troubleshoot-review grade
+Finish
+
+From workstation, run the lab troubleshoot-review finish command to complete this lab.
+
+[student@workstation nodejs-app]$ lab troubleshoot-review finish
+This concludes the lab.

@@ -1,0 +1,273 @@
+Guided Exercise: Customizing an Image
+In this exercise you will customize disk images using guestfish and virt-customize.
+
+Outcomes
+
+You should be able to:
+
+Customize an image using guestfish.
+
+Customize an image using virt-customize.
+
+Upload an image into Glance.
+
+Spawn an instance using a customized image.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab customization-img-customizing setup command. This ensures that the required packages are installed on workstation, and provisions the environment with a public network, a private network, a private key, and security rules to access the instance.
+
+[student@workstation ~]$ lab customization-img-customizing setup
+On workstation, retrieve the osp-small.qcow2 disk image from http://materials.example.com/osp-small.qcow2 and save it as /home/student/finance-rhel-db.qcow2.
+
+[student@workstation ~]$ wget http://materials.example.com/osp-small.qcow2 \
+-O ~/finance-rhel-db.qcow2
+Use the guestfish command to update the image to include network access.
+
+[student@workstation ~]$ guestfish -i --network -a ~/finance-rhel-db.qcow2
+
+Welcome to guestfish, the guest filesystem shell for
+editing virtual machine filesystems and disk images.
+
+Type: 'help' for help on commands
+      'man' to read the manual
+      'quit' to quit the shell
+
+Operating system: Red Hat Enterprise Linux Server 7.5 (Maipo)
+/dev/sda1 mounted on /
+
+><fs>
+Install the mariadb and mariadb-server packages.
+
+><fs> command "yum -y install mariadb mariadb-server"
+...output omitted...
+Installed:
+  mariadb.x86_64 3:10.1.20-2.el7ost   mariadb-server.x86_64 3:10.1.20-2.el7ost
+
+Dependency Installed:
+  libaio.x86_64 0:0.3.109-13.el7
+  lsof.x86_64 0:4.87-5.el7
+  mariadb-errmsg.x86_64 3:10.1.20-2.el7ost
+  perl-Compress-Raw-Bzip2.x86_64 0:2.061-3.el7
+  perl-Compress-Raw-Zlib.x86_64 1:2.061-4.el7
+  perl-DBD-MySQL.x86_64 0:4.023-6.el7
+  perl-DBI.x86_64 0:1.627-4.el7
+  perl-Data-Dumper.x86_64 0:2.145-3.el7
+  perl-IO-Compress.noarch 0:2.061-2.el7
+  perl-Net-Daemon.noarch 0:0.48-5.el7
+  perl-PlRPC.noarch 0:0.2020-14.el7
+  socat.x86_64 0:1.7.3.2-2.el7
+
+Complete!
+Enable the mariadb service.
+
+><fs> command "systemctl enable mariadb"
+Because there was no output, ensure the mariadb service was enabled.
+
+><fs> command "systemctl is-enabled mariadb"
+enabled
+Ensure the SELinux contexts for all affected files are correct.
+
+IMPORTANT
+Do not forget to fix SELinux file contexts at this time.
+
+><fs> selinux-relabel /etc/selinux/targeted/contexts/files/file_contexts /
+Log out from the guestfish shell.
+
+><fs> exit
+
+[student@workstation ~]$
+As the developer1 OpenStack user, upload the finance-rhel-db.qcow2 image to the image service as finance-rhel-db, with a minimum disk requirement of 10 GiB, and a minimum RAM requirement of 2 GiB.
+
+Source the /home/student/developer1-finance-rc credential file.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ 
+As the developer1 OpenStack user, upload the finance-rhel-db.qcow2 image to the image service as finance-rhel-db.
+
+[student@workstation ~(developer1-finance)]$ openstack image create \
+--disk-format qcow2 \
+--min-disk 10 \
+--min-ram 2048 \
+--file ~/finance-rhel-db.qcow2 \
+finance-rhel-db
+...output omitted...
+Launch an instance in the environment using the following attributes:
+
+Table 4.8. Instance Attributes
+
+Attribute	Value
+flavor	default
+key pair	example-keypair
+network	finance-network1
+image	finance-rhel-db
+security group	finance-db
+name	finance-db1
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--security-group finance-db \
+--image finance-rhel-db \
+--wait finance-db1
+...output omitted...
+List the available floating IP addresses, and then allocate one to finance-db1.
+
+List the floating IPs; unallocated IPs have None listed as their Port value.
+
+[student@workstation ~(developer1-finance)]$ openstack floating ip list \
+-c "Floating IP Address" -c Port
++---------------------+------+
+| Floating IP Address | Port |
++---------------------+------+
+| 172.25.250.110      | None |
+| 172.25.250.107      | None |
++---------------------+------+
+Attach an unallocated floating IP to the finance-db1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server add floating \
+ip finance-db1 172.25.250.110
+Use ssh to connect to the finance-db1 instance. Ensure the mariadb-server package is installed, and that the mariadb service is enabled and running.
+
+Use the ssh command to log in to finance-db1 as the cloud-user user.
+
+[student@workstation ~(developer1-finance)]$ ssh cloud-user@172.25.250.110
+Warning: Permanently added '172.25.250.110' (ECDSA) to the list of known hosts.
+[cloud-user@finance-db1 ~]$ 
+Confirm that the mariadb-server package is installed.
+
+[cloud-user@finance-db1 ~]$ rpm -q mariadb-server
+mariadb-server-10.1.20-2.el7ost.x86_64
+Confirm that the mariadb service is enabled and running, and then log off.
+
+[cloud-user@finance-db1 ~]$ systemctl status mariadb
+...output omitted...
+   Loaded: loaded (/usr/lib/systemd/system/mariadb.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2018-09-19 04:21:31 EDT; 1h 38min ago
+  Process: 1033 ExecStartPost=/usr/libexec/mariadb-wait-ready $MAINPID (code=exited, status=0/SUCCESS)
+  Process: 815 ExecStartPre=/usr/libexec/mariadb-prepare-db-dir %n (code=exited, status=0/SUCCESS)
+ Main PID: 1031 (mysqld_safe)
+...output omitted...
+[cloud-user@finance-db1 ~]$ logout
+Connection to 172.25.250.110 closed.
+[student@workstation ~(developer1-finance)]$ 
+On workstation, retrieve the osp-small.qcow2 image from http://materials.example.com/osp-small.qcow2 and save it as /home/student/finance-rhel-mail.qcow2.
+
+[student@workstation ~(developer1-finance)]$ wget \
+http://materials.example.com/osp-small.qcow2 -O ~/finance-rhel-mail.qcow2
+Use the virt-customize command to customize the ~/finance-rhel-mail.qcow2 image. Enable the postfix service, configure postfix to listen on all interfaces, and relay all mail to workstation.lab.example.com. Install the mailx package to enable sending a test email. Ensure the SELinux contexts are restored.
+
+[student@workstation ~(developer1-finance)]$ virt-customize \
+-a ~/finance-rhel-mail.qcow2 \
+--run-command 'systemctl enable postfix' \
+--run-command 'postconf -e "relayhost = [workstation.lab.example.com]"' \
+--run-command 'postconf -e "inet_interfaces = all"' \
+--run-command 'yum -y install mailx' \
+--selinux-relabel
+[   0.0] Examining the guest ...
+[  26.8] Setting a random seed
+[  26.9] Running: systemctl enable postfix
+[  27.9] Running: postconf -e "relayhost = [workstation.lab.example.com]"
+[  28.8] Running: postconf -e "inet_interfaces = all"
+[  29.7] Running: yum -y install mailx
+[  54.5] SELinux relabelling
+[ 187.8] Finishing off
+As the developer1 OpenStack user, upload the finance-rhel-mail.qcow2 image to the image service as finance-rhel-mail, with a minimum disk requirement of 10 GiB, and a minimum RAM requirement of 2 GiB.
+
+Use the openstack command to upload the finance-rhel-mail.qcow2 image to the image service.
+
+[student@workstation ~(developer1-finance)]$ openstack image create \
+--disk-format qcow2 \
+--min-disk 10 \
+--min-ram 2048 \
+--file ~/finance-rhel-mail.qcow2 \
+finance-rhel-mail
+...output omitted...
+Launch an instance in the environment using the following attributes:
+
+Table 4.9. Instance Attributes
+
+Attribute	Value
+flavor	default
+key pair	example-keypair
+network	finance-network1
+image	finance-rhel-mail
+security group	finance-mail
+name	finance-mail1
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--security-group finance-mail \
+--image finance-rhel-mail \
+--wait finance-mail1
+...output omitted...
+List the available floating IP addresses, and allocate one to finance-mail1.
+
+List the available floating IP addresses.
+
+[student@workstation ~(developer1-finance)]$ openstack floating ip list \
+-c "Floating IP Address" -c Port
++---------------------+--------------------------------------+
+| Floating IP Address | Port                                 |
++---------------------+--------------------------------------+
+| 172.25.250.110      | 1ce9ffa5-b52b-4581-a696-52f464912500 |
+| 172.25.250.107      | None                                 |
++---------------------+--------------------------------------+
+Attach an available floating IP to the finance-mail1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server add floating \
+ip finance-mail1 172.25.250.107
+Use ssh to connect to the finance-mail1 instance. Ensure the postfix service is running, that postfix is listening on all interfaces, and that the relay_host option is correct.
+
+Use the ssh command to log in to the finance-mail1 instance as the cloud-user user.
+
+[student@workstation ~(developer1-finance)]$ ssh cloud-user@172.25.250.107
+Warning: Permanently added '172.25.250.107' (ECDSA) to the list of known hosts.
+[cloud-user@finance-mail1 ~]$ 
+Ensure the postfix service is running.
+
+[cloud-user@finance-mail1 ~]$ systemctl status postfix
+...output omitted...
+   Loaded: loaded (/usr/lib/systemd/system/postfix.service; enabled; vendor preset: disabled)
+   Active: active (running) since Wed 2018-09-19 06:12:00 EDT; 8min ago
+  Process: 1064 ExecStart=/usr/sbin/postfix start (code=exited, status=0/SUCCESS)
+  Process: 1061 ExecStartPre=/usr/libexec/postfix/chroot-update (code=exited, status=0/SUCCESS)
+  Process: 1058 ExecStartPre=/usr/libexec/postfix/aliasesdb (code=exited, status=0/SUCCESS)
+ Main PID: 1136 (master)
+...output omitted...
+Ensure postfix is listening on all interfaces.
+
+[cloud-user@finance-mail1 ~]$ sudo ss -tnlp | grep master
+LISTEN     0    100       *:25       *:*      users:(("master",pid=1136,fd=13))
+LISTEN     0    100      :::25      :::*      users:(("master",pid=1136,fd=14))
+Ensure the relayhost option is correctly configured.
+
+[cloud-user@finance-mail1 ~]$ postconf relayhost
+relayhost = [workstation.lab.example.com]
+Send a test email to <student@workstation.lab.example.com>.
+
+[cloud-user@finance-mail1 ~]$ mail -s "Test" student@workstation.lab.example.com
+Hello World!
+.
+EOT
+Return to workstation. Use the mail command to confirm that the test email arrived.
+
+[cloud-user@finance-mail1 ~]$ logout
+Connection to 172.25.250.107 closed.
+You have new mail in /var/spool/mail/student
+[student@workstation ~]$ mail
+Heirloom Mail version 12.5 7/5/10.  Type ? for help.
+"/var/spool/mail/student": 1 message 1 new
+>N  1 Cloud User            Wed Sep 19 10:21  21/938   "Test"
+& q
+Held 1 message in /var/spool/mail/student
+You have mail in /var/spool/mail/student
+[student@workstation ~]$ 
+Cleanup
+
+On workstation, run the lab customization-img-customizing cleanup command to clean up this exercise.
+
+[student@workstation ~]$ lab customization-img-customizing cleanup

@@ -1,0 +1,132 @@
+
+Guided Exercise: Viewing the Undercloud Architecture
+
+In this exercise, you will connect to the undercloud node, director, to navigate the undercloud configuration.
+
+Outcomes
+
+You should be able to navigate the undercloud.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab architecture-undercloud setup command. The script verifies that the undercloud node, director, is reachable.
+
+[student@workstation ~]$ lab architecture-undercloud setup
+Log in to the director node as the stack user. Open the undercloud.conf file and inspect the DHCP configuration.
+
+From workstation, log in to the director node.
+
+[student@workstation ~]$ ssh stack@director
+(undercloud) [stack@director ~]$ 
+Open the /home/stack/undercloud.conf file. Notice the IP addresses in the dhcp_start and dhcp_end parameters.
+
+(undercloud) [stack@director ~]$ grep "^dhcp*" undercloud.conf
+dhcp_start = 172.25.249.51
+dhcp_end = 172.25.249.59
+In the /home/stack/undercloud.conf file, search for the undercloud_public_vip and undercloud_admin_vip parameters. These IP addresses are defined for the director's public API and admin API endpoints.
+
+(undercloud) [stack@director ~]$ grep "^undercloud_.*vip" undercloud.conf
+undercloud_public_vip = 172.25.249.201
+undercloud_admin_vip = 172.25.249.202
+In the /home/stack/undercloud.conf file, search for the undercloud_admin_password parameter.
+
+(undercloud) [stack@director ~]$ grep "^undercloud_.*password" undercloud.conf
+undercloud_admin_password = redhat
+Observe that the stackrc environment file automatically loaded with the admin user credentials. View the stack user's environment, which is used to connect to the undercloud.
+
+Use the openstack endpoint list command to list the public API endpoint of the identity service on director.
+
+(undercloud) [stack@director ~]$ openstack endpoint list \
+-c 'Service Type' -c 'Interface' -c 'URL'
++-------------------------+-----------+------------------------------+
+| Service Type            | Interface | URL                          |
++-------------------------+-----------+------------------------------+
+...output omitted...
+| identity                | public    | https://172.25.249.201:13000 |
++-------------------------+-----------+------------------------------+
+View the identity service environment variables loaded in the stack user's environment.
+
+(undercloud) [stack@director ~]$ env | grep OS_
+OS_BAREMETAL_API_VERSION=1.34
+OS_USER_DOMAIN_NAME=Default
+OS_PROJECT_NAME=admin
+OS_IDENTITY_API_VERSION=3
+OS_PASSWORD=redhat
+OS_AUTH_TYPE=password
+PS1=${OS_CLOUDNAME:+($OS_CLOUDNAME)} [\u@\h \W]\$
+OS_AUTH_URL=https://172.25.249.201:13000/
+OS_USERNAME=admin
+OS_NO_CACHE=True
+OS_CLOUDNAME=undercloud
+OS_PROJECT_DOMAIN_NAME=Default
+Notice that the OS_AUTH_URL environment variable is set to the public identity API endpoint. The stackrc file loads the admin user's credentials. The OS_PASSWORD variable is set to redhat as specified in the undercloud.conf file. The OS_CLOUDNAME variable is set to undercloud.
+
+View the provisioning and external network interfaces configured on the director node. List the details for the ctlplane-subnet subnet.
+
+List the provisioning and external networks on the director node. The br-ctlplane bridge is the 172.25.249.0 provisioning network; the eth1 interface is the 172.25.250.0 public network.
+
+(undercloud) [stack@director ~]$ ip a | grep -E 'br-ctlplane|eth1'
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP
+group default qlen 1000
+inet 172.25.250.200/24 brd 172.25.250.255 scope global noprefixroute eth1
+6: br-ctlplane: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state
+UNKNOWN group default qlen 1000
+inet 172.25.249.200/24 brd 172.25.249.255 scope global br-ctlplane
+inet 172.25.249.202/32 scope global br-ctlplane
+inet 172.25.249.201/32 scope global br-ctlplane
+Use the openstack subnet list command to list the undercloud subnet on the provisioning network, 172.24.249.0/24.
+
+(undercloud) [stack@director ~]$ openstack subnet list \
+-c 'Name' -c 'Subnet'
++---------------------+-----------------+
+| Name                | Subnet          |
++---------------------+-----------------+
+| ctlplane-subnet     | 172.25.249.0/24 |
+...output omitted...
++---------------------+-----------------+
+Use the openstack subnet show command to show the details of the ctlplane-subnet subnet. Notice the allocation pools IP addresses match the dhcp_start and dhcp_end parameter values set in the undercloud.conf file.
+
+(undercloud) [stack@director ~]$ openstack subnet show ctlplane-subnet
++-------------------+-----------------------------+
+| Field             | Value                       |
++-------------------+-----------------------------+
+| allocation_pools  | 172.25.249.51-172.25.249.59 |
+| cidr              | 172.25.249.0/24             |
+| created_at        | 2018-09-26T00:38:29Z        |
+| description       |                             |
+| dns_nameservers   | 172.25.250.254              |
+| enable_dhcp       | True                        |
+| gateway_ip        | 172.25.249.200              |
+...output omitted...
+List all the registered bare-metal nodes on director. View the power management information for the compute1 bare-metal node.
+
+Use the openstack baremetal node list command to list all the registered bare-metal nodes.
+
+(undercloud) [stack@director ~]$ openstack baremetal node list \
+-c 'Name' -c 'Power State'
++-------------+-------------+
+| Name        | Power State |
++-------------+-------------+
+| controller0 | power on    |
+| compute0    | power on    |
+| computehci0 | power on    |
+| compute1    | power on    |
+| ceph0       | power on    |
++-------------+-------------+
+Use the openstack baremetal node show command to view the power management information for the compute1 node.
+
+(undercloud) [stack@director ~]$ openstack baremetal node show \
+-c 'driver' -c 'driver_info' compute1
++-------------+----------------------------------------------------------------+
+| Field       | Value                                                          |
++-------------+----------------------------------------------------------------+
+| driver      | pxe_ipmitool                                                   |
+| driver_info | {u'ipmi_port': u'623', u'ipmi_username': u'admin',             |
+|             | u'deploy_kernel': u'525385d3-7f95-4911-be6e-ea205db379a8',     |
+|             | u'ipmi_address': u'172.25.249.112', u'deploy_ramdisk':         |
+|             | u'246a9a84-f097-4ce1-82d0-e8a754ef94b2', u'ipmi_password':     |
+|             | u'******'}                                                     |
++-------------+----------------------------------------------------------------+
+Log off from director.
+
+This concludes the guided exercise.

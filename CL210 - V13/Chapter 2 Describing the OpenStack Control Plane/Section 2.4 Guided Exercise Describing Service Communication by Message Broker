@@ -1,0 +1,208 @@
+
+Guided Exercise: Describing Service Communication by Message Broker
+In this exercise you will enable tracing in RabbitMQ, then monitor selected components during an instance deployment.
+
+Outcomes
+
+You should be able to:
+
+Enable and disable tracing in RabbitMQ.
+
+Locate messages related to specific tasks or components.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab controlplane-message setup command. This ensures that all requirements are present for deploying an instance.
+
+[student@workstation ~]$ lab controlplane-message setup
+From workstation, use SSH to connect to controller0. Use the sudo -i command to become the root user.
+
+[student@workstation ~]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+Use the docker exec and rabbitmqctl commands to create the tracer user in RabbitMQ, with a password of redhat.
+
+[root@controller0 ~]# docker exec -t rabbitmq-bundle-docker-0 rabbitmqctl \
+add_user tracer redhat
+Creating user "tracer"
+Configure permissions for the tracer user. Use wildcard syntax to assign all resources to each of the three permissions for configure, write, and read.
+
+[root@controller0 ~]# docker exec -t rabbitmq-bundle-docker-0 rabbitmqctl \
+set_permissions tracer ".*" ".*" ".*"
+Setting permissions for user "tracer" in vhost "/"
+Use the docker exec and rabbitmqctl trace_on commands to enable tracing in RabbitMQ.
+
+[root@controller0 ~]# docker exec -t rabbitmq-bundle-docker-0 rabbitmqctl trace_on
+Starting tracing for vhost "/"
+Determine the interface that RabbitMQ is listening on. The default port for RabbitMQ is 5672.
+
+[root@controller0 ~]# ss -tnlp | grep :5672
+LISTEN   0   128   172.24.1.1:5672   *:*    users:(("beam.smp",pid=12730,fd=56))
+A python script has been provided that consumes messages from the amq.rabbitmq.trace exchange. Use the -u and -p options to specify the tracer user and password. Use the -t option to provide the target IP address located in the previous step. Redirect the output to /tmp/rabbit.trace for analysis.
+
+[root@controller0 ~]# ~/rmq_trace.py -u tracer -p redhat -t 172.24.1.1 \
+ > /tmp/rabbit.trace
+On workstation, open a second terminal. Authenticate to OpenStack as the developer1 user in the finance project. Launch an instance using the default resources available, and wait for the deployment to finish.
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--image rhel7 \
+--flavor default \
+--security-group default \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+finance-server2 --wait
+...output omitted...
+In the first terminal, cancel the rmq_trace.py command. Use the docker exec and rabbitmqctl commands to disable tracing.
+
+[root@controller0 ~]# docker exec -t rabbitmq-bundle-docker-0 rabbitmqctl \
+trace_off
+Stopping tracing for vhost "/"
+Search through the /tmp/rabbit.trace trace log file for finance-server2.
+
+The first result has a routing key of publish.nova and has conductor in the headers. The entire message is in JSON format, however subsections can be taken and reformatted for readability using the echo '<string>' | jq . command. The following subsection shows the instance flavor.
+
+{
+    "disabled": false,
+    "root_gb": 10,
+    "description": null,
+    "flavorid": "26df78d4-9aa7-4e57-9cdb-9e96503b82e2",
+    "deleted": false,
+    "created_at": "2018-08-20T05:27:03Z",
+    "ephemeral_gb": 0,
+    "updated_at": null,
+    "memory_mb": 2048,
+    "vcpus": 2,
+    "extra_specs": {},
+    "swap": 0,
+    "rxtx_factor": 1.0,
+    "is_public": true,
+    "deleted_at": null,
+    "vcpu_weight": 0,
+    "id": 2,
+    "name": "default"
+}
+In other parts of the payload, individual values are visible, such as:
+
+"vm_state": "building"
+Here you can see the key pair:
+
+{
+    "public_key": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDHufCmzG95rJkX
+                           HZOe+7rHMaf3me7geAfdYAc2fuoKjSVoBni4aF4MYkSm
+                           b1UYyXjtQ++x2+i13+Osn9FJZmvda0maqT6DuIcpiAxl
+                           dVrnNJFv5L1VFGiFDbUglThPc25Ytn7bWqg02pFJz4Nc
+                           9vN+PzVETevL8b0tMvWPQ44MRuXCCM+UaHO1mBD2pcEn
+                           pQ1R/MzYxTzzdvjP5iBn4GAp7KjUw/+FvBhlNiKsXJjQ
+                           Gl6MHbCZhtgsntJzl7tKGY4SgJXZaUD0TnpPeCBlEmWN
+                           Uz4hAoVMfiiZA4fLAmJ7yZqwRcr4EVnqbmZC6CfIhVxb
+                           1J69UHhK62KS6513MP3v Generated-by-Nova\\n",
+    "user_id": "72b24f0a94c24e34a76c7fb6f2f81637",
+    "name": "example-keypair",
+    "deleted": false,
+    "created_at": "2018-08-20T05:26:53Z",
+    "updated_at": null,
+    "fingerprint": "31:b5:bb:2c:a0:e7:39:5d:5f:5e:0e:20:8b:a5:c2:1f",
+    "deleted_at": null,
+    "type": "ssh",
+    "id": 2
+}
+Searching for publish.neutron you find a message regarding port creation.
+
+"event_type": "port.create.start"
+You can then extract the payload value and reformat it to see the port information.
+
+{
+    "port": {
+        "network_id": "d67924dc-5df0-4f17-bd4e-53a77dc9f1fa",
+        "tenant_id": "db84762b38604849903c425e046704bf",
+        "device_id": "b455f85e-90f6-4591-b835-f8b885ed78d5",
+        "security_groups": [
+            "1202065a-24ef-4fac-90fd-f5d9b0f2aec1"
+        ],
+        "admin_state_up": true
+    }
+}
+Search for PortBinding and you can see the port being bound to the instance.
+
+{
+    "resource_list": [
+        {
+            "versioned_object.version": "1.1",
+            "versioned_object.name": "Port",
+            "versioned_object.data": {
+                "allowed_address_pairs": [],
+                "binding": {
+                    "versioned_object.version": "1.0",
+                    "versioned_object.name": "PortBinding",
+                    "versioned_object.data": {
+                        "profile": "{}",
+                        "status": "ACTIVE",
+                        "vif_type": "unbound",
+                        "vif_details": null,
+                        "vnic_type": "normal",
+                        "host": "",
+                        "port_id": "8d9a9ac3-811e-4d32-9055-e8e1a48764f6"
+                    },
+                    "versioned_object.namespace": "versionedobjects"
+                },
+                "updated_at": "2018-08-23T01:29:28Z",
+                "device_owner": "",
+                "revision_number": 6,
+                "fixed_ips": [
+                    {
+                        "versioned_object.version": "1.0",
+                        "versioned_object.name": "IPAllocation",
+                        "versioned_object.data": {
+                            "subnet_id": "e65ea1f4-12a0-4196-9e5a-1ce1441b661d",
+                            "network_id": "d67924dc-5df0-4f17-bd4e-53a77dc9f1fa",
+                            "ip_address": "192.168.1.8",
+                            "port_id": "8d9a9ac3-811e-4d32-9055-e8e1a48764f6"
+                        },
+                        "versioned_object.namespace": "versionedobjects"
+                    }
+                ],
+                "id": "8d9a9ac3-811e-4d32-9055-e8e1a48764f6",
+                "description": "",
+                "name": "",
+                "dns": null,
+                "mac_address": "fa:16:3e:09:6a:bb",
+                "project_id": "db84762b38604849903c425e046704bf",
+                "dhcp_options": [],
+                "status": "DOWN",
+                "binding_levels": [],
+                "security_group_ids": [
+                    "1202065a-24ef-4fac-90fd-f5d9b0f2aec1"
+                ],
+                "device_id": "b455f85e-90f6-4591-b835-f8b885ed78d5",
+                "qos_policy_id": null,
+                "admin_state_up": true,
+                "network_id": "d67924dc-5df0-4f17-bd4e-53a77dc9f1fa",
+                "created_at": "2018-08-23T01:29:28Z",
+                "distributed_binding": null,
+                "security": {
+                    "versioned_object.version": "1.0",
+                    "versioned_object.name": "PortSecurity",
+                    "versioned_object.data": {
+                        "port_security_enabled": true,
+                        "id": "8d9a9ac3-811e-4d32-9055-e8e1a48764f6"
+                    },
+                    "versioned_object.namespace": "versionedobjects"
+                }
+            },
+            "versioned_object.namespace": "versionedobjects"
+        }
+    ],
+    "event_type": "updated"
+}
+[root@controller0 ~]# exit
+[heat-admin@controller0 ~]$ exit
+[student@workstation ~]$ 
+There is a large amount of information available in the messaging system that may be helpful during troubleshooting.
+
+Cleanup
+
+On workstation, run lab controlplane-message cleanup to clean up resources created for this exercise.
+
+[student@workstation ~]$ lab controlplane-message cleanup
+This concludes the guided exercise.

@@ -1,0 +1,155 @@
+
+Chapter 1. Moving From Kubernetes to OpenShift
+Deploying Kubernetes Applications on OpenShift
+Guided Exercise: Deploying Kubernetes Applications on OpenShift
+Optimizing Kubernetes Applications for OpenShift
+Guided Exercise: Optimizing Kubernetes Applications for OpenShift
+Summary
+Abstract
+
+Goal	Demonstrate that OpenShift is Kubernetes by deploying Kubernetes-native applications on OpenShift.
+Objectives	
+Deploy applications on OpenShift using standard Kubernetes resources.
+
+Enhance Kubernetes applications using OpenShift extensions from Kubernetes.
+
+Sections	
+Deploying Kubernetes Applications on OpenShift (and Guided Exercise)
+
+Optimizing Kubernetes Applications for OpenShift (and Guided Exercise)
+
+Deploying Kubernetes Applications on OpenShift
+Objectives
+After completing this section, you should be able to deploy applications on OpenShift using standard Kubernetes resources.
+
+Describing how OpenShift is Enterprise Kubernetes
+Red Hat OpenShift Container Platform is a Kubernetes-based container platform for building and running applications on-premise or in cloud environments. Kubernetes provides features to run containers on a cluster of nodes. OpenShift builds on Kubernetes and its extensibility, adding features such as logging, monitoring, and authentication.
+
+Kubernetes provides the kubectl command-line tool to interact with Kubernetes clusters.
+
+OpenShift provides the oc and kubectl and command-line tools. The oc command adds OpenShift features to the kubectl command.
+
+NOTE
+kubectl and oc in OpenShift are the same binary. The oc binary embeds kubectl code. Execute the binary using the kubectl name to invoke the kubectl code and features. Execute the binary using the oc name to invoke OpenShift code and features.
+
+Authenticating to OpenShift
+The kubectl command-line tool connects to a Kubernetes cluster using the Kubernetes HTTP API. The kubeconfig files contain the information required to connect to a Kubernetes cluster. Specify the path to the kubeconfig file using the --kubeconfig option. The default kubeconfig path is ~/.kube/config.
+
+A kubeconfig file contains clusters, users, and contexts.
+
+A cluster describes a Kubernetes API endpoint, including its URL.
+
+A user describes the credentials to authenticate with a cluster, such as user names and tokens.
+
+A context is a combination of a cluster, a user, and a default namespace.
+
+The OpenShift CLI provides the oc login command to handle the process of logging in to an OpenShift cluster and managing kubeconfig files. Run the oc login command to log in to an OpenShift cluster.
+
+[user@demo ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+The oc login command creates or updates ~/.kube/config as in the following example:
+
+apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: https://api.ocp4.example.com:6443
+  name: api-ocp4-example-com:6443
+contexts:
+- context:
+    cluster: api-ocp4-example-com:6443
+    namespace: default
+    user: admin
+  name: default/api-ocp4-example-com:6443/admin
+current-context: default/api-ocp4-example-com:6443/admin
+kind: Config
+preferences: {}
+users:
+- name: admin
+  user:
+    token: ErPG5n4aT6CuDQ8mJPSwS5WpvYD_N6Fhj8Yd603l7Ns
+Run the oc login command to create a new context using the developer user.
+
+[user@demo ~]$ oc login -u developer -p developer
+Login successful.
+
+...output omitted...
+The oc login command updates the ~/.kube/config file with the newly created context, which is comprised of the developer user and the existing cluster:
+
+...output omitted...
+contexts:
+- context:
+    cluster: api-ocp4-example-com:6443
+    user: developer
+  name: /api-ocp4-example-com:6443/developer
+- context:
+    cluster: api-ocp4-example-com:6443
+    namespace: default
+    user: admin
+  name: default/api-ocp4-example-com:6443/admin
+...output omitted...
+- name: admin
+  user:
+    token: ErPG5n4aT6CuDQ8mJPSwS5WpvYD_N6Fhj8Yd603l7Ns
+- name: developer
+  user:
+    token: 6KGBB0WjZpGpE3MJr3KaGsCSY0k4MJQbpb9dWFB1p_M
+The oc config get-contexts command lists the contexts in the kubeconfig file.
+
+[user@demo ~]$ oc config get-contexts
+CURRENT NAME                            CLUSTER    AUTHINFO      NAMESPACE
+*       /api-ocp4-...:6443/developer    api-ocp... developer
+        default/api-ocp4-...:6443/admin api-ocp... admin         default
+The oc config use-context command changes the current context.
+
+[user@demo ~]$ oc config use-context \
+> default/api-ocp4-example-com:6443/admin
+Switched to context "default/api-ocp4-example-com:6443/admin".
+The oc config set-context command updates a context.
+
+[user@demo ~]$ oc config set-context \
+> /api-ocp4-example-com:6443/developer \
+> --namespace=namespace
+Context "/api-ocp4-example-com:6443/developer" modified.
+Deploying Native Kubernetes Applications on OpenShift
+OpenShift Container Platform is a certified Kubernetes distribution. Kubernetes workloads can be deployed in OpenShift using the same procedures used in any other Kubernetes distribution. Scripts using the kubectl command-line tool work unmodified on OpenShift. Use the kubectl create -f <file name> command to create a Kubernetes workload made of resources contained in a file. Use the kubectl get type name command to display a resource.
+
+Customizing Resources with Kubernetes Kustomize
+The kubectl command integrates the kustomization tool. A kustomization is a directory containing a kustomization.yml file.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yml
+The resources field is a list of files containing Kubernetes resources.
+
+A kustomization can contain fields that describe modifications to be made to the kustomization resources.
+
+The images field describes modifications to images in the kustomization.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+images:
+  - name: image
+    newName: new-image
+    newTag: new-tag
+The image image will be replaced by new-image with the tag new-tag.
+
+kustomization.yml can contain a bases field. The bases field is a list of other kustomization directories.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+  - path-to-kustomization
+A kustomization with a bases field is an overlay. A kustomization without a bases field is a base. An overlay includes all resources in its bases. kustomization applies modifications described in an overlay to the resources described in the overlay and its bases.
+
+Use the kubectl apply -k directory_name command to apply a kustomization.
+
+OpenShift templates are an alternative to kustomizations. OpenShift templates are Kubernetes parameterized resource definitions. Users provide parameters for templates and deploy customized resources using the web console.
+
+ 

@@ -1,0 +1,54 @@
+Quiz: Describing Operators Quiz
+Choose the correct answers to the following questions:
+
+1.		
+Which of the following methods is recommended for installing operators in an OpenShift cluster?
+
+A		
+Helm files
+
+B		
+manual installation
+
+C		
+OperatorHub
+
+2.		
+Choose the correct statement about OpenShift operators.
+
+A		
+The operator pattern consists of creating custom resources.
+
+B		
+Custom resources and a controller are used to create operators.
+
+C		
+Kubernetes operators are humans that manage the cluster.
+
+3.		
+Choose the correct statement about Kubernetes controllers.
+
+A		
+Kubernetes controllers maintain the cluster resources in a desired state.
+
+B		
+Kubernetes controllers are not part of the cluster.
+
+C		
+A controller never talks to the OpenShift API.
+
+4.		
+Choose the correct statement about OpenShift operator custom resource definitions.
+
+A		
+Kubernetes ignores OpenShift operators custom resource definitions.
+
+B		
+Custom resource definitions create pods.
+
+C		
+OpenShift operators require the creation of custom resources based on the operator CRDs.
+
+This concludes the section.
+
+1.C  2.B 3.A 4.C

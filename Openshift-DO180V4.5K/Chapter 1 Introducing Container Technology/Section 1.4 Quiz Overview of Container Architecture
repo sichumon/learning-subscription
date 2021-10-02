@@ -1,0 +1,35 @@
+Quiz: Overview of Container Architecture
+Choose the correct answers to the following questions:
+
+1.	Which three of the following Linux features are used for running containers? (Choose three.)
+
+A	Namespaces
+B	Integrity Management
+C	Security-Enhanced Linux
+D	Control Groups
+
+
+2.	Which of the following best describes a container image?
+
+A	A virtual machine image from which a container will be created.
+B	A container blueprint from which a container will be created.
+C	A runtime environment where an application will run.
+D	The container's index file used by a registry.
+
+
+3.	Which three of the following components are common across container architecture implementations? (Choose three.)
+
+A	Container runtime
+B	Container permissions
+C	Container images
+D	Container registries
+
+
+4.	What is a container in relation to the Linux kernel?
+
+A	A virtual machine.
+B	An isolated process with regulated resource access.
+C	A set of file-system layers exposed by UnionFS.
+D	An external service providing container images.
+
+1. A,C,D  2.B 3.A,C,D  4.B

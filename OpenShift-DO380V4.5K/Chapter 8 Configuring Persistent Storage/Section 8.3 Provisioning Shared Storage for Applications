@@ -1,0 +1,236 @@
+Provisioning Shared Storage for Applications
+Objectives
+After completing this section, you should be able to configure an application with shared file storage.
+
+Describing Shared Storage
+Many modern applications use shared storage. Shared storage enables application scaling and parallel processing of data.
+
+Examples of applications using shared storage:
+
+Continuous Integration/Continuous Delivery pipelines
+An application clones source code to a shared location. Agents execute tests concurrently on the shared files.
+
+Artificial Intelligence Workloads
+Model training algorithms process large data sets in parallel. Each parallel process has access to the same shared data set.
+
+Streaming applications
+An application collects unstructured data and writes that data to a common location. This data is processed at a later time.
+
+Modern storage technologies fall into three broad categories:
+
+File Storage
+File storage technologies store data as files in a file hierarchy. Network-attached Storage (NAS) is an example of a file storage technology. Common NAS technologies include:
+
+Network File System (NFS)
+
+Server Message Block (SMB)
+
+Common Internet File System (CIFS)
+
+Block Storage
+Block storage technologies store data in blocks on a block storage device. Examples of block storage include Storage Area Networks (SAN), Amazon Elastic Block Store (EBS), and Google Persistent Disks.
+
+Object Storage
+Object storage technologies store data as an object with arbitrary metadata. Objects are not stored in a file system hierarchy. Examples of object storage include Amazon Simple Storage Service (S3), Red Hat Ceph Storage, and OpenStack Object Storage (Swift).
+
+Use file or object storage technologies for shared storage.
+
+Because block storage technologies allow only single-client access to a storage volume, block storage is not shareable.
+
+Accessing Persistent Shared Storage
+Before deploying a pod that requires persistent storage, Kubernetes first mounts the storage volume on the scheduled node. A persistent volume contains information that Kubernetes requires to mount the storage volume on a node. This information includes a list of access modes supported by the underlying storage volume.
+
+An access mode indicates the ability (or inability) to mount a storage volume on many different nodes based on the capabilities of the storage provider. Kubernetes defines three access modes:
+
+Table 8.1. Persistent Volume Access Modes
+
+Access Mode	CLI Abbreviation	Description
+ReadWriteMany	RWX	Kubernetes can mount the volume as read-write on many nodes.
+ReadOnlyMany	ROX	Kubernetes can mount the volume as read-only on many nodes.
+ReadWriteOnce	RWO	Kubernetes can mount the volume as read-write on only a single node.
+
+NOTE
+An application that requires shared storage must request a persistent volume with a ReadOnlyMany or ReadWriteMany access mode.
+
+Kubernetes uses a volume plug-in to mount a storage volume on a node. Each different storage technology corresponds to a separate volume plug-in. Every persistent volume specifies a volume plug-in. A persistent volume must also define metadata that the volume plug-in requires to mount the storage volume on a node.
+
+The following table lists the built-in OpenShift volume plug-ins, along with the supported access modes for the plug-in:
+
+Table 8.2. OpenShift Volume Plug-in support for Access Modes
+
+Volume Plug-in	ReadWriteOnce	ReadOnlyMany	ReadWriteMany
+AWS EBS	Yes	No	No
+Azure File	Yes	Yes	Yes
+Azure Disk	Yes	No	No
+Cinder	Yes	No	No
+Fibre Channel	Yes	Yes	No
+GCE Persistent Disk	Yes	No	No
+HostPath	Yes	No	No
+iSCSI	Yes	Yes	No
+LocalVolume	Yes	No	No
+NFS	Yes	Yes	Yes
+VMware vSphere	Yes	No	No
+
+NOTE
+OpenShift can only mount a persistent volume with one access mode at a time.
+
+For example, OpenShift can mount an iSCSI volume as either ReadWriteOnce or ReadOnlyMany, but OpenShift cannot simultaneously mount a given iSCSI volume as ReadWriteOnce on one node, and ReadOnlyMany on other nodes.
+
+Managing Shared Storage Resources
+OpenShift uses storage classes to manage different types of storage, including shared storage. Each storage class defines a provisioner attribute. A provisioner automates many persistent volume life cycle tasks, namely creating a persistent volume on demand.
+
+OpenShift contains several internal provisioners. However, OpenShift does not provide an internal provisioner for each volume plug-in.
+
+Table 8.3. Internal Provisioner support
+
+Volume Plug-in	Internal Provisioner	Storage Class Provisioner Value
+AWS EBS	Yes	kubernetes.io/aws-ebs
+Azure File	Yes	kubernetes.io/azure-file
+Azure Disk	Yes	kubernetes.io/azure-disk
+Cinder	Yes	kubernetes.io/cinder
+Fibre Channel	No	 
+GCE Persistent Disk	Yes	kubernetes.io/gce-pd
+HostPath	No	 
+iSCSI	No	 
+LocalVolume	No	 
+NFS	No	 
+VMware vSphere	Yes	kubernetes.io/vsphere-volume
+
+NOTE
+If you create a storage class for a volume plug-in that does not have a corresponding provisioner, use a storage class provisioner value of kubernetes.io/no-provisioner.
+
+OpenShift contains two built-in volume plug-ins for shared storage: NFS and Azure File. OpenShift has built-in support to provision Azure File persistent volumes dynamically, but not NFS persistent volumes.
+
+Additional shared storage options are available in OpenShift. To use these options, you must install additional components in the cluster.
+
+Managing Azure File Persistent Volumes
+OpenShift has a built-in provisioner for Azure File persistent volumes. To use Azure File volumes in OpenShift, first create a secret that contains credentials for your Azure Storage account. Second, create a storage class for each Azure File tier you require for the OpenShift cluster.
+
+Each storage class definition contains a reference to the Azure storage credentials secret. OpenShift uses the Azure File provisioner to manage all Azure File persistent volumes in the cluster. An example Azure File storage class definition follows:
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: azurefile-lrs   1
+provisioner: kubernetes.io/azure-file   2
+parameters:
+  skuName: Standard_LRS   3
+  storageAccount: azure_storage_account_name   4
+  secretNamespace: my-secret-namespace         5
+  secretName: azure-storage-credentials        6
+1
+
+The name of the storage class. To request this type of storage, a persistent volume claim uses a StorageClassName value of azurefile-lrs.
+
+2
+
+A provisioner value of kubernetes.io/azure-file instructs OpenShift to use the Azure Files provisioner to create persistent volumes. The Azure File provisioner uses values in the parameters section to create persistent volumes with specific characteristics.
+
+3
+
+The skuName parameter specifies an Azure File storage tier. The Standard_LRS value corresponds to standard locally-redundant storage (LRS).
+
+4
+
+The provisioner requires an account name to authenticate to the Azure Files API.
+
+5 6
+
+The provisioner requires sensitive credentials to authenticate to the Azure Files API. The provisioner retrieves sensitive credentials from a secret resource, and then authenticates to the Azure Files API.
+
+Managing NFS Persistent Volumes
+NFS is another option for shared file storage in OpenShift. OpenShift does not, however, have a built-in NFS provisioner.
+
+You have two options to manage NFS persistent volumes:
+
+Create and use playbooks (or other automation) to provision a pool of static NFS persistent volumes. Write playbooks to create a set of NFS storage classes and persistent volumes. Ensure each persistent volume defines a storage class, and also configures NFS mount options according to that storage class.
+
+If the cluster requires additional NFS persistent volumes, then rerun the playbook with updated parameters.
+
+Add external components, such as an operator or custom provisioner, to automate the management of NFS persistent volumes. Many third party and open source solutions exist to help with the management of NFS shares.
+
+Red Hat Container Storage uses operators to manage the dynamic provisioning of NFS persistent volumes.
+
+NOTE
+The classroom environment uses an external, open source NFS provisioner. The provisioner dynamically creates NFS persistent volumes from an existing NFS server. See the References for more information.
+
+Red Hat does not recommend using this provisioner in production environments.
+
+Providing Other Shared Storage Resources
+Red Hat works with partners and the open source community to provide other shared storage solutions. Use the OpenShift marketplace to install other storage operators that can manage shared persistent volumes resources.
+
+Setting a Default Storage Class
+To simplify storage requests, OpenShift allows users to create a PVC that does not specify a storage class. With this feature, users do not need to know the various storage tiers that are available in a particular OpenShift cluster.
+
+If a PVC does not specify a storage class, then OpenShift tries to match the PVC to a persistent volume from the default storage class. You must designate an appropriate default storage class for the OpenShift cluster. Use a default storage class that is scalable, cost-effective, and easy to manage.
+
+The default storage class resource for a cluster contains a specific metadata annotation:
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"   1
+...output omitted...
+1
+
+The default storage class must define a storageclass.kubernetes.io/is-default-class annotation, which has a value of "true".
+
+Use the oc annotate command to create or update an annotation. For example, the following command sets the standard storage class as the default storage class:
+
+[user@demo ~]$ oc annotate storageclass standard \
+>  --overwrite "storageclass.kubernetes.io/is-default-class=true"
+You can also store the annotation YAML snippet in a file and use the content of the file to patch the storage class resource:
+
+[user@demo ~]$ cat set_default.yml
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+[user@demo ~]$ oc patch storageclass standard -p "$(cat set_default.yml)"
+OpenShift labels the default storage class in the output of the oc get storageclass command:
+
+[user@demo ~]$ oc get storageclass
+NAME                PROVISIONER          RECLAIMPOLICY   ...
+standard (default)  nfs-storage          Delete          ...
+gold                azure-file-storage   Delete          ...
+You must define only one default storage class. If more than one default exists, then OpenShift does not provision a persistent volume for a PVC that does not specify a storage class.
+
+Restricting Access to Storage Resources
+Because all storage resources are not the same, you might need to implement restrictions on the use of storage resources in the cluster.
+
+Use a resource quota to restrict resource consumption per project. Quotas are often used to restrict CPU and memory usage in a project, but you can also use quotas to restrict storage resource usage.
+
+For example, consider a hypothetical cluster that provides both a standard and a fast storage class. The standard storage class provides inexpensive yet scalable storage, with average I/O performance. The fast storage class provides low latency and high throughput storage, but it is expensive. To encourage users to consume standard storage resources, you must use a resource quota to restrict the use of the fast storage resources.
+
+Table 8.4. Storage Resources Managed by Resource Quotas
+
+Resource Name	Description
+requests.storage	The sum of storage space requests across all persistent volume claims can not exceed this value.
+persistentvolumeclaims	The total number of persistent volume claim resources that can exist in a project.
+<storage-class-name>.storageclass.storage.k8s.io/requests.storage	The sum of storage space requests for the across all persistent volume claims, but only for the <storage-class-name> storage class.
+<storage-class-name>.storageclass.storage.k8s.io/persistentvolumeclaims	The total number of persistent volume claim resources for the <storage-class-name> storage class that can exist in a project.
+
+An example resource quota follows:
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: storage      1
+  namespace: test    2
+spec:
+  hard:
+    persistentvolumeclaims: 4  3
+    requests.storage: 100G     4
+1 2
+
+A 'storage' resource quota that restricts resources for the test namespace (project).
+
+3
+
+The quota restricts the project to four persistent volume claims.
+
+4
+
+The quota restricts the project to 100 GB of total persistent storage.
+
+You can also use the oc create quota command to create a resource quota from the command line.

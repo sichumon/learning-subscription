@@ -1,0 +1,90 @@
+
+Optimizing Kubernetes Applications for OpenShift
+Objectives
+After completing this section, you should be able to enhance Kubernetes applications using OpenShift extensions from Kubernetes.
+
+Describing Kubernetes Resources on OpenShift
+OpenShift adds enterprise features to Kubernetes that support multitenancy and improved developer workflows.
+
+Kubernetes	OpenShift
+Namespaces	Projects
+Provides a scoping mechanism for resources.
+
+Supports increased permissions control, creation requests, and default templates for improved multitenancy workflows.
+
+Adds additional display name and description fields.
+
+Ingresses	Routes
+In a plain Kubernetes cluster, using ingress resources requires installation of an ingress controller. Different ingress controllers will provide different features.
+
+Supports TLS termination and re-encryption.
+
+Supports HAProxy annotation for extended features, such as enforcing HTTPS, selecting a load balancing algorithm, and enabling rate limiting.
+
+Deployments	DeploymentConfigs
+Emphasizes availability over consistency.
+
+Uses ReplicaSets that support set-based match selectors.
+
+Supports pausing rollouts.
+
+Red Hat recommends using Deployments unless you need a specific DeploymentConfigs feature.
+
+Emphasizes consistency over availability.
+
+Supports automatic rollbacks.
+
+Changes to the pod template automatically trigger rollouts.
+
+Supports custom deployment strategies and lifecycle hooks.
+
+Kustomize	Templates
+Kubernetes kustomize manages configurations using file overlays without templates.
+
+Typically, manifests and kustomize overlays are stored in version control.
+
+OpenShift Template resources are parameterized specification resources.
+
+Create resources from templates using the oc process command or the web console.
+
+Explaining Image Streams
+Image streams allow administrators to use tags for referencing specific versions of container images. This way, you can configure Builds and Deployments to use a fixed, known good image version until the image stream tag is updated. Using image streams, you can also configure Builds and Deployments to react upon changes to the original container image and trigger a new build or deployment in your cluster using the updated image version.
+
+Source images are stored in image registries, such as registry.redhat.io, or the OpenShift integrated registry. On the contrary, image streams are virtual references to source images, and their metadata is stored in etcd.
+
+Image streams use a unique SHA256 identifier instead of a mutable image tag. This approach is more reliable than standard container image tags, such as :latest or :v2.1, where the tagged image can change without notice.
+
+You can check for image updates on a periodic basis by importing the image using the --scheduled flag, for example, oc import-image IMAGE --confirm --scheduled. By default, --scheduled checks the image registry for updated image versions every fifteen minutes.
+
+Using image streams provides the following advantages:
+
+Tagging images without pushing using the command line.
+
+Configuring Builds and Deployments for automatic redeployment upon image updates.
+
+Fine-grained access control and image sharing across teams.
+
+Improving security by configuring view and use permissions on the image stream object.
+
+Avoiding application downtime that can occur when using untested image versions.
+
+Users without permissions on the source images can interact with image streams.
+
+Annotating Deployments with Image Stream Triggers
+Enhance Kubernetes deployments with OpenShift image stream tags by adding the following metadata annotation.
+
+{
+  "image.openshift.io/triggers": "[
+        {
+            \"from\": {
+                \"kind\":\"ImageStreamTag\",
+                \"name\":\"versioned-hello:latest\"
+            },
+            \"fieldPath\":\"spec.template.spec.containers[?(@.name==\\\"hello\\\")].image\"
+        }
+    ]"
+}
+Notice that the JSON image.openshift.io/triggers value is a string. Set the trigger annotation on the deployment using the command oc set trigger deploy/DEPLOYMENT_NAME --from-image IMAGE_STREAM_TAG -c CONTAINER_NAME.
+
+NOTE
+In a GitOps workflow, the state of the resource specifications should be stored in a version control system. Annotating deployments with image streams may cause an unexpected container image version mismatch between the YAML specification stored in version control and the deployment resource specification in the cluster.

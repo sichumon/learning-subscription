@@ -1,0 +1,162 @@
+
+Guided Exercise: Introducing OpenShift Dynamic Storage
+In this exercise, you will deploy a PostgreSQL database using a persistent volume claim and identify its dynamically allocated volume.
+
+Outcomes
+
+You should be able to:
+
+Identify the default storage settings of an OpenShift cluster.
+
+Create persistent volume claims.
+
+Manage persistent volumes.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable and downloads files required for this exercise.
+
+[student@workstation ~]$ lab install-storage start
+Log in to the OpenShift cluster.
+
+Source the classroom configuration file that is accessible at /usr/local/etc/ocp4.config.
+
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+Log in to the cluster as the kubeadmin user. If prompted, accept the insecure certificate.
+
+[student@workstation ~]$ oc login -u kubeadmin -p ${RHT_OCP4_KUBEADM_PASSWD} \
+>   https://api.ocp4.example.com:6443
+...output omitted...
+Create a new project named install-storage.
+
+[student@workstation ~]$ oc new-project install-storage
+Now using project "install-storage" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Verify the default storage class.
+
+[student@workstation ~]$ oc get storageclass
+NAME                    PROVISIONER               RECLAIMPOLICY   ...
+nfs-storage (default)   nfs-storage-provisioner   Delete          ...
+Create a new database deployment using the container image located at registry.redhat.io/rhel8/postgresql-12:1-43.
+
+[student@workstation ~]$ oc new-app --name postgresql-persistent \
+>   --docker-image registry.redhat.io/rhel8/postgresql-12:1-43 \
+>   -e POSTGRESQL_USER=redhat \
+>   -e POSTGRESQL_PASSWORD=redhat123 \
+>   -e POSTGRESQL_DATABASE=persistentdb
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "postgresql-persistent" created
+    deployment.apps "postgresql-persistent" created
+    service "postgresql-persistent" created
+--> Success
+...output omitted...
+NOTE
+For convenience, the ~/DO280/labs/install-storage/commands.txt file contains some commands that you can copy and paste.
+
+Add a persistent volume for the PostgreSQL database.
+
+Create a new persistent volume claim to add a new volume to the postgresql-persistent deployment.
+
+[student@workstation ~]$ oc set volumes deployment/postgresql-persistent \
+>   --add --name postgresql-storage --type pvc --claim-class nfs-storage \
+>   --claim-mode rwo --claim-size 10Gi --mount-path /var/lib/pgsql \
+>   --claim-name postgresql-storage
+deployment.apps/postgresql-persistent volume updated
+Verify that you successfully created the new PVC.
+
+[student@workstation ~]$ oc get pvc
+NAME                 STATUS   ...  CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+postgresql-storage   Bound    ...  10Gi       RWO            nfs-storage    25s
+Verify that you successfully created the new PV.
+
+[student@workstation ~]$ oc get pv \
+>   -o custom-columns=NAME:.metadata.name,CLAIM:.spec.claimRef.name
+NAME                                       CLAIM
+pvc-26cc804a-4ec2-4f52-b6e5-84404b4b9def   image-registry-storage
+pvc-65c3cce7-45eb-482d-badf-a6469640bd75   postgresql-storage
+Populate the database using the ~/DO280/labs/install-storage/init_data.sh script.
+
+Execute the init_data.sh script.
+
+[student@workstation ~]$ cd ~/DO280/labs/install-storage
+[student@workstation install-storage]$ ./init_data.sh
+Populating characters table
+CREATE TABLE
+INSERT 0 5
+Use the ~/DO280/labs/install-storage/check_data.sh script to verify that the database was populated successfully.
+
+[student@workstation install-storage]$ ./check_data.sh
+Checking characters table
+ id |          name           |           nationality
+----+-------------------------+----------------------------------
+  1 | Wolfgang Amadeus Mozart | Prince-Archbishopric of Salzburg
+  2 | Ludwig van Beethoven    | Bonn, Germany
+  3 | Johann Sebastian Bach   | Eisenach, Germany
+  4 | José Pablo Moncayo     | Guadalajara, México
+  5 | Niccolò Paganini       | Genoa, Italy
+(5 rows)
+Remove the postgresql-persistent deployment and create another deployment named postgresql-deployment2 that uses the same persistent volume; verify that the data persisted.
+
+Delete all resources that contain the app=postgresql-persistent label.
+
+[student@workstation install-storage]$ oc delete all -l app=postgresql-persistent
+service "postgresql-persistent" deleted
+deployment.apps "postgresql-persistent" deleted
+imagestream.image.openshift.io "postgresql-persistent" deleted
+Create the postgresql-persistent2 deployment with the same initialization data as the postgresql-persistent deployment.
+
+[student@workstation install-storage]$ oc new-app --name postgresql-persistent2 \
+>   --docker-image registry.redhat.io/rhel8/postgresql-12:1-43 \
+>   -e POSTGRESQL_USER=redhat \
+>   -e POSTGRESQL_PASSWORD=redhat123 \
+>   -e POSTGRESQL_DATABASE=persistentdb
+...output omitted...
+--> Creating resources ...
+    imagestream.image.openshift.io "postgresql-persistent2" created
+    deployment.apps "postgresql-persistent2" created
+    service "postgresql-persistent2" created
+--> Success
+...output omitted...
+Use the ~/DO280/labs/install-storage/check_data.sh script to verify that the database does not have the characters table.
+
+[student@workstation install-storage]$ ./check_data.sh
+Checking characters table
+ERROR: 'characters' table does not exist
+Add the existing postgresql-persistent persistent volume claim to the postgresql-persistent2 deployment.
+
+[student@workstation install-storage]$ oc set volumes \
+>   deployment/postgresql-persistent2 \
+>   --add --name postgresql-storage --type pvc \
+>   --claim-name postgresql-storage --mount-path /var/lib/pgsql
+deployment.apps/postgresql-persistent2 volume updated
+Use the ~/DO280/labs/install-storage/check_data.sh script to verify that the persistent volume was successfully added and that the postgresql-persistent2 pod can access the previously created data.
+
+[student@workstation install-storage]$ ./check_data.sh
+Checking characters table
+ id |          name           |           nationality
+----+-------------------------+----------------------------------
+  1 | Wolfgang Amadeus Mozart | Prince-Archbishopric of Salzburg
+  2 | Ludwig van Beethoven    | Bonn, Germany
+...output omitted...
+Remove the postgresql-persistent2 deployment and the persistent volume claim.
+
+Delete all resources that contain the app=postgresql-persistent2 label.
+
+[student@workstation install-storage]$ oc delete all -l app=postgresql-persistent2
+service "postgresql-persistent2" deleted
+deployment.apps "postgresql-persistent2" deleted
+imagestream.image.openshift.io "postgresql-persistent2" deleted
+Delete the persistent volume by removing the postgresql-storage persistent volume claim, and then return to the home directory.
+
+[student@workstation install-storage]$ oc delete pvc/postgresql-storage
+persistentvolumeclaim "postgresql-storage" deleted
+Return to the /home/student directory.
+
+[student@workstation install-storage]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab install-storage finish
+This concludes the guided exercise.

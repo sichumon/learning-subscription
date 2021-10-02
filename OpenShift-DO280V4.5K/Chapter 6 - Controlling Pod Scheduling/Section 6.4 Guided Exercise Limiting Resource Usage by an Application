@@ -1,0 +1,344 @@
+
+Guided Exercise: Limiting Resource Usage by an Application
+In this exercise, you will configure an application so that it does not consume all computing resources from the cluster and its worker nodes.
+
+Outcomes
+
+You should be able to use the OpenShift command-line interface to:
+
+Configure an application to specify resource requests for CPU and memory usage.
+
+Modify an application to work within existing cluster restrictions.
+
+Create a quota to limit the total amount of CPU, memory, and configuration maps available to a project.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable and creates the resource files that you will be using in the activity.
+
+[student@workstation ~]$ lab schedule-limit start
+As the developer user, create a new project named schedule-limit.
+
+Log in to your OpenShift cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Create a new project for this guided exercise named schedule-limit.
+
+[student@workstation ~]$ oc new-project schedule-limit
+Now using project "schedule-limit" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Deploy a test application for this exercise that explicitly requests container resources for CPU and memory.
+
+Create a deployment resource file and save it to ~/DO280/labs/schedule-limit/hello-limit.yaml. Name the application hello-limit and use the container image located at quay.io/redhattraining/hello-world-nginx:v1.0.
+
+[student@workstation ~]$ oc create deployment hello-limit \
+>    --image quay.io/redhattraining/hello-world-nginx:v1.0 \
+>    --dry-run=client -o yaml > ~/DO280/labs/schedule-limit/hello-limit.yaml
+Edit ~/DO280/labs/schedule-limit/hello-limit.yaml to replace the resources: {} line with the highlighted lines below. Ensure that you have proper indentation before saving the file.
+
+[student@workstation ~]$ vim ~/DO280/labs/schedule-limit/hello-limit.yaml
+
+...output omitted...
+    spec:
+      containers:
+      - image: quay.io/redhattraining/hello-world-nginx:v1.0
+        name: hello-world-nginx
+        resources:
+          requests:
+            cpu: "3"
+            memory: 20Mi
+status: {}
+Create the new application using your resource file.
+
+[student@workstation ~]$ oc create --save-config \
+>    -f ~/DO280/labs/schedule-limit/hello-limit.yaml
+deployment.apps/hello-limit created
+Although a new deployment was created for the application, the application pod should have a status of Pending.
+
+[student@workstation ~]$ oc get pods
+NAME                            READY   STATUS      RESTARTS   AGE
+hello-limit-d86874d86b-fpmrt    0/1     Pending     0          10s
+The pod cannot be scheduled because none of the worker nodes have sufficient CPU resources. This can be verified by viewing warning events.
+
+[student@workstation ~]$ oc get events --field-selector type=Warning
+LAST SEEN   TYPE      REASON             OBJECT                            MESSAGE
+88s         Warning   FailedScheduling   pod/hello-limit-d86874d86b-fpmrt  0/3 nodes are available: 3 Insufficient cpu.
+Redeploy your application so that it requests fewer CPU resources.
+
+Edit ~/DO280/labs/schedule-limit/hello-limit.yaml to request 1.2 CPUs for the container. Change the cpu: "3" line to match the highlighted line below.
+
+[student@workstation ~]$ vim ~/DO280/labs/schedule-limit/hello-limit.yaml
+
+...output omitted...
+        resources:
+          requests:
+            cpu: "1200m"
+            memory: 20Mi
+Apply the changes to your application.
+
+[student@workstation ~]$ oc apply -f ~/DO280/labs/schedule-limit/hello-limit.yaml
+deployment.apps/hello-limit configured
+Verify that your application deploys successfully. You might need to run oc get pods multiple times until you see a running pod. The previous pod with a pending status will terminate and eventually disappear.
+
+[student@workstation ~]$ oc get pods
+NAME                           READY   STATUS        RESTARTS   AGE
+hello-limit-d86874d86b-fpmrt   0/1     Terminating   0          2m19s
+hello-limit-7c7998ff6b-ctsjp   1/1     Running       0          6s
+NOTE
+If your application pod does not get scheduled, modify the ~/DO280/labs/schedule-limit/hello-limit.yaml file to reduce the CPU request to 1100m. Apply the changes again and verify the pod status is Running.
+
+Attempt to scale your application from one pod to four pods. After verifying that this change would exceed the capacity of your cluster, delete the resources associated with the hello-limit application.
+
+Manually scale the hello-limit application up to four pods.
+
+[student@workstation ~]$ oc scale --replicas 4 deployment/hello-limit
+deployment.apps/hello-limit scaled
+Check to see if all four pods are running. You might need to run oc get pods multiple times until you see that at least one pod is pending. Depending on the current cluster load, multiple pods might be in a pending state.
+
+NOTE
+If your application pod still does not deploy, scale the number of application pods to zero and then modify ~/DO280/labs/schedule-limit/hello-limit.yaml to reduce the CPU request to 1000m. Run oc apply -f ~/DO280/labs/schedule-limit/hello-limit.yaml to apply the changes then rerun the oc scale command to scale out to four pods.
+
+[student@workstation ~]$ oc get pods
+NAME                         READY   STATUS    RESTARTS   AGE
+hello-limit-d55cd65c-765s9   1/1     Running   0          12s
+hello-limit-d55cd65c-hmblw   0/1     Pending   0          12s
+hello-limit-d55cd65c-r8lvw   1/1     Running   0          12s
+hello-limit-d55cd65c-vkrhk   0/1     Pending   0          12s
+Warning events indicate that one or more pods cannot be scheduled because none of the nodes has sufficient CPU resources. Your warning messages might be slightly different.
+
+[student@workstation ~]$ oc get events --field-selector type=Warning
+LAST SEEN   TYPE      REASON             OBJECT                             MESSAGE
+...output omitted...
+76s         Warning   FailedScheduling   pod/hello-limit-d55cd65c-vkrhk     0/3 nodes are available: 3 Insufficient cpu.
+Delete all of the resources associated with the hello-limit application.
+
+[student@workstation ~]$ oc delete all -l app=hello-limit
+pod "hello-limit-d55cd65c-765s9" deleted
+pod "hello-limit-d55cd65c-hmblw" deleted
+pod "hello-limit-d55cd65c-r8lvw" deleted
+pod "hello-limit-d55cd65c-vkrhk" deleted
+deployment.apps "hello-limit" deleted
+replicaset.apps "hello-limit-5cc86ff6b8" deleted
+replicaset.apps "hello-limit-7d6bdcc99b" deleted
+Deploy a second application to test memory usage. This second application sets a memory limit of 200MB per container.
+
+Use the resource file located at /home/student/DO280/labs/schedule-limit/loadtest.yaml to create the loadtest application. In addition to creating a deployment, this resource file also creates a service and a route.
+
+[student@workstation ~]$ oc create --save-config \
+>    -f ~/DO280/labs/schedule-limit/loadtest.yaml
+deployment.apps/loadtest created
+service/loadtest created
+route.route.openshift.io/loadtest created
+The loadtest container image is designed to increase either CPU or memory load on the container by making a request to the application API. Identify the fully-qualified domain name used in the route.
+
+[student@workstation ~]$ oc get routes
+NAME       HOST/PORT                       ...
+loadtest   loadtest.apps.ocp4.example.com  ...
+Generate additional memory load that can be handled by the container.
+
+Open two additional terminal windows to continuously monitor the load of your application. Access the application API from the first terminal to simulate additional memory pressure on the container.
+
+From the second terminal window, run watch oc get pods to continuously monitor the status of each pod.
+
+Finally, from the third terminal, run watch oc adm top pod to continuously monitor the CPU and memory usage of each pod.
+
+In the first terminal window, use the application API to increase the memory load by 150MB for 60 seconds. Use the fully-qualified domain name previously identified in the route. While you wait for the curl command to complete, observe the output in the other two terminal windows.
+
+[student@workstation ~]$ curl -X GET \
+>    http://loadtest.apps.ocp4.example.com/api/loadtest/v1/mem/150/60
+curl: (52) Empty reply from server
+In the second terminal window, observe the output of watch oc get pods. Because the container can handle the additional load, you should see that the single application pod has a status of Running for the entire curl request.
+
+Every 2.0s: oc get pods             ...
+
+NAME                      READY   STATUS    RESTARTS   AGE
+loadtest-f7495948-tlxgm   1/1     Running   0          7m34s
+In the third terminal window, observe the output of watch oc adm top pod. The starting memory usage for the pod is about 20-30Mi.
+
+Every 2.0s: oc adm top pod             ...
+
+NAME                      CPU(cores)   MEMORY(bytes)
+loadtest-f7495948-tlxgm   0m           20Mi
+As the API request is made, you should see memory usage for the pod increase to about 170-180Mi.
+
+Every 2.0s: oc adm top pod             ...
+
+NAME                      CPU(cores)   MEMORY(bytes)
+loadtest-f7495948-tlxgm   0m           172Mi
+A short while after the curl request completes, you should see memory usage drop back down to about 20-30Mi.
+
+Every 2.0s: oc adm top pod             ...
+
+NAME                      CPU(cores)   MEMORY(bytes)
+loadtest-f7495948-tlxgm   0m           20Mi
+Generate additional memory load that cannot be handled by the container.
+
+Use the application API to increase the memory load by 200MB for 60 seconds. Observe the output in the other two terminal windows.
+
+[student@workstation ~]$ curl -X GET \
+>    http://loadtest.apps.ocp4.example.com/api/loadtest/v1/mem/200/60
+<html><body><h1>502 Bad Gateway</h1>
+The server returned an invalid or incomplete response.
+</body></html>
+In the second terminal window, observe the output of watch oc get pods. Almost immediately after running the curl command, the status of the pod will transition to OOMKilled. You might even see a status of Error. The pod is out of memory and needs to be killed and restarted. The status might change to CrashLoopBackOff before returning to a Running status. The restart count will also increment.
+
+Every 2.0s: oc get pods                ...
+
+NAME                      READY   STATUS      RESTARTS   AGE
+loadtest-f7495948-tlxgm   0/1     OOMKilled   0          9m13s
+In some cases the pod might have restarted and changed to a status of Running before you have time to switch to the second terminal window. The restart count will have incremented from 0 to 1.
+
+Every 2.0s: oc get pods                ...
+
+NAME                      READY   STATUS    RESTARTS   AGE
+loadtest-f7495948-tlxgm   1/1     Running   1          9m33s
+In the third terminal window, observe the output of watch oc adm top pod. After the pod is killed, metrics will show that the pod is using little to no resources for a brief period of time.
+
+Every 2.0s: oc adm top pod             ...
+
+NAME                      CPU(cores)   MEMORY(bytes)
+loadtest-f7495948-tlxgm   8m           0Mi
+In the first terminal window, delete all of the resources associated with the second application.
+
+[student@workstation ~]$ oc delete all -l app=loadtest
+pod "loadtest-f7495948-tlxgm" deleted
+service "loadtest" deleted
+deployment.apps "loadtest" deleted
+route.route.openshift.io "loadtest" deleted
+In the second and third terminal windows, press Ctrl+C to end the watch command. Optionally, close the second and third terminal windows.
+
+As a cluster administrator, create quotas for the schedule-limit project.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Create a quota named project-quota that limits the schedule-limit project to 3 CPUs, 1GB of memory, and 3 configuration maps.
+
+[student@workstation ~]$ oc create quota project-quota \
+>    --hard cpu="3",memory="1G",configmaps="3" \
+>    -n schedule-limit
+resourcequota/project-quota created
+NOTE
+This exercise places a quota on configuration maps to demonstrate what happens when a user tries to exceed the quota.
+
+As a developer, attempt to exceed the configuration map quota for the project.
+
+Log in to your OpenShift cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+Use a loop to attempt to create four configuration maps. The first three should succeed and the fourth should fail because it would exceed the quota.
+
+[student@workstation ~]$ for X in {1..4}
+>    do
+>    oc create configmap my-config${X} --from-literal key${X}=value${X}
+>    done
+configmap/my-config1 created
+configmap/my-config2 created
+configmap/my-config3 created
+Error from server (Forbidden): configmaps "my-config4" is forbidden: exceeded quota: project-quota, requested: configmaps=1, used: configmaps=3, limited: configmaps=3
+As a cluster administrator, configure all new projects with default quota and limit range resources.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Redirect the output of the oc adm create-bootstrap-project-template command so that you can customize project creation.
+
+[student@workstation ~]$ oc adm create-bootstrap-project-template \
+>    -o yaml > /tmp/project-template.yaml
+Edit the /tmp/project-template.yaml file to add the quota and limit range resources defined in the /home/student/DO280/labs/schedule-limit/quota-limits.yaml file. Add the lines before the parameters section.
+
+...output omitted...
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    name: ${PROJECT_NAME}-quota
+  spec:
+    hard:
+      cpu: 3
+      memory: 10G
+- apiVersion: v1
+  kind: LimitRange
+  metadata:
+    name: ${PROJECT_NAME}-limits
+  spec:
+    limits:
+      - type: Container
+        defaultRequest:
+          cpu: 30m
+          memory: 30M
+parameters:
+- name: PROJECT_NAME
+- name: PROJECT_DISPLAYNAME
+- name: PROJECT_DESCRIPTION
+- name: PROJECT_ADMIN_USER
+- name: PROJECT_REQUESTING_USER
+NOTE
+The /home/student/DO280/solutions/schedule-limit/project-template.yaml file contains the correct configuration and can be used for comparison.
+
+Use the /tmp/project-template.yaml file to create a new template resource in the openshift-config namespace.
+
+[student@workstation ~]$ oc create -f /tmp/project-template.yaml \
+>    -n openshift-config
+template.template.openshift.io/project-request created
+Update the cluster to use the custom project template.
+
+[student@workstation ~]$ oc edit projects.config.openshift.io/cluster
+Modify the spec section to use the following lines in bold.
+
+...output omitted...
+spec:
+  projectRequestTemplate:
+    name: project-request
+Ensure proper indentation, and then save your changes.
+
+project.config.openshift.io/cluster edited
+After a successful change, the apiserver pods in the openshift-apiserver namespace are recreated.
+
+[student@workstation ~]$ watch oc get pods -n openshift-apiserver
+Wait until all three new apiserver pods are ready and running.
+
+Every 2.0s: oc get pods -n openshift-apiserver             ...
+
+NAME                         READY   STATUS    RESTARTS   AGE
+apiserver-868dccf5fb-885dz   1/1     Running   0          63s
+apiserver-868dccf5fb-8j4vh   1/1     Running   0          39s
+apiserver-868dccf5fb-r4j9b   1/1     Running   0          24s
+Press Ctrl+C to end the watch command.
+
+Create a test project to confirm that the custom project template works as expected.
+
+[student@workstation ~]$ oc new-project template-test
+Now using project "template-test" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+List the resource quota and limit range resources in the test project.
+
+[student@workstation ~]$ oc get resourcequotas,limitranges
+NAME                                AGE   REQUEST                   LIMIT
+resourcequota/template-test-quota   87s   cpu: 0/3, memory: 0/10G
+
+NAME                              CREATED AT
+limitrange/template-test-limits   2020-09-16T21:13:25Z
+Clean up the lab environment by deleting the projects created in this exercise.
+
+Delete the schedule-limit project.
+
+[student@workstation ~]$ oc delete project schedule-limit
+project.project.openshift.io "schedule-limit" deleted
+Delete the template-test project.
+
+[student@workstation ~]$ oc delete project template-test
+project.project.openshift.io "template-test" deleted
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab schedule-limit finish

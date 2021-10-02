@@ -1,0 +1,171 @@
+Guided Exercise: Managing OpenShift Alerts
+In this exercise you will send alerts to the ocp-admins@example.com email address and resolve the AlertmanagerReceiversNotConfigured alert.
+
+Outcomes
+
+You should be able to:
+
+Configure Alertmanager to send email alerts.
+
+Review default alerts.
+
+Silence a firing alert.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the utility.lab.example.com host is configured to receive email and configures the ocp-admins@example.com email alias to deliver messages to the lab user on utility.lab.example.com.
+
+[student@workstation ~]$ lab monitor-alerts start
+Procedure 9.1. Instructions
+
+Configure Alertmanager to send warning alerts to the ocp-admins@example.com email address.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Extract the existing alertmanager-main secret from the openshift-monitoring namespace to the /tmp/ directory.
+
+[student@workstation ~]$ oc extract secret/alertmanager-main --to /tmp/ \
+>   -n openshift-monitoring --confirm
+/tmp/alertmanager.yaml
+The default alertmanager-main secret contains many unnecessary quotes. Remove the quotes using the sed command to improve readability.
+
+[student@workstation ~]$ sed -i 's/"//g' /tmp/alertmanager.yaml
+IMPORTANT
+Removing the extraneous quote characters is not required.
+
+In some cases, quote characters are required in a YAML file. The previous sed command removes all quotes, including possible required quotes.
+
+In this exercise, none of the quote characters in the /tmp/alertmanager.yaml file are required.
+
+Modify the /tmp/alertmanager.yaml file.
+
+[student@workstation ~]$ vim /tmp/alertmanager.yaml
+Add the lines in bold to the file. Ensure that you correctly indent each line. Replace instances of null with default. Set the repeat_interval to 1m so the alert email notifications are sent more frequently.
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 192.168.50.254:25
+  smtp_from: alerts@ocp4.example.com
+  smtp_require_tls: false
+receivers:
+- name: default
+- name: email-notification
+  email_configs:
+    - to: ocp-admins@example.com
+route:
+  group_by:
+  - namespace
+  group_interval: 5m
+  group_wait: 30s
+  receiver: default
+  repeat_interval: 1m
+  routes:
+  - match:
+      alertname: Watchdog
+    receiver: default
+  - match:
+      severity: warning
+    receiver: email-notification
+NOTE
+Setting a severity of warning sends many email messages. You change the severity to critical later in the exercise.
+
+The /home/student/DO380/solutions/monitor-alerts/alertmanager.yaml file contains the correct configuration.
+
+Update the existing alertmanager-main secret in the openshift-monitoring namespace with the content of the /tmp/alertmanager.yaml file.
+
+[student@workstation ~]$ oc set data secret/alertmanager-main \
+>   -n openshift-monitoring --from-file /tmp/alertmanager.yaml
+secret/alertmanager-main data updated
+Follow the alertmanager container logs and look for the message: "Completed loading of configuration file" file=/etc/alertmanager/config/alertmanager.yaml
+
+New log messages can take up to 30 seconds to display. Press Ctrl+C to exit the oc logs command.
+
+[student@workstation ~]$ oc logs -f -c alertmanager alertmanager-main-0 \
+>   -n openshift-monitoring
+...output omitted...
+level=info ts=2020-05-15T18:53:09.052Z caller=coordinator.go:119 component=configuration msg="Loading configuration file" file=/etc/alertmanager/config/alertmanager.yaml
+level=info ts=2020-05-15T18:53:09.052Z caller=coordinator.go:131 component=configuration msg="Completed loading of configuration file" file=/etc/alertmanager/config/alertmanager.yaml
+NOTE
+If you see configuration errors in the logs, modify the /tmp/alertmanager.yaml file and reapply your changes.
+
+The lab user on the utility.lab.example.com host receives emails sent to the ocp-admins@example.com email address. Verify that Alertmanager sent an email for each firing alert.
+
+Use SSH to connect to the utility.lab.example.com host as the lab user.
+
+[student@workstation ~]$ ssh lab@utility.lab.example.com
+...output omitted...
+Run the mutt command to access mail.
+
+[lab@utility ~]$ mutt
+Allow mutt to create the /home/lab/Mail directory.
+
+/home/lab/Mail does not exist. Create it? ([yes]/no): y
+The existing emails sent from alerts@ocp4.example.com demonstrate that Alertmanager sent email notifications for firing alerts with a severity of warning or greater. Press q to quit.
+
+q:Quit  d:Del  u:Undel  s:Save  m:Mail  r:Reply  g:Group  ?:Help
+   1 N   Jun 25 alerts@ocp4.exa ( 192) [FIRING:1] openshift-image-registry (I...
+   2 N   Aug 24 alerts@ocp4.exa ( 167) [FIRING:1]  (TestAlert openshift-monit...
+NOTE
+Alertmanager sends alerts as email attachments in HTML format. Although not necessary for this exercise, you can save the attachments and transfer them to a machine with graphical capabilities.
+
+Disconnect from the SSH session.
+
+[lab@utility ~]$ exit
+View alerts from the OpenShift web console.
+
+Use Firefox to navigate to https://console-openshift-console.apps.ocp4.example.com.
+
+NOTE
+If Firefox displays a warning message, then add exceptions to allow using the default OpenShift certificates.
+
+Log in with htpasswd_provider using admin as the user name and redhat as the password.
+
+From the OpenShift web console, navigate to Monitoring → Alerting.
+
+Because there might be additional alerts, expect firing alerts to include the TestAlert and Watchdog alerts.
+
+Examine the TestAlert alert and then silence the alert for troubleshooting.
+
+Click the TestAlert link to get details.
+
+This alert has a severity of warning and it fires when this exercise begins. The alert message indicates that this alert is a test alert.
+
+Silence the alert so that Alertmanager does not send additional notifications. Click Silence Alert to silence the alert.
+
+By default, the alert will be silenced for two hours. You do not need to change the Start or End fields.
+
+In the Creator field, type your name.
+
+In the Comment field, type Silenced during troubleshooting.
+
+Click Silence to silence the alert.
+
+Navigate to Monitoring → Alerting in the web console to verify that the TestAlert alert is no longer firing.
+
+Although you previously configured Alertmanager to send email alerts with a severity of warning or greater to the ocp-admins@example.com email address, this configuration will likely send more messages than desired. Modify the Alertmanager configuration to send critical alerts to the ocp-admins@example.com email address.
+
+Use the sed command to replace warning with critical in the /tmp/alertmanager.yaml file.
+
+[student@workstation ~]$ sed -i 's/warning/critical/' /tmp/alertmanager.yaml
+Update the existing alertmanager-main secret in the openshift-monitoring namespace with the content of the /tmp/alertmanager.yaml file.
+
+[student@workstation ~]$ oc set data secret/alertmanager-main \
+>   -n openshift-monitoring --from-file /tmp/alertmanager.yaml
+secret/alertmanager-main data updated
+Alertmanager now sends an email for any alert with a severity of critical to the ocp-admins@example.com email address.
+
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab monitor-alerts finish
+This concludes the section.

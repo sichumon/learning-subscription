@@ -1,0 +1,188 @@
+Guided Exercise: Defining and Applying Permissions using RBAC
+In this exercise, you will define role-based access controls and apply permissions to users.
+
+Outcomes
+
+You should be able to:
+
+Remove project creation privileges from users who are not OpenShift cluster administrators.
+
+Create OpenShift groups and add members to these groups.
+
+Create a project and assign project administration privileges to the project.
+
+As a project administrator, assign read and write privileges to different groups of users.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and creates some HTPasswd users for the exercise.
+
+[student@workstation ~]$ lab auth-rbac start
+Log in to the OpenShift cluster and determine which cluster role bindings assign the self-provisioner cluster role.
+
+Log in to the cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+List all cluster role bindings that reference the self-provisioner cluster role.
+
+[student@workstation ~]$ oc get clusterrolebinding -o wide \
+>    | grep -E 'NAME|self-provisioner'
+NAME                      ROLE                           ...
+self-provisioners   ...   ClusterRole/self-provisioner   ...
+Remove the privilege to create new projects from all users who are not cluster administrators by deleting the self-provisioner cluster role from the system:authenticated:oauth virtual group.
+
+Confirm that the self-provisioners cluster role binding that you found in the previous step assigns the self-provisioner cluster role to the system:authenticated:oauth group.
+
+[student@workstation ~]$ oc describe clusterrolebindings self-provisioners
+Name:         self-provisioners
+Labels:       <none>
+Annotations:  <none>
+Role:
+  Kind:  ClusterRole
+  Name:  self-provisioner
+Subjects:
+  Kind   Name                        Namespace
+  ----   ----                        ---------
+  Group  system:authenticated:oauth
+Remove the self-provisioner cluster role from the system:authenticated:oauth virtual group, which deletes the self-provisioners role binding. You can safely ignore the warning about your changes being lost.
+
+[student@workstation ~]$ oc adm policy remove-cluster-role-from-group  \
+>    self-provisioner system:authenticated:oauth
+Warning: Your changes may get lost whenever a master is restarted, unless you prevent reconciliation of this rolebinding using the following command: oc annotate clusterrolebinding.rbac self-provisioner 'rbac.authorization.kubernetes.io/autoupdate=false' --overwrite
+clusterrole.rbac.authorization.k8s.io/self-provisioner removed: "system:authenticated:oauth"
+Verify that the role has been removed from the group. The cluster role binding self-provisioners should not exist.
+
+[student@workstation ~]$ oc describe clusterrolebindings self-provisioners
+Error from server (NotFound): clusterrolebindings.rbac.authorization.k8s.io "self-provisioners" not found
+Determine if any other cluster role bindings reference the self-provisioner cluster role.
+
+[student@workstation ~]$ oc get clusterrolebinding -o wide \
+>    | grep -E 'NAME|self-provisioner'
+NAME                      ROLE    ...
+Log in as the leader user with a password of redhat, and then try to create a project. Project creation should fail.
+
+[student@workstation ~]$ oc login -u leader -p redhat
+Login successful.
+...output omitted...
+[student@workstation ~]$ oc new-project test
+Error from server (Forbidden): You may not request a new project via this API.
+Create a project and add project administration privileges to the leader user.
+
+Log in as the admin user and create the auth-rbac project.
+
+[student@workstation ~]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+[student@workstation ~]$ oc new-project auth-rbac
+Now using project "auth-rbac" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Grant project administration privileges to the leader user on the auth-rbac project.
+
+[student@workstation ~]$ oc policy add-role-to-user admin leader
+clusterrole.rbac.authorization.k8s.io/admin added: "leader"
+Create the dev-group and qa-group groups and add their respective members.
+
+Create a group called dev-group.
+
+[student@workstation ~]$ oc adm groups new dev-group
+group.user.openshift.io/dev-group created
+Add the developer user to dev-group.
+
+[student@workstation ~]$ oc adm groups add-users dev-group developer
+group.user.openshift.io/dev-group added: "developer"
+Create a second group called qa-group.
+
+[student@workstation ~]$ oc adm groups new qa-group
+group.user.openshift.io/qa-group created
+Add the qa-engineer user to qa-group.
+
+[student@workstation ~]$ oc adm groups add-users qa-group qa-engineer
+group.user.openshift.io/qa-group added: "qa-engineer"
+Review all existing OpenShift groups to verify that they have the correct members.
+
+[student@workstation ~]$ oc get groups
+NAME        USERS
+dev-group   developer
+qa-group    qa-engineer
+As the leader user, assign write privileges for dev-group and read privileges for qa-group to the auth-rbac project.
+
+Log in as the leader user.
+
+[student@workstation ~]$ oc login -u leader -p redhat
+Login successful.
+...output omitted...
+Using project "auth-rbac".
+Add write privileges to dev-group on the auth-rbac project.
+
+[student@workstation ~]$ oc policy add-role-to-group edit dev-group
+clusterrole.rbac.authorization.k8s.io/edit added: "dev-group"
+Add read privileges to qa-group on the auth-rbac project.
+
+[student@workstation ~]$ oc policy add-role-to-group view qa-group
+clusterrole.rbac.authorization.k8s.io/view added: "qa-group"
+Review all role bindings on the auth-rbac project to verify that they assign roles to the correct groups and users. The following output omits default role bindings assigned by OpenShift to service accounts.
+
+[student@workstation ~]$ oc get rolebindings -o wide
+NAME      AGE   ROLE                USERS    GROUPS      ...
+admin     58s   ClusterRole/admin   admin
+admin-0   51s   ClusterRole/admin   leader
+edit      12s   ClusterRole/edit             dev-group
+...output omitted...
+view      8s    ClusterRole/view             qa-group
+As the developer user, deploy an Apache HTTP Server to prove that the developer user has write privileges in the project. Also try to grant write privileges to the qa-engineer user to prove that the developer user has no project administration privileges.
+
+Log in as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+Using project "auth-rbac".
+Deploy an Apache HTTP Server using the standard image stream from OpenShift.
+
+[student@workstation ~]$ oc new-app --name httpd httpd:2.4
+...output omitted...
+--> Creating resources ...
+    imagestreamtag.image.openshift.io "httpd:2.4" created
+    deployment.apps "httpd" created
+    service "httpd" created
+--> Success
+...output omitted...
+Try to grant write privileges to the qa-engineer user. It should fail.
+
+[student@workstation ~]$ oc policy add-role-to-user edit qa-engineer
+Error from server (Forbidden): rolebindings.rbac.authorization.k8s.io is forbidden: User "developer" cannot list resource "rolebindings" in API group "rbac.authorization.k8s.io" in the namespace "auth-rbac"
+Verify that the qa-engineer user only has read privileges on the httpd application.
+
+Log in as the qa-engineer user.
+
+[student@workstation ~]$ oc login -u qa-engineer -p redhat
+Login successful.
+...output omitted...
+Using project "auth-rbac".
+Attempt to scale the httpd application. It should fail.
+
+[student@workstation ~]$ oc scale deployment httpd --replicas 3
+Error from server (Forbidden): deployments.apps "httpd" is forbidden: User "qa-engineer" cannot patch resource "deployments/scale" in API group "apps" in the namespace "auth-rbac"
+Restore project creation privileges to all users.
+
+Log in as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Restore project creation privileges for all users by recreating the self-provisioners cluster role binding created by the OpenShift installer. You can safely ignore the warning that the group was not found.
+
+[student@workstation ~]$ oc adm policy add-cluster-role-to-group \
+>    --rolebinding-name self-provisioners \
+>    self-provisioner system:authenticated:oauth
+Warning: Group 'system:authenticated:oauth' not found
+clusterrole.rbac.authorization.k8s.io/self-provisioner added: "system:authenticated:oauth"
+Finish
+
+On the workstation machine, run the lab command to complete this exercise.
+
+[student@workstation ~]$ lab auth-rbac finish
+This concludes the section.

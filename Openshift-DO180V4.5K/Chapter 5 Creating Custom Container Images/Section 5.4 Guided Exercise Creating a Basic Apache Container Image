@@ -1,0 +1,117 @@
+Guided Exercise: Creating a Basic Apache Container Image
+In this exercise, you will create a basic Apache container image.
+
+Outcomes
+
+You should be able to create a custom Apache container image built on a Red Hat Enterprise Linux 7.5 image.
+
+Run the following command to download the relevant lab files and to verify that Docker is running:
+
+[student@workstation ~]$ lab dockerfile-create start
+Create the Apache Dockerfile
+
+Open a terminal on workstation. Use your preferred editor and create a new Dockerfile:
+
+[student@workstation ~]$ vim /home/student/DO180/labs/dockerfile-create/Dockerfile
+Use UBI 7.7 as a base image by adding the following FROM instruction at the top of the new Dockerfile:
+
+FROM ubi7/ubi:7.7
+Below the FROM instruction, include the MAINTAINER instruction to set the Author field in the new image. Replace the values to include your name and email address:
+
+MAINTAINER Your Name <youremail>
+Below the MAINTAINER instruction, add the following LABEL instruction to add description metadata to the new image:
+
+LABEL description="A custom Apache container based on UBI 7"
+Add a RUN instruction with a yum install command to install Apache on the new container:
+
+RUN yum install -y httpd && \
+    yum clean all
+Add a RUN instruction to replace contents of the default HTTPD home page:
+
+RUN echo "Hello from Dockerfile" > /var/www/html/index.html
+Use the EXPOSE instruction below the RUN instruction to document the port that the container listens to at runtime. In this instance, set the port to 80, because it is the default for an Apache server:
+
+EXPOSE 80
+NOTE
+The EXPOSE instruction does not actually make the specified port available to the host; rather, the instruction serves as metadata about which ports the container is listening on.
+
+At the end of the file, use the following CMD instruction to set httpd as the default entry point:
+
+CMD ["httpd", "-D", "FOREGROUND"]
+Verify that your Dockerfile matches the following before saving and proceeding with the next steps:
+
+FROM ubi7/ubi:7.7
+
+MAINTAINER Your Name <youremail>
+
+LABEL description="A custom Apache container based on UBI 7"
+
+RUN yum install -y httpd && \
+    yum clean all
+
+RUN echo "Hello from Dockerfile" > /var/www/html/index.html
+
+EXPOSE 80
+
+CMD ["httpd", "-D", "FOREGROUND"]
+Build and verify the Apache container image.
+
+Use the following commands to create a basic Apache container image using the newly created Dockerfile:
+
+[student@workstation ~]$ cd /home/student/DO180/labs/dockerfile-create
+[student@workstation dockerfile-create]$ sudo podman build --layers=false \
+> -t do180/apache .
+STEP 1: FROM ubi7/ubi:7.7
+Getting image source signatures 1
+Copying blob sha256:...output omitted...
+71.46 MB / 71.46 MB [=====================================================] 18s
+...output omitted...
+Storing signatures
+STEP 2: MAINTAINER Your Name <youremail>
+STEP 3: LABEL description="A custom Apache container based on UBI 7"
+STEP 4: RUN yum install -y httpd &&     yum clean all
+Loaded plugins: ovl, product-id, search-disabled-repos, subscription-manager
+...output omitted...
+STEP 5: RUN echo "Hello from Dockerfile" > /var/www/html/index.html
+STEP 6: EXPOSE 80
+STEP 7: CMD ["httpd", "-D", "FOREGROUND"]
+STEP 8: COMMIT ...output omitted... localhost/do180/apache:latest
+Getting image source signatures
+...output omitted...
+Storing signatures
+b49375fa8ee1e549dc1b72742532f01c13e0ad5b4a82bb088e5befbe59377bcf
+1
+
+The container image listed in the FROM instruction is only downloaded if not already present in local storage.
+
+NOTE
+Podman creates many anonymous intermediate images during the build process. They are not be listed unless -a is used. Use the --layers=false option of the build subcommand to instruct Podman to delete intermediate images.
+
+After the build process has finished, run podman images to see the new image in the image repository:
+
+[student@workstation dockerfile-create]$ sudo podman images
+REPOSITORY                           TAG     IMAGE ID      CREATED         SIZE
+localhost/do180/apache               latest  b49375fa8ee1  11 seconds ago  247MB
+registry.access.redhat.com/ubi7/ubi  7.7     0355cd652bd1  8 months ago    215MB
+Run the Apache container.
+
+Use the following command to run a container using the Apache image:
+
+[student@workstation dockerfile-create]$ sudo podman run --name lab-apache \
+> -d -p 10080:80 do180/apache
+fa1d1c450e8892ae085dd8bbf763edac92c41e6ffaa7ad6ec6388466809bb391
+Run the podman ps command to see the running container:
+
+[student@workstation dockerfile-create]$ sudo podman ps
+CONTAINER ID IMAGE                         COMMAND          ...output omitted...
+fa1d1c450e88 localhost/do180/apache:latest httpd -D FOREGROU...output omitted...
+Use the curl command to verify that the server is running:
+
+[student@workstation dockerfile-create]$ curl 127.0.0.1:10080
+Hello from Dockerfile
+Finish
+
+On workstation, run the lab dockerfile-create finish script to complete this lab.
+
+[student@workstation ~]$ lab dockerfile-create finish
+This concludes the guided exercise.

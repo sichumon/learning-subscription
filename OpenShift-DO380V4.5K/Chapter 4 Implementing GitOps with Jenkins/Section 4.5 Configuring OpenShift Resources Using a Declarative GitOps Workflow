@@ -1,0 +1,155 @@
+Configuring OpenShift Resources Using a Declarative GitOps Workflow
+Objectives
+After completing this section, you should be able to:
+
+Describe GitOps concepts
+
+Configure cluster operators using resource files in a declarative fashion
+
+Compare live OpenShift resources with resource files
+
+Delete Resources with a Declarative Approach
+
+Reviewing GitOps Concepts
+GitOps processes follow infrastructure-as-code (IaC) practices: all configurations should come from files that are versioned, tested, and reviewed, such as source code in a Continuous Integration and Continuous Deployment (CI/CD) process.
+
+Though early descriptions of GitOps workflows were based in GitHub proprietary pull requests, GitOps does not require a Git server nor a GitHub account. Any version control system and branch-based workflow could fit a GitOps process.
+
+The main challenge of implementing GitOps, compared to CI/CD, is that "configurations" do not produce stand alone artifacts, such as binary executables, that you can store, copy, compare, and replace. Configurations change the state of a live system.
+
+Viable GitOps processes usually require declarative configuration files, similar to Ansible Playbooks: imperative configurations (using the command module) often cause maintenance problems, whereas declarative configurations (using idempotent modules) are more reliable and also easier to apply and maintain.
+
+The realization of GitOps processes with OpenShift is made easier if configuration files for cluster operators, custom resources, and standard resources, such as configuration maps and cron jobs, are stored as either YAML or JSON files in a version control system. This may be challenging for system administrators used to imperative OpenShift CLI commands such as oc scale.
+
+Comparing Imperative and Declarative Resource Management with OpenShift
+The OpenShift CLI provides a rich set of imperative commands to manage application resources, such as the oc new-app and oc set commands. Using imperative commands provides the following benefits:
+
+Easy to learn and use, lowering the barrier to entry for developers and system administrators.
+
+Requires less typing and provides clearer error messages.
+
+Does not require a deep knowledge of OpenShift resource types and their attributes.
+
+Imperative oc commands work well for a CI/CD process but unfortunately not for a GitOps process.
+
+The OpenShift CLI also provides a small set of declarative commands to manage application resources from either YAML or JSON files, such as the oc apply command. Using declarative commands provides the following advantages:
+
+A single syntax for creating, deleting, and updating multiple resource types because all resource-specific details are inside resource files.
+
+Ease of reusing the same resource files for multiple automation tools, such as Ansible Playbooks and GitOps tools.
+
+Ease of comparing multiple releases of source resource files and interpreting version control log outputs, compared to scripts using imperative commands.
+
+To use declarative commands, you must write resource definition files using YAML or JSON syntaxes. To create these YAML files, a deeper knowledge of OpenShift resource types is required.
+
+Using declarative commands also has some disadvantages; often resource files look correct but do not produce the expected results. Sometimes these are called "silent errors." Examples of silent errors include:
+
+Kubernetes silently accepts resource files that define unknown attributes, for example, because of a typing mistake in the attribute name.
+
+In YAML files, it is easy to type an incorrect number of indentation spaces and add an attribute to an incorrect nested structure.
+
+These disadvantages encourage beginner OpenShift administrators and developers to prefer imperative commands. Fortunately, the benefits of automation surpass the disadvantages of declarative commands.
+
+Some OpenShift CLI commands, such as oc apply, mitigate these disadvantages by supporting the --validate option. This option validates resource definitions against the same resource type metadata that provides attribute descriptions to the oc explain command.
+
+Creating Resource Files from Scratch
+To create a resource file from scratch, you have to find samples from Red Hat OpenShift Container Platform product documentation, upstream Kubernetes documentation, or from operators that define new custom resources types.
+
+OpenShift provides online help for all predefined resource types, including OpenShift API extensions and custom resources from operators, using the following commands:
+
+The oc api-resources command lists all resource types currently enabled in the cluster, including custom resources.
+
+The oc api-versions command shows available API versions, including APIs defined by operators and Kubernetes extensions. There can be multiple API versions of the same resource type for backwards compatibility with previous versions of OpenShift and Kubernetes.
+
+The oc explain command lists attributes of a resource type and their descriptions, including custom resources defined by operators that comply with the Operator Life-cycle Manager (OLM). Use dot notation to look at structured resources, for example: oc explain route.spec.host
+
+Red Hat generally recommends that you use these commands and documentation sources to write your resource files from scratch.
+
+It is a good idea to create and configure a resource using imperative commands, and then export the resource to a file to use as a starting point. Unfortunately, this approach might be difficult because the exported file contains: * Attributes with values that are generated at run time, such as createTimeStamp and status.
+
+Attributes with default values that are unnecessary and sometimes change between Kubernetes and OpenShift releases.
+
+Labels and annotations added at run time by resource controllers, admission plug-ins, and operators.
+
+It is a best practice remove all of the above to create a minimum resource file that defines only the set of attributes that you require because the longer the resource file, the harder to write, review, and maintain it.
+
+Another reason to write resource files from scratch, instead of exporting live resources, is that resource attributes are exported in alphabetical order. You might prefer a more logical ordering of attributes, for example, listing metadata.name at the beginning of your resource file, near kind.
+
+OpenShift standard templates are a useful starting point to find sample resource definitions, but some of them might need cleaning and reordering of attributes for easier reading.
+
+Finding Changes in OpenShift Resources
+Live OpenShift resources have a number of attributes, labels, and annotations that only matter at run time, complicating efforts to compare resource files on disk or under version control with live resources in a cluster. Exporting an OpenShift resource and comparing it with a text file using standard diff tools requires significant pre or postprocessing to remove all the noise.
+
+The complexity of pre and postprocessing varies with each resource type, and operators can add new custom resource types that your pre and postprocessing scripts do not know about.
+
+Fortunately, OpenShift provides a safe and reliable way to compare of resource files with live resources using the oc diff command:
+
+The oc diff command sends resource definitions to the OpenShift API and lets all running controllers make changes, but does not apply them, similar to using the --dry-run option.
+
+Then, OpenShift API returns the change set that would have been applied by oc apply if it were not a --dry-run.
+
+In this way, run time attributes, default values, and ordering of attributes are ignored because they would not create actual changes with oc apply.
+
+Another benefit of using the oc diff command is that it ignores YAML file comments.
+
+Preprocessing Resource Files with Kustomize
+More sophisticated GitOps processes usually require some form of text preprocessing of resource files to handle requirements such as:
+
+Attribute values that change between development and production environments.
+
+Inserting text files inside configuration maps.
+
+Encoding binary files inside secrets.
+
+The OpenShift CLI embeds the Kustomize utility to perform these and other preprocessing tasks. Many OpenShift commands, such as oc apply and oc diff, accept the -k kustomize_folder option to preprocess resource files before submitting them to the OpenShift API.
+
+Kustomize requires that the kustomize_folder folder contains a kustomization.yaml file, as in the following example that generates two resources, a deployment and a TLS secret:
+
+resources:
+- deployment.yaml   1
+secretGenerator:
+- name: mycert   2
+  files:
+  - tls.crt=priv-cert.crt   3
+  - tls.key=priv-cert.key
+  type: kubernetes.io/tls   4
+generatorOptions:
+  disableNameSuffixHash: true   5
+1
+
+Kustomize takes the deployment.yaml file as is. It must exist inside the Kustomize folder.
+
+2
+
+Kustomize generates one secret named mycert in the current project.
+
+3
+
+Kustomize encodes priv-cert.crt and priv-cert.keys file contents to Base64 and places the results and their respective keys inside the generated secret.
+
+4
+
+Kustomize copies any other attributes verbatim to the generated secret.
+
+5
+
+Kustomize generators accept a few options. This one disables adding a suffix to the names of the generated secrets.
+
+To test that your Kustomize configuration file contains no syntax errors, use the oc kustomize kustomize_folder command. This command outputs the results of Kustomize preprocessing without making any changes to files inside kustomize_folder folder nor to live resources in your cluster.
+
+Deleting Resources with a Declarative Approach
+The oc apply command can create and change OpenShift resources but it cannot delete resources. Kustomize has this same limitation.
+
+When using a declarative approach, you might create a resource that you will later want to remove. Removing the resource from your resource files does not delete the resource, so you must run imperative oc delete commands to delete them.
+
+To delete a resource that is preexisting, for example, a resource that was created by installing OpenShift or an operator, you must use an imperative oc delete command.
+
+To delete resources in a manner that is consistent with a declarative approach, do not list the names of the resources to delete as arguments to the oc delete command. Instead, provide a folder with stub resource files that includes only the apiVersion, kind, metadata.name, and optionally the metadata.namespace attributes, and then use the oc delete -f folder command.
+
+Thus, a complete declarative approach to manage OpenShift resources requires two folders:
+
+One folder, containing resource files for the oc apply command, defines the expected state of a set of resources.
+
+Another folder, containing resource files for the oc delete command, defines list of resources that should not exist.
+
+If you pass complete resource files to the oc delete command, it ignores any fields not required to identify the resources to delete. This behavior is useful when you want to delete all resources previously created from either a set of resource files or the output of Kustomize.

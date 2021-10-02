@@ -1,0 +1,114 @@
+Configuring Applications to Trust the Enterprise Certificate Authority
+Objectives
+After completing this section, you should be able to:
+
+Include an enterprise CA certificate in the trusted certificate bundle.
+
+Configure an application to use the trusted certificate bundle.
+
+Including Additional Trusted Certificate Authorities
+When using your own enterprise CA, OpenShift can include the enterprise CA certificate in a trusted certificate authority bundle. This approach is useful if an application running in OpenShift must communicate with secure URLs that have been signed by your enterprise CA.
+
+By default, applications do not trust the enterprise CA.
+
+If your OpenShift cluster uses certificates signed by your enterprise CA, then check to see if your enterprise CA certificate is already included. Identify the configuration map used by the cluster proxy.
+
+[user@demo ~]$ oc get proxy/cluster \
+>   -o jsonpath='{.spec.trustedCA.name}{"\n"}'
+<CONFIGMAP-NAME>
+Extract and then view the contents of the identified configuration map. Your own certificates, such as a wildcard certificate and enterprise CA certificate, are listed at the top.
+
+Comments might exist in the configuration map providing information about your certificates.
+
+[user@demo ~]$ oc extract configmap <CONFIGMAP-NAME> \
+>   -n openshift-config --confirm
+ca-bundle.crt
+
+[user@demo ~]$ less ca-bundle.crt
+...output omitted...
+If the configuration map does not contain the enterprise CA certificate, then modify the configuration map to append the certificate. Combine the wildcard certificate and the enterprise CA certificate in a new PEM file.
+
+Adding comments, such as # Wildcard Cert above the wildcard certificate and # Enterprise CA, above the enterprise CA certificate makes it easier to identify the certificates when viewing the configuration map at a later time.
+
+Replace the previously identified configuration map with the new certificate.
+
+[user@demo ~]$ oc set data configmap <CONFIGMAP-NAME> \
+>   --from-file ca-bundle.crt=<PATH-TO-NEW-CERTIFICATE> -n openshift-config
+Injecting the Trusted CA Bundle
+The Cluster Network Operator watches for changes to the trusted CA configuration map identified in the cluster proxy. The pod injects additional certificates into all configuration maps with the label of config.openshift.io/inject-trusted-cabundle=true. Within the configuration map, additional certificates appear above the existing trusted certificate authority bundle.
+
+To use the trusted CA bundle in a pod, create an empty configuration map and then use the oc label command to add the config.openshift.io/inject-trusted-cabundle=true label.
+
+[user@demo ~]$ oc create configmap <CONFIGMAP-NAME>
+
+[user@demo ~]$ oc label configmap <CONFIGMAP-NAME> \
+>   config.openshift.io/inject-trusted-cabundle=true
+Mounting a Trusted CA Bundle
+Mount a configuration map with the label of config.openshift.io/inject-trusted-cabundle=true into a pod so that the pod trusts the certificate authorities identified in the configuration map.
+
+If the configuration map contains your enterprise CA certificate, then your application trusts certificates signed by your enterprise CA. There are various was to mount the configuration map.
+
+The oc set volume command can modify part of the configuration, but you must follow it with the oc edit command to finish the configuration.
+
+Alternatively, if the file is under version control, edit the configuration file and apply the changes with the oc apply command.
+
+[user@demo ~]$ oc set volume dc/<DC-NAME> -t configmap \
+>   --name trusted-ca --add --read-only=true \
+>   --mount-path /etc/pki/ca-trust/extracted/pem \
+>   --configmap-name <CONFIGMAP-NAME>
+The oc set volume command makes the following changes in bold.
+
+...output omitted...
+    spec:
+      containers:
+      - image: quay.io/redhattraining/hello-world-nginx@sha256:...
+        imagePullPolicy: IfNotPresent
+        name: hello
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/pki/ca-trust/extracted/pem
+          name: trusted-ca
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: <CONFIGMAP-NAME>
+        name: trusted-ca
+...output omitted...
+If you made some of the changes with the oc set volume command, then use the oc edit command to finish modifying the deployment or deployment configuration.
+
+Add the lines in bold so that the pod mounts the certificate bundle at /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem.
+
+[user@demo ~]$ oc edit dc/<DC-NAME>
+...output omitted...
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: <CONFIGMAP-NAME>
+        name: trusted-ca
+...output omitted...
+Verifying the Mounted Bundle
+If you successfully changed the application deployment or deployment configuration, then application pods redeploy. Access an application pod to verify that it trusts certificates signed by your enterprise CA.
+
+[user@demo ~]$ oc rsh hello-3-65qs7
+It is expected that /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem contains the certificate for your enterprise CA. Depending on the container image, you might be able to inspect the certificate file using less, head, cat, grep, or a similar command. The following example assumes that your enterprise CA signed the certificate for hello.apps.ocp4.example.com.
+
+sh-4.4$ curl https://hello.apps.ocp4.example.com
+<html>
+  <body>
+    <h1>Hello, world from nginx!</h1>
+  </body>
+</html>

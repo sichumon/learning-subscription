@@ -1,0 +1,134 @@
+Diagnosing Cluster Logging Problems
+Objectives
+After completing this section, you should be able to diagnose cluster logging problems with debugging and monitoring tools.
+
+Discussing Cluster Logging Alerts
+The OpenShift cluster logging infrastructure provides cluster users centralized access that enables application log analysis. If a component of the cluster logging infrastructure fails, then cluster users lose the capability to diagnosis application issues from logs. As a cluster administrator, you must use the monitoring and alerting features of OpenShift to quickly find and fix cluster logging issues.
+
+Fluentd is the component collecting the logs. Prometheus scrapes metrics from Fluentd, such as availability, queue length, and errors. After collecting the logs, Fluentd forwards them to Elasticsearch for storage. Prometheus also scrapes metrics from Elasticsearch, such as health and resource utilization. The cluster logging uses alerting rules on Fluentd and Elasticsearch metrics to notify cluster administrators of any problems.
+
+Table 10.2. Common Cluster Logging Alerts
+
+Alert	Description
+FluentdErrorsHigh	Fluentd is reporting more than one error per minute.
+FluentdQueueLengthIncreasing	The log buffer is growing faster than Fluentd can process.
+ElasticsearchNodeDiskWatermarkReached	Available disk space is low.
+ElasticsearchProcessCPUHigh	The CPU usage is above 90%.
+
+To display the list of alerting rules, navigate to Monitoring → Alerting, and then click Alerting Rules. To filter the list of alerting rules, enter a term in the Filter Alerting Rules by Name field. For example, enter fluentd to find alerting rules that relate to Fluentd. Click an alert, such as FluentdQueueLengthIncreasing, to view the alert rule definition.
+
+Each cluster logging alert rule is defined in a PrometheusRule resource in the openshift-logging namespace. You can use the oc get prometheusrules command to list and inspect Prometheus rule objects:
+
+[student@demo ~]$ oc get prometheusrules -n openshift-logging
+NAME                             AGE
+elasticsearch-prometheus-rules   2d15h
+fluentd                          2d15h
+[student@demo ~]$ oc get prometheusrules -n openshift-logging fluentd -o yaml
+kind: PrometheusRule
+...output omitted...
+spec:
+  groups:
+  - name: logging_fluentd.alerts
+    rules:
+    - alert: FluentdNodeDown
+...output omitted...
+    - alert: FluentdQueueLengthIncreasing
+      annotations:
+        message: In the last 12h, fluentd {{ $labels.instance }} buffer queue length
+          constantly increased more than 1. Current value is {{ $value }}.
+        summary: Fluentd file buffer usage issue
+      expr: |
+        delta(fluentd_output_status_buffer_queue_length[1m]) > 1
+      for: 12h
+      labels:
+        service: fluentd
+        severity: critical
+...output omitted...
+Observing Cluster Logging Metrics
+Cluster logging is a standard Kubernetes workload made of deployments, replica sets, daemon sets, and cron jobs in the openshift-logging namespace. The cluster monitoring stack collects metrics on Kubernetes workloads. Use cluster monitoring metrics to observe cluster logging resource utilization.
+
+View key health metrics on the Monitoring → Dashboards section in the web console.
+
+To view CPU usage by pod:
+
+Select the Kubernetes > Compute Resources > Namespace (Pods) dashboard from the Dashboard list.
+
+Select the openshift-logging namespace from the Namespace list.
+
+Observe the following:
+
+The CPU Usage time series graph displays CPU usage by pod.
+
+The Memory Usage time series graph displays memory usage by pod.
+
+Fluentd CPU usage rises with increased log frequency, size, and complexity.
+
+To view CPU, memory, network, and disk utilization and saturation time series graphs for a specific host:
+
+Select the USE Method / Node dashboard from the Dashboard list.
+
+Select a pod running the cluster monitoring stack from the Instance list.
+
+Query the available disk space from the es_fs_path_available_bytes Prometheus metric.
+
+If Elasticsearch consumes too much disk space, consider:
+
+Modifying log retention.
+
+Extending Elasticsearch storage.
+
+Querying Kibana for Cluster Logging Health
+Use the Kibana UI to view cluster logging component logs.
+
+You must use the infra index pattern to retrieve logs for cluster logging. Add a kubernetes.namespace_name:openshift-logging filter to display logs for the openshift-logging project only. Use the kubernetes.container_name field in a filter to view logs for a specific component only.
+
+For instance, you can use the Kibana UI to find workloads generating more logs and locate sources of cluster logging performance issues.
+
+Discussing Elasticsearch Troubleshooting Tools
+In addition to the standard Elasticsearch commands, the Elasticsearch image provided by Red Hat contains extra tools that are useful for debugging purposes, such as:
+
+es_util
+Queries the Elasticsearch REST endpoint.
+
+es_cluster_health
+Returns a JSON summary of the Elasticsearch cluster health.
+
+To use either of these tools, first locate an Elasticsearch pod in the openshift-logging namespace.
+
+[student@demo ~]$ oc get pod -n openshift-logging
+NAME                                            ...
+...output omitted...
+elasticsearch-cdm-giqewkd9-1-5f8b46cdbb-qrqf7   ...
+elasticsearch-cdm-giqewkd9-2-56cb8f56bf-pb9kv   ...
+...output omitted...
+Next, use the oc exec command to execute either tool in the elasticsearch container of the pod that you identified. The following example executes the es_cluster_health tool in the elasticsearch container of an Elasticsearch pod to display the Elasticsearch cluster health metrics:
+
+[student@demo ~]$ $ oc exec -n openshift-logging -c elasticsearch \
+> elasticsearch-cdm-giqewkd9-1-5f8b46cdbb-qrqf7 -- es_cluster_health
+{
+  "cluster_name" : "elasticsearch",
+  "status" : "green",
+  "timed_out" : false,
+  "number_of_nodes" : 2,
+  "number_of_data_nodes" : 2,
+  "active_primary_shards" : 31,
+  "active_shards" : 36,
+  "relocating_shards" : 0,
+  "initializing_shards" : 0,
+  "unassigned_shards" : 0,
+  "delayed_unassigned_shards" : 0,
+  "number_of_pending_tasks" : 0,
+  "number_of_in_flight_fetch" : 0,
+  "task_max_waiting_in_queue_millis" : 0,
+  "active_shards_percent_as_number" : 100.0
+}
+To display information about Elasticsearch indexes, use the oc exec command to execute the es_util tool in the elasticsearch container of any Elasticsearch pod:
+
+[student@demo ~]$ oc exec -n openshift-logging -c elasticsearch \
+> elasticsearch-cdm-giqewkd9-1-5f8b46cdbb-qrqf7 -- es_util \
+> --query=_cat/indices?pretty
+green open app-000001   nk3TFaibRVqkQfL-eiGVDQ 2 0     251 0 407.9kb 407.9kb
+green open audit-000001 W_bkITL8QpW1PAdvS7H2_w 2 0       0 0    522b    522b
+green open .security    ygEGPAvQT3q7z7Itc9O3Yg 1 1       5 0  59.9kb  29.9kb
+green open .kibana_1    i2jbvo9-QveVwXhXr2deyA 1 1       0 0    523b    261b
+green open infra-000001 vCOjma4EQNS4UX2VsI5vrQ 2 0 1064849 0 606.5mb 606.5mb

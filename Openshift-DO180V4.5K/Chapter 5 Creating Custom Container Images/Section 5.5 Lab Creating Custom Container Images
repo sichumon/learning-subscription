@@ -1,0 +1,170 @@
+Lab: Creating Custom Container Images
+Performance Checklist
+
+In this lab, you will create a Dockerfile to build a custom Apache Web Server container image. The custom image will be based on a RHEL 7.7 UBI image and serve a custom index.html page.
+
+Outcomes
+
+You should be able to create a custom Apache Web Server container that hosts static HTML files.
+
+Open a terminal on workstation as the student user and run the following command:
+
+[student@workstation ~]$ lab dockerfile-review start
+Review the provided Dockerfile stub in the /home/student/DO180/labs/dockerfile-review/ folder. Edit the Dockerfile and ensure that it meets the following specifications:
+
+The base image is ubi7/ubi:7.7
+
+Sets the desired author name and email ID with the MAINTAINER instruction
+
+Sets the environment variable PORT to 8080
+
+Install Apache (httpd package).
+
+Change the Apache configuration file /etc/httpd/conf/httpd.conf to listen to port 8080 instead of the default port 80.
+
+Change ownership of the /etc/httpd/logs and /run/httpd folders to user and group apache (UID and GID are 48).
+
+So that container users know how to access the Apache Web Server, expose the value set in the PORT environment variable.
+
+Copy the contents of the src/ folder in the lab directory to the Apache DocumentRoot file (/var/www/html/) inside the container.
+
+The src folder contains a single index.html file that prints a Hello World! message.
+
+Start the Apache httpd daemon in the foreground using the following command:
+
+httpd -D FOREGROUND
+Use your preferred editor to modify the Dockerfile located in the /home/student/DO180/labs/dockerfile-review/ folder.
+
+[student@workstation ~]$ cd /home/student/DO180/labs/dockerfile-review/
+[student@workstation dockerfile-review]$ vim Dockerfile
+Set the base image for the Dockerfile to ubi7/ubi:7.7.
+
+FROM ubi7/ubi:7.7
+Set your name and email with a MAINTAINER instruction.
+
+MAINTAINER Your Name <youremail>
+Create an environment variable called PORT and set it to 8080.
+
+ENV PORT 8080
+Install Apache server.
+
+RUN yum install -y httpd && \
+    yum clean all
+Change the Apache HTTP Server configuration file to listen to port 8080 and change ownership of the server working folders with a single RUN instruction.
+
+RUN sed -ri -e "/^Listen 80/c\Listen ${PORT}" /etc/httpd/conf/httpd.conf && \
+    chown -R apache:apache /etc/httpd/logs/ && \
+    chown -R apache:apache /run/httpd/
+Use the USER instruction to run the container as the apache user. Use the EXPOSE instruction to document the port that the container listens to at runtime. In this instance, set the port to the PORT environment variable, which is the default for an Apache server.
+
+USER apache
+
+# Expose the custom port that you provided in the ENV var
+EXPOSE ${PORT}
+Copy all the files from the src folder to the Apache DocumentRoot path at /var/www/html.
+
+# Copy all files under src/ folder to Apache DocumentRoot (/var/www/html)
+COPY ./src/ /var/www/html/
+Finally, insert a CMD instruction to run httpd in the foreground, and then save the Dockerfile.
+
+# Start Apache in the foreground
+CMD ["httpd", "-D", "FOREGROUND"]
+Build the custom Apache image with the name do180/custom-apache.
+
+Verify the Dockerfile for the custom Apache image.
+
+The Dockerfile for the custom Apache image should look like the following:
+
+FROM ubi7/ubi:7.7
+
+MAINTAINER Your Name <youremail>
+
+ENV PORT 8080
+
+RUN yum install -y httpd && \
+    yum clean all
+
+RUN sed -ri -e "/^Listen 80/c\Listen ${PORT}" /etc/httpd/conf/httpd.conf && \
+    chown -R apache:apache /etc/httpd/logs/ && \
+    chown -R apache:apache /run/httpd/
+
+USER apache
+
+# Expose the custom port that you provided in the ENV var
+EXPOSE ${PORT}
+
+# Copy all files under src/ folder to Apache DocumentRoot (/var/www/html)
+COPY ./src/ /var/www/html/
+
+# Start Apache in the foreground
+CMD ["httpd", "-D", "FOREGROUND"]
+Run a sudo podman build command to build the custom Apache image and name it do180/custom-apache.
+
+[student@workstation dockerfile-review]$ sudo podman build --layers=false \
+> -t do180/custom-apache .
+STEP 1: FROM ubi7/ubi:7.7
+...output omitted...
+STEP 2: MAINTAINER username <username@example.com>
+STEP 3: ENV PORT 8080
+STEP 4: RUN yum install -y httpd &&     yum clean all
+...output omitted...
+STEP 5: RUN sed -ri -e "/^Listen 80/c\Listen ${PORT}" /etc/httpd/conf/httpd.conf &&     chown -R apache:apache /etc/httpd/logs/ &&     chown -R apache:apache /run/httpd/
+STEP 6: USER apache
+STEP 7: EXPOSE ${PORT}
+STEP 8: COPY ./src/ /var/www/html/
+STEP 9: CMD ["httpd", "-D", "FOREGROUND"]
+STEP 10: COMMIT ...output omitted... localhost/do180/custom-apache:latest
+...output omitted...
+Run the podman images command to verify that the custom image is built successfully.
+
+[student@workstation dockerfile-review]$ sudo podman images
+REPOSITORY                                    TAG      IMAGE ID      ...
+locahost/do180/custom-apache                  latest   da92b9426325  ...
+registry.access.redhat.com/ubi7/ubi           7.7      6fecccc91c83  ...
+Create a new container in detached mode with the following characteristics:
+
+Name: dockerfile
+
+Container image: do180/custom-apache
+
+Port forward: from host port 20080 to container port 8080
+
+Run as a daemon: yes
+
+Verify that the container is ready and running.
+
+Create and run the container.
+
+[student@workstation dockerfile-review]$ sudo podman run -d \
+> --name dockerfile -p 20080:8080 do180/custom-apache
+367823e35c4a...
+Verify that the container is ready and running.
+
+[student@workstation dockerfile-review]$ sudo podman ps
+... IMAGE           COMMAND        ... PORTS                    NAMES
+... do180/custom... "httpd -D ..." ... 0.0.0.0:20080->8080/tcp  dockerfile
+Verify that the server is serving the HTML file.
+
+Run a curl command on 127.0.0.1:20080
+
+[student@workstation dockerfile-review]$ curl 127.0.0.1:20080
+The output should be as follows:
+
+<html>
+ <header><title>DO180 Hello!</title></header>
+ <body>
+   Hello World! The dockerfile-review lab works!
+ </body>
+</html>
+Evaluation
+
+Grade your work by running the lab dockerfile-review grade command from your workstation machine. Correct any reported failures and rerun the script until successful.
+
+[student@workstation ~]$ lab dockerfile-review grade
+Finish
+
+From workstation, run the lab dockerfile-review finish command to complete this lab.
+
+[student@workstation ~]$ lab dockerfile-review finish
+This concludes the lab.
+

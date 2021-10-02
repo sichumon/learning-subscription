@@ -1,0 +1,198 @@
+Lab: Provisioning and Inspecting Cluster Logging
+In this lab, you will use the cluster logging infrastructure to analyze the log activity of four applications.
+
+Outcomes
+
+You should be able to:
+
+Specify Lucene queries and filters in the Kibana UI to find logs.
+
+Create charts to summarize application log entries.
+
+Before starting this exercise, you must:
+
+Add extra worker nodes by completing the the section called “Guided Exercise: Adding Worker Nodes”.
+
+Set up cluster logging by completing the the section called “Guided Exercise: Deploying Cluster Logging”.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise. The command creates four deployments (app1, app2, app3, and app4) in the logging-review project.
+
+[student@workstation ~]$ lab logging-review start
+Each deployment generates Apache log entries and defines an app label that matches the deployment name.
+
+Use the cluster logging capabilities to answer three questions regarding the characteristics of deployments:
+
+Each application is configured to emit log records for twenty minutes after it starts. Ensure that your analysis of the time range includes activity from the time the application started. Further ensure that the time range includes at least ten minutes of activity.
+
+Record your answers to these questions in the ~/DO380/labs/logging-review/answers.yml file.
+
+Procedure 10.5. Instructions
+
+Navigate to the Kibana UI.
+
+Navigate to https://console-openshift-console.apps.ocp4.example.com in a web browser.
+
+From the OpenShift web console, click the Application Launcher, and then select Monitoring → Logging.
+
+
+Each of the four deployments defines an app label that matches the deployment name. Ensure that Kibana indexes the field that you need to query for deployments with an app label.
+
+Navigate to Management in the Kibana UI, and then click Index Patterns.
+
+Select the app index pattern to list all fields in the app index.
+
+Enter kubernetes.flat_labels in the text field. If a kubernetes.flat_labels entry displays in the list, you can use the kubernetes.flat_labels field in Lucene queries.
+
+If the filtered list is empty, then click Refresh field list.
+
+
+In the confirmation window that displays, click Refresh.
+
+Use Lucene queries to answer the first question:
+
+Which deployment has the most log records? Which deployment has the fewest?
+
+Update the question1 section of the ~/DO380/labs/logging-review/answers.yml answer file.
+
+...output omitted...
+question1:
+  most_total_entries: app1|app2|app3|app4
+  least_total_entries: app1|app2|app3|app4
+...output omitted...
+For the highest_total_entries key, keep only the deployment name with the most log records. For the least_total_entries key, keep the deployment name with fewest log records.
+
+Navigate to the Discover view, and then click New. Select the app index pattern, and then enter kubernetes.flat_labels:"app=app1" in the text field.
+
+The results display the total number of log records for the app1 deployment. In the following example, the query returns 1,857 records (1,857 hits).
+
+
+NOTE
+Your results will differ from the preceding example, due to several factors including:
+
+The elapsed time from the start of the lab.
+
+The configured bucket size for time stamp aggregation (Auto vs. Minute)
+
+If your results include at least ten minutes of application activity, then you can use the results to answer the questions.
+
+Note the number of log records for the app1 deployment. Repeat the previous step for the app2, app3, and app4 deployments and note the total number of log records.
+
+An example results summary follows:
+
+Table 10.3. Example Total Records for Each Deployment
+
+Deployment	Total Records	Description
+app1	1857	most
+app2	1264	 
+app3	1490	 
+app4	894	least
+
+Modify the question1 section of the ~/DO380/labs/logging-review/answers.yml file to match the following:
+
+...output omitted...
+question1:
+  most_total_entries: app1
+  least_total_entries: app4
+...output omitted...
+Create a pie chart for each deployment. Ensure that one component of each pie chart corresponds to log messages that contain an HTTP server error code. Further ensure that the entire pie chart corresponds to all log messages for the deployment.
+
+Use the pie charts to answer the second question:
+
+Which deployment has the largest percentage of server errors? Which deployment has the smallest percentage?
+
+Update the question2 section of the ~/DO380/labs/logging-review/answers.yml answer file.
+
+...output omitted...
+question2:
+  largest_percentage_of_errors: app1|app2|app3|app4
+  smallest_percentage_of_errors: app1|app2|app3|app4
+...output omitted...
+For the largest_percentage_of_errors key, keep only the deployment name with the largest percentage of server error log records. For the smallest_percentage_of_errors key, keep only the deployment name with the smallest percentage of server error log records.
+
+Navigate to Visualize, and then click + to create a new visualization.
+
+Click Pie. On the page that displays, click app.
+
+Enter kubernetes.flat_labels:"app=app1" in the text field. Click Split Slices, and then select Filters for the aggregation type. Add two filters:
+
+message:50?
+
+-message:50?
+
+Click the Apply changes arrow icon to view the chart.
+
+
+Use the pie chart to note the percentage of error messages for the app1 deployment. Update the Lucene query text field for each of the remaining deployments, and note the percentage of error messages.
+
+Example results follow:
+
+Table 10.4. Example Total Records for Each Deployment
+
+Deployment	Percent Error Messages	Description
+app1	16.8%	 
+app2	10.7%	 
+app3	25.3%	largest
+app4	5.8%	smallest
+
+Modify the question2 section of the ~/DO380/labs/logging-review/answers.yml file to match the following:
+
+...output omitted...
+question2:
+  largest_percentage_of_errors: app3
+  smallest_percentage_of_errors: app4
+...output omitted...
+Use Kibana to analyze the log record trends for each deployment. Determine if each deployment has an increasing, decreasing, or steady number of log records per minute.
+
+Modify the question3 section of the ~/DO380/labs/logging-review/answers.yml answer file.
+
+...output omitted...
+question3:
+  app1: increasing|decreasing|steady
+  app2: increasing|decreasing|steady
+  app3: increasing|decreasing|steady
+  app4: increasing|decreasing|steady
+...output omitted...
+For each deployment, keep only the value that describes the log record trends for the application:
+
+increasing - The number of log records each minute is increasing.
+
+decreasing - The number of log records each minute is decreasing.
+
+steady - The number of log records each minute is neither increasing, nor decreasing.
+
+Navigate to the Discover view. Reuse the Lucene query for the app1 deployment. Ensure that records aggregate each minute.
+
+
+The app1 deployment has approximately 120 log records per minute, every minute. The log record rate does not increase, nor decrease.
+
+Repeat the previous step for each of the remaining deployments. Summarize the log records per minute trend as increasing, decreasing, or steady.
+
+Table 10.5. Records per Minute Trend for Deployment
+
+Deployment	Records Per Minute Trend
+app1	steady
+app2	decreasing
+app3	increasing
+app4	decreasing
+
+Modify the question3 section of the ~/DO380/labs/logging-review/answers.yml file to match the following:
+
+...output omitted...
+question3:
+  app1: steady
+  app2: decreasing
+  app3: increasing
+  app4: decreasing
+...output omitted...
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab logging-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab logging-review finish
+This concludes the section.
+

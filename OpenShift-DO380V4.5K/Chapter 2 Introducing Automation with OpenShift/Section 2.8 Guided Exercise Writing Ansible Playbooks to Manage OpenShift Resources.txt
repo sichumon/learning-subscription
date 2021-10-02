@@ -1,0 +1,148 @@
+
+Guided Exercise: Writing Ansible Playbooks to Manage OpenShift Resources
+In this exercise you will create a playbook to automate the creation and modification of OpenShift resources.
+
+Outcomes
+
+You should be able to:
+
+Create and execute a playbook that uses the k8s modules.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command provides a working directory with a manifest file and a playbook with some boilerplate content.
+
+[student@workstation ~]$ lab automation-ansible start
+Procedure 2.4. Instructions
+
+Change to the ~/DO380/labs/automation-ansible directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/automation-ansible
+Optionally, review the provided hello.yml manifest. This manifest provides a hello world application, a service, and a route.
+
+Add tasks to the provided k8s.yml playbook. The provided k8s.yml playbook includes some boilerplate code.
+
+Edit the k8s.yml playbook with your preferred text editor. Add a task to create the OpenShift project. Use the provided namespace variable for the name of the project. Set the namespace parameter in the task to "" to allow this task to use a value other than the module_default value.
+
+- name: Demonstrate k8s modules
+  hosts: localhost
+  become: false
+...output omitted...
+  tasks:
+    - name: Create the project
+      k8s:
+        api_version: project.openshift.io/v1
+        kind: Project
+        name: "{{ namespace }}"
+        state: present
+        namespace: ""
+Add tasks to create the objects from the hello.yml manifest and view information about the new pods. Use the src or resource_definition parameter of the k8s module to read from the manifest file. The completed tasks should match the following:
+
+...output omitted...
+    - name: Create objects from the manifest
+      k8s:
+        state: present
+        src: "{{ playbook_dir + '/hello.yml' }}"
+
+    - name: Get a info about all of the pods in the namespace
+      k8s_info:
+        kind: Pod
+IMPORTANT
+The src and resource_definition parameters of the k8s module do not behave the same as other modules with a src parameter, which automatically read from the playbook directory or the role’s files directory. The absolute path is needed.
+
+Add a task to scale the deployment up.
+
+Scale the number of replicas to 3 using the k8s_scale module.
+
+...output omitted...
+    - name: Scale deployment up
+      k8s_scale:
+        kind: Deployment
+        name: hello
+        replicas: 3
+Add tasks to get information about the route, test the route, and then display the content from the application.
+
+...output omitted...
+    - name: Get hostname of the route
+      k8s_info:
+        kind: Route
+        name: hello
+      register: route
+
+    - name: Test access to the app
+      uri:
+        url: "http://{{ route.resources[0].spec.host }}"
+        return_content: yes
+      register: response
+      until: response.status == 200
+      retries: 10
+      delay: 5
+
+    - name: Display response of the application
+      debug:
+        var: response.content
+Optionally, compare your playbook to the solution file located at ~/DO380/solutions/automation-ansible/k8s.yml.
+
+Log in as the developer user and run the k8s.yml playbook with at least one level of verbosity to see the output of the tasks.
+
+[student@workstation automation-ansible]$ oc login -u developer -p developer \
+> https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+[student@workstation automation-ansible]$ ansible-playbook -v k8s.yml
+Using /etc/ansible/ansible.cfg as config file
+
+PLAY [Demonstrate k8s modules] *************************************************
+
+...output omitted...
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=7    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+IMPORTANT
+The lab script deploys a global Ansible configuration file to /etc/ansible/ansible.cfg. This global Ansible configuration file sets become: true. The become: true setting makes playbooks execute as the root user. The lab script runs as the root user and logs in to OpenShift as a user with administrator privileges.
+
+The k8s.yml playbook specifies become: false to override the global configuration. This is required so the playbook executes as the student user, whose kubeconfig file is configured to interact with OpenShift as the developer user. Otherwise, the playbook tasks would execute as the root user and interact with OpenShift as a user with administrator privileges.
+
+NOTE
+The Ansible inventory file configures Ansible tasks executed against localhost to use a Python virtual environment. This Python virtual environment is in the /home/student/venv/openshift/ directory. The virtual environment includes the dependencies required to run the Kubernetes Ansible modules.
+
+Inspect the results of the playbook.
+
+Use the oc get all command to inspect the components created by the playbook.
+
+[student@workstation automation-ansible]$ oc project automation-ansible
+Now using project "automation-ansible" on server "https://api.ocp4.example.com:6443".
+[student@workstation automation-ansible]$ oc get all
+NAME                         READY   STATUS    RESTARTS   AGE
+pod/hello-76db5c69d5-ghrjj   1/1     Running   0          63s
+pod/hello-76db5c69d5-wj4l5   1/1     Running   0          66s
+pod/hello-76db5c69d5-xhtwm   1/1     Running   0          63s
+
+NAME            TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/hello   ClusterIP   172.30.174.154   <none>        80/TCP    66s
+
+NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/hello   3/3     3            3           66s
+
+NAME                               DESIRED   CURRENT   READY   AGE
+replicaset.apps/hello-76db5c69d5   3         3         3       66s
+
+NAME                             HOST/PORT                                        PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/hello   hello-automation-ansible.apps.ocp4.example.com          hello      8080                 None
+Use the curl command to verify that the application is running.
+
+[student@workstation automation-ansible]$ curl \
+> hello-automation-ansible.apps.ocp4.example.com
+<html>
+  <body>
+    <h1>Hello, world from nginx!</h1>
+  </body>
+</html>
+Change to the /home/student/ directory.
+
+[student@workstation automation-ansible]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab automation-ansible finish

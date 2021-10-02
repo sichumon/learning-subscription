@@ -1,0 +1,98 @@
+Quiz: Working With Registries
+Choose the correct answers to the following questions, based on the following information:
+
+Podman is available on a RHEL host with the following entry in /etc/containers/registries.conf file:
+
+[registries.search]
+registries = ["registry.redhat.io","quay.io"]
+The registry.redhat.io and quay.io hosts have a registry running, both have valid certificates, and use the version 1 registry. The following images are available for each host:
+
+Table 4.1. Image names/tags per registry
+
+Regisitry	Image
+registry.redhat.io	
+nginx/1.0
+
+mysql/5.6
+
+httpd/2.2
+
+quay.io	
+mysql/5.5
+
+httpd/2.4
+
+
+No images are locally available.
+
+1.		
+Which two commands display mysql images available for download from registry.redhat.io? (Choose two.)
+
+A		
+podman search registry.redhat.io/mysql
+
+B		
+podman images
+
+C		
+podman pull mysql
+
+D		
+podman search mysql
+
+2.		
+Which command is used to list all available image tags for the httpd container image?
+
+A		
+podman search httpd
+
+B		
+podman images httpd
+
+C		
+podman pull --all-tags=true httpd
+
+D		
+There is no podman command available to search for tags.
+
+3.		
+Which two commands pull the httpd image with the 2.2 tag? (Choose two.)
+
+A		
+podman pull httpd:2.2
+
+B		
+podman pull httpd:latest
+
+C		
+podman pull quay.io/httpd
+
+D		
+podman pull registry.redhat.io/httpd:2.2
+
+4.		
+When running the following commands, what container images will be downloaded?
+
+podman pull registry.redhat.io/httpd:2.2
+podman pull quay.io/mysql:5.6
+A		
+quay.io/httpd:2.2
+
+registry.redhat.io/mysql:5.6
+
+B		
+registry.redhat.io/httpd:2.2
+
+registry.redhat.io/mysql:5.6
+
+C		
+registry.redhat.io/httpd:2.2
+
+No image will be downloaded for mysql.
+
+D		
+quay.io/httpd:2.2
+
+No image will be downloaded for mysql.
+
+1. A,D 2.D 3.A,D 4.C

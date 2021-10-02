@@ -1,0 +1,109 @@
+Guided Exercise: Initializing an Instance During Deployment
+In this exercise you will customize a launched instance during deployment using cloud-init.
+
+Outcomes
+
+You should be able to:
+
+Create a user-data file in cloud config format.
+
+Launch an instance and verify that the user-data has been applied.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab customization-img-cloudinit setup command. This ensures that the required packages are installed on workstation, and provisions the environment with resources required to launch an instance.
+
+[student@workstation ~]$ lab customization-img-cloudinit setup
+Create the /home/student/user-data file in cloud config format.
+
+Edit the /home/student/user-data file. Add directives to create the cloud-admin user and populate the /home/cloud-admin/.ssh/authorized_keys file with the content of /home/student/.ssh/example-keypair.pub. Give cloud-admin passwordless sudo access. Ensure you include the #cloud-config header.
+
+NOTE
+The output below has been formatted for readability; the SSH public key data should not contain new-line characters.
+
+#cloud-config
+
+users:
+  - name: cloud-admin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDHufCmzG95rJkXHZOe+7rHMaf3me7geA
+                fdYAc2fuoKjSVoBni4aF4MYkSmb1UYyXjtQ++x2+i13+Osn9FJZmvda0maqT6D
+                uIcpiAxldVrnNJFv5L1VFGiFDbUglThPc25Ytn7bWqg02pFJz4Nc9vN+PzVETe
+                vL8b0tMvWPQ44MRuXCCM+UaHO1mBD2pcEnpQ1R/MzYxTzzdvjP5iBn4GAp7KjU
+                w/+FvBhlNiKsXJjQGl6MHbCZhtgsntJzl7tKGY4SgJXZaUD0TnpPeCBlEmWNUz
+                4hAoVMfiiZA4fLAmJ7yZqwRcr4EVnqbmZC6CfIhVxb1J69UHhK62KS6513MP3v
+                Generated-by-Nova
+Ensure the aide, nmap, socat, and wireshark packages will be installed.
+
+packages:
+  - aide
+  - nmap
+  - socat
+  - wireshark
+Source /home/student/.bashrc to enable the yv alias. Validate that the /home/student/user-data file is in YAML format, and correct any reported errors.
+
+[student@workstation ~]$ source ~/.bashrc
+[student@workstation ~]$ yv ~/user-data
+Source the /home/student/developer1-finance-rc environment file. Launch an instance using the following attributes:
+
+Table 4.10. Instance Attributes
+
+Attribute	Value
+flavor	default
+key pair	example-keypair
+network	finance-network1
+image	rhel7
+security group	default
+user-data	/home/student/user-data
+name	finance-admin1
+
+[student@workstation ~]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--security-group default \
+--image rhel7 \
+--user-data ~/user-data \
+--wait finance-admin1
+...output omitted...
+List the available floating IP addresses, and then allocate one to finance-admin1.
+
+List the floating IPs; unallocated IPs have None listed as their Port value. Note that your list of floating IPs may vary from the output below in address and quantity.
+
+[student@workstation ~(developer1-finance)]$ openstack floating ip list \
+-c "Floating IP Address" -c Port
++---------------------+------+
+| Floating IP Address | Port |
++---------------------+------+
+| 172.25.250.110      | None |
+| 172.25.250.107      | None |
++---------------------+------+
+Attach an unallocated floating IP to the finance-admin1 instance.
+
+[student@workstation ~(developer1-finance)]$ openstack server add floating \
+ip finance-admin1 172.25.250.110
+Verify that the cloud-init customization has worked. Debug any failures by checking the /var/log/cloud-init.log file.
+
+Use the ssh command to attempt to log in to the finance-admin1 instance as the cloud-admin user. The /home/student/.ssh/example-keypair private key is used automatically in the classroom.
+
+[student@workstation ~(developer1-finance)]$ ssh cloud-admin@172.25.250.110
+Warning: Permanently added '172.25.250.110' (ECDSA) to the list of known hosts.
+[cloud-admin@finance-admin1 ~]$ 
+Verify that the aide, nmap, socat, and wireshark packages are installed.
+
+[cloud-admin@finance-admin1 ~]$ rpm -qa | egrep 'aide|nmap|socat|wireshark'
+socat-1.7.3.2-2.el7.x86_64
+wireshark-1.10.14-14.el7.x86_64
+aide-0.15.1-13.el7.x86_64
+nmap-ncat-6.40-13.el7.x86_64
+nmap-6.40-13.el7.x86_64
+[cloud-admin@finance-admin1 ~]$ logout
+Connection to 172.25.250.110 closed.
+[student@workstation ~(developer1-finance)]$ 
+Cleanup
+
+On workstation, run the lab customization-img-cloudinit cleanup command to clean up this exercise.
+
+[student@workstation ~]$ lab customization-img-cloudinit cleanup

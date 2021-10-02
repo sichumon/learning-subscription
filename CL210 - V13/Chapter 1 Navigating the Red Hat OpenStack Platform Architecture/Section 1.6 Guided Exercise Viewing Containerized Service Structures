@@ -1,0 +1,160 @@
+Guided Exercise: Viewing Containerized Service Structures
+
+In this exercise, you will perform some of the most common administration tasks related to containerized services.
+
+Outcomes
+
+You should be able to:
+
+Perform common administration tasks related to containerized services.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab architecture-containerization setup command.
+
+[student@workstation ~]$ lab architecture-containerization setup
+Log in to compute0 as the heat-admin user. Use the sudo -i command to change to the root user. Use the docker ps command to list the containers on the compute node. Log off from the compute0 node, and then log in to the controller0 node. Use the sudo -i command to change to the root user. On the controller0 node run the docker ps command to list the containers. Note the difference between the two nodes.
+
+Log in to the compute0 node as the heat-admin user. Use the docker ps command to list the containers. Log off from the compute0 node.
+
+[student@workstation ~]$ ssh heat-admin@compute0
+[heat-admin@compute0 ~]$ sudo -i
+[root@compute0 ~]# docker ps
+CONTAINER ID        IMAGE                                                                     COMMAND             CREATED             STATUS                  PORTS               NAMES
+5873d9d3221c        172.25.249.200:8787/rhosp13/openstack-ovn-controller:latest               "kolla_start"       3 days ago          Up 26 hours                                 ovn_controller
+f5de65054aa7        172.25.249.200:8787/rhosp13/openstack-neutron-metadata-agent-ovn:latest   "kolla_start"       3 days ago          Up 26 hours (healthy)                       ovn_metadata_agent
+...output omitted...
+[root@compute0 ~]# exit
+[heat-admin@compute0 ~]$ exit
+Log in to the controller0 node as the heat-admin user. Use the sudo -i to become root. Use the docker ps command to list the containers.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# docker ps
+CONTAINER ID        IMAGE                                                                  COMMAND                  CREATED             STATUS                         PORTS               NAMES
+28fcdfb385fc        172.25.249.200:8787/rhosp13/openstack-ovn-northd:latest                "/bin/bash /usr/lo..."   26 hours ago        Up 26 hours                                        ovn-dbs-bundle-docker-0
+b8d5c72ffe23        172.25.249.200:8787/rhosp13/openstack-manila-share:pcmklatest          "/bin/bash /usr/lo..."   26 hours ago        Up 26 hours                                        openstack-manila-share-docker-0
+37fd300bb956        172.25.249.200:8787/rhosp13/openstack-cinder-volume:pcmklatest         "/bin/bash /usr/lo..."   26 hours ago        Up 26 hours                                        openstack-cinder-volume-docker-0
+...output omitted...
+Use the docker images command to list the images used to create the service containers.
+
+[root@controller0 ~]# docker images
+REPOSITORY                                                      TAG                 IMAGE ID            CREATED             SIZE
+172.25.249.200:8787/rhceph/rhceph-3-rhel7                       latest              fa3b551f0952        2 weeks ago         592 MB
+172.25.249.200:8787/rhosp13/openstack-neutron-server-ovn        latest              80fa6c0a0a0a        5 weeks ago         867 MB
+172.25.249.200:8787/rhosp13/openstack-cinder-api                latest              1438961b75d3        5 weeks ago         992 MB
+...output omitted...
+Use the docker inspect command to inspect the cinder_api container. Use the jq command to refine the search. You can refine the search to any section of the configuration file.
+
+Use the docker inspect command to inspect the cinder_api container.
+
+[root@controller0 ~]# docker inspect cinder_api
+[
+ {
+   "Id": "15454f4111f64e31970a38a748ba810117b218ed8a7b0b5b156113dceda4af5d",
+   "Created": "2018-08-19T04:12:39.610382135Z",
+   "Path": "kolla_start",
+   "Args": [],
+   "State": {
+       "Status": "running",
+       "Running": true,
+       "Paused": false,
+       "Restarting": false,
+       "OOMKilled": false,
+       "Dead": false,
+       "Pid": 14058,
+       "ExitCode": 0,
+       "Error": "",
+       "StartedAt": "2018-08-21T05:24:24.150488874Z",
+       "FinishedAt": "2018-08-21T05:23:55.583984134Z"
+   },
+...output omitted...
+Refine the search. Use the jq command to select the Config section. The .[0]. reads the first element of the array in the response.
+
+[root@controller0 ~]# docker inspect cinder_api | jq .[0].Config
+{
+  "StopSignal": "SIGTERM",
+  "Labels": {
+    "version": "13.0",
+    "vendor": "Red Hat, Inc.",
+    "vcs-type": "git",
+    "vcs-ref": "1746128f0b1df74441d30bf0a1a6902fe244a591",
+    "usage": "This image is very generic and does not serve a single use case. Use it as a base to build your own images.",
+    "url": "https://access.redhat.com/containers/#/registry.access.redhat.com/rhosp13/openstack-cinder-api/images/13.0-46",
+    "summary": "Red Hat OpenStack Platform 13.0 cinder-api",
+    "release": "46",
+    "name": "rhosp13/openstack-cinder-api",
+    "managed_by": "paunch",
+    "config_id": "tripleo_step4",
+...output omitted...
+Use the docker logs command to inspect the keystone startup log files. The service management log files are stored in the /var/log/containers/service directory. Use the less command to inspect the swift log files.
+
+Use the docker logs command to inspect the keystone startup log files.
+
+[root@controller0 ~]# docker logs keystone
++ sudo -E kolla_set_configs
+INFO:__main__:Loading config file at /var/lib/kolla/config_files/config.json
+INFO:__main__:Validating config file
+INFO:__main__:Kolla config strategy set to: COPY_ALWAYS
+INFO:__main__:Copying service configuration files
+INFO:__main__:Copying /var/lib/kolla/config_files/src/etc/httpd/conf.d/10-keystone_wsgi_admin.conf to /etc/httpd/conf.d/10-keystone_wsgi_admin.conf
+INFO:__main__:Copying /var/lib/kolla/config_files/src/etc/httpd/conf.d/10-keystone_wsgi_main.conf to /etc/httpd/conf.d/10-keystone_wsgi_main.conf
+INFO:__main__:Deleting /etc/httpd/conf.d/ssl.conf
+...output omitted...
+Use the less command to inspect the swift log files.
+
+[root@controller0 ~]# view /var/log/containers/swift/swift.log
+...output omitted...
+stead. This option will be ignored in a future release.
+Aug 19 00:13:08 controller0 object-server: Starting 1
+Aug 19 00:13:08 controller0 object-server: Starting object replicator in daemon mode.
+Aug 19 00:13:08 controller0 object-server: Starting object replication pass.
+Aug 19 00:13:09 controller0 object-server: Nothing replicated for 0.0820679664612 seconds.
+Aug 19 00:13:09 controller0 object-server: Object replication complete. (0.00 minutes)
+Aug 19 00:13:11 controller0 account-server: Beginning replication run
+Aug 19 00:13:11 controller0 account-server: Replication run OVER
+Aug 19 00:13:11 controller0 account-server: Attempted to replicate 0 dbs in 0.00213 seconds (0.00000/s)
+Aug 19 00:13:11 controller0 account-server: Removed 0 dbs
+...output omitted...
+Use the docker exec command to determine the health of the OpenStack service in the keystone container.
+
+[root@controller0 ~]# docker exec -t keystone /openstack/healthcheck
+{"versions": {"values": [{"status": "stable", "updated": "2018-02-28T00:00:00Z", "media-types": [{"base": "application/json", "type": "application/vnd.openstack.identity-v3+json"}], "id": "v3.10", "links": [{"href": "http://controller0.internalapi.overcloud.example.com:5000/v3/", "rel": "self"}]}, {"status": "deprecated", "updated": "2016-08-04T00:00:00Z", "media-types": [{"base": "application/json", "type": "application/vnd.openstack.identity-v2.0+json"}], "id": "v2.0", "links": [{"href": "http://controller0.internalapi.overcloud.example.com:5000/v2.0/", "rel": "self"}, {"href": "https://docs.openstack.org/", "type": "text/html", "rel": "describedby"}]}]}}
+300 172.24.1.1:5000 0.006 seconds
+Use the docker stop command to stop the nova_api container. Use the docker ps command to check the status of the container. Use the docker start command to restart the nova_api container. Recheck the container status. Wait 40 to 50 seconds and recheck the container status. Ensure that the container status is healthy.
+
+Use the docker stop command to stop the nova_api container.
+
+[root@controller0 ~]# docker stop nova_api
+nova_api
+Use the docker ps command to check the status of the container.
+
+[root@controller0 ~]# docker ps -a --format="{{.Names}}\t{{.Status}}" \
+| grep nova_api
+...output omitted...
+nova_api    Exited (0) 32 seconds ago
+...output omitted...
+Use the docker start command to restart the nova_api container.
+
+[root@controller0 ~]# docker start nova_api
+nova_api
+[root@controller0 ~]# docker ps -a --format="{{.Names}}\t{{.Status}}" \
+| grep nova_api
+...output omitted...
+nova_api    Up 2 seconds (health: starting)
+ ...output omitted...
+Recheck the container status. Wait 40 to 50 seconds and recheck the container status. Ensure that the container status is healthy.
+
+[root@controller0 ~]# docker ps -a --format="{{.Names}}\t{{.Status}}" \
+| grep nova_api
+nova_api    Up About a minute (healthy)
+Log out of controller0.
+
+[root@controller0 ~]# logout
+[student@workstation ~]$ 
+Cleanup
+
+On workstation, run the lab architecture-containerization cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab architecture-containerization cleanup
+This concludes the guided exercise.

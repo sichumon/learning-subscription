@@ -1,0 +1,244 @@
+Guided Exercise: Creating Custom Machine Config Pools
+In this exercise you will create an infra Machine Config Pool and add a custom Machine Config.
+
+Outcomes
+
+You should be able to:
+
+Create custom Machine Config Pools and Machine Configs.
+
+Observe the status of Machine Config updates.
+
+To perform this exercise, ensure you have completed the section called “Guided Exercise: Adding Worker Nodes”. Nodes worker04, worker05, and worker06 must be added to the cluster and in a Ready state.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+[student@workstation ~]$ lab pools-creating start
+Procedure 7.2. Instructions
+
+Label nodes worker04, worker05, and worker06 with the infra role, and then remove the worker role.
+
+Use the oc label node command to add the node-role.kubernetes.io/infra= label.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>  https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+[student@workstation ~]$ oc get nodes
+NAME       STATUS   ROLES           AGE   VERSION
+master01   Ready    master   15d   v1.18.3+012b3ec
+master02   Ready    master   15d   v1.18.3+012b3ec
+master03   Ready    master   15d   v1.18.3+012b3ec
+worker01   Ready    worker   15d   v1.18.3+012b3ec
+worker02   Ready    worker   15d   v1.18.3+012b3ec
+worker03   Ready    worker   15d   v1.18.3+012b3ec
+worker04   Ready    worker   77s   v1.18.3+012b3ec
+worker05   Ready    worker   76s   v1.18.3+012b3ec
+worker06   Ready    worker   76s   v1.18.3+012b3ec
+
+[student@workstation ~]$ oc label node/worker04 node-role.kubernetes.io/infra=
+node/worker04 labeled
+
+[student@workstation ~]$ oc label node/worker05 node-role.kubernetes.io/infra=
+node/worker05 labeled
+
+[student@workstation ~]$ oc label node/worker06 node-role.kubernetes.io/infra=
+node/worker06 labeled
+Use the oc label node command to remove the node-role.kubernetes.io/worker label.
+
+[student@workstation ~]$ oc label node/worker04 node-role.kubernetes.io/worker-
+node/worker04 labeled
+
+[student@workstation ~]$ oc label node/worker05 node-role.kubernetes.io/worker-
+node/worker05 labeled
+
+[student@workstation ~]$ oc label node/worker06 node-role.kubernetes.io/worker-
+node/worker06 labeled
+Use the oc get nodes command to review the updated roles.
+
+[student@workstation ~]$ oc get nodes
+NAME       STATUS   ROLES           AGE     VERSION
+master01   Ready    master   15d     v1.18.3+012b3ec
+master02   Ready    master   15d     v1.18.3+012b3ec
+master03   Ready    master   15d     v1.18.3+012b3ec
+worker01   Ready    worker   15d     v1.18.3+012b3ec
+worker02   Ready    worker   15d     v1.18.3+012b3ec
+worker03   Ready    worker   15d     v1.18.3+012b3ec
+worker04   Ready    infra    2m18s   v1.18.3+012b3ec
+worker05   Ready    infra    2m17s   v1.18.3+012b3ec
+worker06   Ready    infra    2m17s   v1.18.3+012b3ec
+Change to the ~/DO380/labs/pools-creating/ directory, and then update the Machine Config defined in motd-mc.yml to add a custom /etc/motd file.
+
+Encode the contents of motd.txt to Base64. Copy the encoded value to the clipboard.
+
+[student@workstation ~]$ cd ~/DO380/labs/pools-creating
+
+[student@workstation pools-creating]$ base64 motd.txt
+VGhpcyBpcyBhIGN1c3RvbSBtZXNzYWdlIG9mIHRoZSBkYXkgZmlsZS4K
+Replace the text in motd-mc.yml marked CHANGE_ME. Update the metadata label machineconfiguration.openshift.io/role to infra and the name to 50-motd. Update the data portion of the source value to the base64-encoded value of motd.txt stored in your clipboard.
+
+Verify that the completed file reads as follows.
+
+[student@workstation pools-creating]$ cat motd-mc.yml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: infra
+  name: 50-motd
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,VGhpcpcyBh...9mIHRZS4K
+        filesystem: root
+        mode: 0644
+        path: /etc/motd
+Update the Machine Config Pool defined in infra-mcp.yml to apply worker and infra Machine Configs to nodes matching the node-role.kubernetes.io/infra label.
+
+Replace CHANGE_ME in the machineConfigSelector with the text [worker,infra].
+
+Replace CHANGE_ME in the nodeSelector with the text node-role.kubernetes.io/infra: "".
+
+Verify the completed file reads as follows.
+
+[student@workstation pools-creating]$ cat infra-mcp.yml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: infra
+spec:
+  machineConfigSelector:
+    matchExpressions:
+      - key: machineconfiguration.openshift.io/role
+        operator: In
+        values: [worker,infra]
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/infra: ""
+Create both resources in the cluster.
+
+[student@workstation pools-creating]$ oc create -f .
+machineconfigpool.machineconfiguration.openshift.io/infra created
+machineconfig.machineconfiguration.openshift.io/50-motd created
+List the Machine Configs and verify that the 50-motd Machine Config is included.
+
+[student@workstation pools-creating]$ oc get mc
+NAME                                GENERATEDBYCONTROLLER IGNITIONVERSION   AGE
+00-master                           8af4f...314           2.2.0             17d
+00-worker                           8af4f...314           2.2.0             17d
+01-master-container-runtime         8af4f...314           2.2.0             17d
+01-master-kubelet                   8af4f...314           2.2.0             17d
+01-worker-container-runtime         8af4f...314           2.2.0             17d
+01-worker-kubelet                   8af4f...314           2.2.0             17d
+50-motd                                                   2.2.0             2m
+99-master-fa9d55f3-...-registries   8af4f...314           2.2.0             17d
+99-master-ssh                                             2.2.0             17d
+99-worker-92b9381f-...-registries   8af4f...314           2.2.0             17d
+99-worker-ssh                                             2.2.0             17d
+rendered-infra-f25cb509a35...ba2    8af4f...314           2.2.0             15s
+rendered-master-71638c3844...267    8af4f...314           2.2.0             17d
+rendered-worker-5732daa0c2...3db    8af4f...314           2.2.0             17d
+List the Machine Config Pools, and then describe the infra Machine Config Pool.
+
+Use the oc get mcp command to list the MachineConfigPool resources. Notice that the Machine Config Pool is currently in an UPDATING state.
+
+[student@workstation pools-creating]$ oc get mcp
+NAME     CONFIG                 UPDATED   UPDATING   DEGRADED   ...
+infra    rendered-infra-f25...  False     True       False      ...
+master   rendered-master-71...  True      False      False      ...
+worker   rendered-worker-57...  True      False      False      ...
+Use the oc describe mcp/infra command to view details about the infra Machine Config Pool. Review the source Machine Configs added to the Spec.
+
+[student@workstation pools-creating]$ oc describe mcp/infra
+Name:         infra
+Namespace:
+Labels:       <none>
+Annotations:  <none>
+API Version:  machineconfiguration.openshift.io/v1
+Kind:         MachineConfigPool
+Metadata:
+  Creation Timestamp:  2020-06-14T23:55:46Z
+  Generation:          2
+  Resource Version:    211637
+  Self Link:           /apis/machine...openshift.io/v1/machineconfigpools/infra
+  UID:                 d7c2b26a-1bb9-4f8a-84fe-57ba1cb1596e
+Spec:
+  Configuration:
+    Name:  rendered-infra-f25cb509a35fdca08b5fb488a8a68ba2
+    Source:
+      API Version:  machineconfiguration.openshift.io/v1
+      Kind:         MachineConfig
+      Name:         00-worker
+      API Version:  machineconfiguration.openshift.io/v1
+      Kind:         MachineConfig
+      Name:         01-worker-container-runtime
+      API Version:  machineconfiguration.openshift.io/v1
+      Kind:         MachineConfig
+      Name:         01-worker-kubelet
+      API Version:  machineconfiguration.openshift.io/v1
+      Kind:         MachineConfig
+      Name:         50-motd
+...output omitted...
+Check the state of the updating nodes.
+
+Use the oc get nodes command to list the nodes. Notice that the infra node reports a SchedulingDisabled status. The node is updating with the new Machine Config.
+
+NAME       STATUS                     ROLES    AGE     VERSION
+master01   Ready                      master   17d     v1.18.3+012b3ec
+master02   Ready                      master   17d     v1.18.3+012b3ec
+master03   Ready                      master   17d     v1.18.3+012b3ec
+worker01   Ready                      worker   17d     v1.18.3+012b3ec
+worker02   Ready                      worker   17d     v1.18.3+012b3ec
+worker03   Ready                      worker   17d     v1.18.3+012b3ec
+worker04   Ready,SchedulingDisabled   infra    4m33s   v1.18.3+012b3ec
+worker05   Ready                      infra    4m31s   v1.18.3+012b3ec
+worker06   Ready                      infra    4m29s   v1.18.3+012b3ec
+Describe the node to review the machineconfiguration.openshift.io annotations.
+
+[student@workstation pools-creating]$ oc describe node/worker05
+Name:               worker05
+Roles:              infra,worker
+Labels:             beta.kubernetes.io/arch=amd64
+                    beta.kubernetes.io/os=linux
+                    kubernetes.io/arch=amd64
+                    kubernetes.io/hostname=worker05
+                    kubernetes.io/os=linux
+                    node-role.kubernetes.io/infra=
+                    node-role.kubernetes.io/worker=
+                    node.openshift.io/os_id=rhcos
+Annotations:        ma...openshift.io/currentConfig: rendered-infra-f25cb...ba2
+                    ma...openshift.io/desiredConfig: rendered-infra-f25cb...ba2
+                    machineconfiguration.openshift.io/reason:
+                    machineconfiguration.openshift.io/state: Done
+...output omitted...
+After the update is complete, use oc debug node to verify that the file updated. Retry in a few minutes if the first attempt fails. When finished, use Ctrl+D twice to exit.
+
+[student@workstation pools-creating]$ oc debug node/worker05
+Starting pod/worker05-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 192.168.50.17
+If you don't see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# cat /etc/motd
+This is a custom message of the day file.
+Change to the /home/student/ directory.
+
+[student@workstation pools-creating]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab pools-creating finish
+NOTE
+The machine config and machine config pool created in this exercise are used in following exercises. Thus, the lab pools-creating finish command does not revert those changes.
+
+NOTE
+In production environments, administrators can use dedicated infra nodes to host only infrastructure components such as control plane services, default routers, the logging stack, the metrics stack, or the OpenShift internal registry.
+
+For this course, you do not add a default node selector to prevent regular applications from using the dedicated infra nodes because there are only six nodes in the cluster.
+
+This concludes the section.

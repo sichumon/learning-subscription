@@ -1,0 +1,262 @@
+Guided Exercise: Provisioning Shared Storage for Applications
+In this exercise you will deploy a backend batch processing job to access shared file storage.
+
+Outcomes
+
+You should be able to:
+
+Identify the default storage class for an OpenShift cluster.
+
+Set the default storage class for an OpenShift cluster.
+
+Create a storage quota for a project.
+
+Create a Persistent Volume claim for shared storage.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+On the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable and that no default storage class exists.
+
+[student@workstation ~]$ lab storage-file start
+Procedure 8.1. Instructions
+
+As the admin user, create a storage-file project with a restriction of three persistent volume claims and 5 GB of storage. Add the developer user as a project administrator.
+
+Log in as the admin user and create the storage-file project.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+[student@workstation ~]$ oc new-project storage-file
+Now using project "storage-file" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create a storage quota for the project. Restrict the project to 3 persistent volume claims and 5 GB of storage.
+
+[student@workstation ~]$ oc create quota storage \
+>   --hard=requests.storage=5G,persistentvolumeclaims=3
+resourcequota/storage created
+Add the developer user as a project administrator.
+
+[student@workstation ~]$ oc policy add-role-to-user \
+>   admin developer
+clusterrole.rbac.authorization.k8s.io/admin added: "developer"
+NOTE
+If you have not previously authenticated as the developer user, then you will see a warning message that indicates the developer user is not found.
+
+OpenShift creates a developer user resource only after the developer user authenticates for the first time.
+
+The developer user manages an application that requires shared storage. The application consists of three components: a HTTPD front end, a back-end image processing application, and a Redis service to manage a work queue for the back-end application. The ~/DO380/labs/storage-file directory contains resource definitions to deploy these components.
+
+The front-end application defines a persistent volume claim for shared storage in the resources/httpd/pvc.yml file. Create a photo-share persistent volume claim from the resources/httpd/pvc.yml file. Expect the photo-share persistent volume claim to have a Pending status.
+
+Change to the ~/DO380/labs/storage-file directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/storage-file
+[student@workstation storage-file]$
+Log in as the developer user and switch to the storage-file project.
+
+[student@workstation storage-file]$ oc login -u developer -p developer
+Login successful.
+...output omitted...
+[student@workstation storage-file]$ oc project storage-file
+Already on project "storage-file" on server "https://api.ocp4.example.com:6443".
+Display and review the contents of the resources/httpd/pvc.yml file.
+
+[student@workstation storage-file]$ cat resources/httpd/pvc.yml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: photo-share
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 3Gi
+Use the resources/httpd/pvc.yml file to create the photo-share persistent volume claim.
+
+[student@workstation storage-file]$ oc apply -f resources/httpd/pvc.yml
+persistentvolumeclaim/photo-share created
+Display the status of all persistent volume claims in the project.
+
+[student@workstation storage-file]$ oc get pvc
+NAME          STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   ...
+photo-share   Pending                                                     ...
+Use the oc describe command to display events for the photo-share persistent volume claim.
+
+[student@workstation storage-file]$ oc describe pvc photo-share
+...output omitted...
+Events:
+  Type    Reason         ...  Message
+  ----    ------         ...  -------
+  Normal  FailedBinding  ...  no persistent volumes available for this claim and no storage class is set
+The resources/httpd/pvc.yml file does not declare a storage class, and a default storage class is not defined for the cluster.
+
+Edit the resources/httpd/pvc.yml file to specify shared file storage from the cluster NFS storage provider. After you edit the file, reprovision the photo-share persistent volume claim.
+
+Display the list of available storage classes.
+
+[student@workstation storage-file]$ oc get storageclass
+NAME         PROVISIONER              RECLAIMPOLICY  VOLUMEBINDINGMODE  ...
+nfs-storage  nfs-storage-provisioner  Delete         Immediate          ...
+Use your preferred editor to modify the resources/httpd/pvc.yml file. Specify the nfs-storage storage class for the photo-share persistent volume:
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: photo-share
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-storage
+  resources:
+    requests:
+      storage: 3Gi
+Save the changes.
+
+Delete the existing photo-share persistent volume claim. Next, use the modified resources/httpd/pvc.yml file to re-create the photo-share persistent volume claim.
+
+[student@workstation storage-file]$ oc delete pvc photo-share
+persistentvolumeclaim "photo-share" deleted
+[student@workstation storage-file]$ oc apply -f resources/httpd/pvc.yml
+persistentvolumeclaim/photo-share created
+Use the oc get pvc command to verify that an NFS persistent volume binds to the photo-share persistent volume claim.
+
+[student@workstation storage-file]$ oc get pvc
+NAME         STATUS  VOLUME       CAPACITY  ACCESS MODES  STORAGECLASS  AGE
+photo-share  Bound   pvc-e571...  3Gi       RWX           nfs-storage   3s
+Deploy the front-end HTTPD application and Redis service. Execute the simulate_activity.sh script to simulate users uploading photos from the front-end application. After the simulation, one hundred photos are present on the NFS persistent volume.
+
+The resources/httpd directory contains resource definitions for the front-end application. Use the oc apply -k command to deploy the front-end application.
+
+[student@workstation storage-file]$ oc apply -k resources/httpd/
+service/httpd created
+deployment.apps/httpd created
+route.route.openshift.io/httpd created
+persistentvolumeclaim/photo-share configured
+The front-end application exposes a route. If you navigate to http://httpd-storage-file.apps.ocp4.example.com/data, then you see that no images exist in the data directory.
+
+The resources/redis directory contains resource definitions for the Redis service, which hosts a work queue for the back-end application. Use the oc apply -k command to deploy the Redis service.
+
+[student@workstation storage-file]$ oc apply -k resources/redis/
+service/redis created
+deployment.apps/redis created
+Wait for the Redis pod to become ready.
+
+[student@workstation storage-file]$ oc get pods
+NAME                     READY   STATUS    RESTARTS   AGE
+httpd-5c57dcd69f-vnl7p   1/1     Running   0          2m
+redis-59d8d5c4bb-xcsgn   1/1     Running   0          115s
+NOTE
+If you execute the show_queue.sh script after the Redis service is ready, then the output indicates that the processing queue is an empty array.
+
+Execute the ./simulate_activity.sh script to simulate users uploading photos from the front-end application. The script uploads 100 photos to the uploads subdirectory on the shared volume.
+
+[student@workstation storage-file]$ ./simulate_activity.sh
+HTTP pod: httpd-5c57dcd69f-vnl7p
+Redis pod: redis-59d8d5c4bb-xcsgn
+df2212f6e1ad2862.jpg
+df8a8403e4545ab5.jpg
+...output omitted...
+97
+98
+99
+100
+If you navigate to http://httpd-storage-file.apps.ocp4.example.com/data in a browser, then a uploads subdirectory is present with 100 images. If you execute the show_queue.sh script, then the same set of image file names is present in the processing queue.
+
+Deploy the back-end image processing job to detect objects in uploaded photos. Verify that all three back-end worker pods are able to process files from the shared persistent volume.
+
+Use the oc apply -k command to deploy the resources in the resources/backend subdirectory. Wait until the worker pods have a Running status. The pods may be in a ContainerCreating status for a couple minutes while the application container image downloads to each node from the registry.
+
+[student@workstation storage-file]$ oc apply -k resources/backend/
+job.batch/worker created
+[student@workstation storage-file]$ oc get pods
+NAME                     READY   STATUS    RESTARTS   AGE
+httpd-5c57dcd69f-dh6ms   1/1     Running   0          39m
+redis-59d8d5c4bb-zrtcz   1/1     Running   0          38m
+redis-client             1/1     Running   0          10m
+worker-4kv28             1/1     Running   0          59s
+worker-h7z65             1/1     Running   0          58s
+worker-v6n8h             1/1     Running   0          59s
+The job completes approximately two minutes after you started it. Wait for the job to finish.
+
+[student@workstation storage-file]$ oc get pods
+NAME                    READY  STATUS      RESTARTS   AGE
+httpd-5c57dcd69f-dh6ms  1/1    Running     0          41m
+redis-59d8d5c4bb-zrtcz  1/1    Running     0          40m
+redis-client            1/1    Running     0          12m
+worker-4kv28            0/1    Completed   0          3m5s
+worker-h7z65            0/1    Completed   0          3m4s
+worker-v6n8h            0/1    Completed   0          3m5s
+Review the logs of each worker pod to verify that each worker pod processes files from the shared storage volume.
+
+[student@workstation storage-file]$ oc logs worker-4kv28
+...output omitted...
+Working on /data/uploads/e0d3452ed12d6c68.jpg
+Working on /data/uploads/e0581d87281bb10a.jpg
+Working on /data/uploads/df8a8403e4545ab5.jpg
+Waiting for work
+Queue empty, exiting
+[student@workstation storage-file]$ oc logs worker-4kv28 | grep "Working on" \
+>   | wc -l
+50
+[student@workstation storage-file]$ oc logs worker-h7z65 | grep "Working on" \
+>   |  wc -l
+25
+[student@workstation storage-file]$ oc logs worker-v6n8h | grep "Working on" \
+>   |  wc -l
+25
+The three worker pods are able to access shared file storage to process all one hundred image files.
+
+As the admin user, set the nfs-storage storage class as the default storage class. When you set a default storage class, cluster users do not need to specify a storage class to create a persistent volume claim.
+
+Log in as the admin user.
+
+[student@workstation storage-file]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Review the nfs-storage storage class resource definition. Verify that the nfs-storage storage class is not the default storage class.
+
+[student@workstation storage-file]$ oc get storageclass nfs-storage -o yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  creationTimestamp: "2020-05-28T19:33:31Z"
+...output omitted...
+The storageclass.kubernetes.io/is-default-class annotation is set to a value of false.
+
+Display and review the contents of the set-default-storageclass.yml patch file.
+
+[student@workstation storage-file]$ cat set-default-storageclass.yml
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+Use the contents of the set-default-storageclass.yml patch file to set the nfs-storage storage class as the default storage class.
+
+[student@workstation storage-file]$ oc patch storageclass nfs-storage \
+>     -p "$(cat set-default-storageclass.yml)"
+storageclass.storage.k8s.io/nfs-storage patched
+Verify that the nfs-storage storage class is the default storage class for the cluster. Also verify that only one storage class is labeled as the default storage class.
+
+[student@workstation storage-file]$ oc get storageclass
+NAME                    PROVISIONER               RECLAIMPOLICY   ...
+nfs-storage (default)   nfs-storage-provisioner   Delete          ...
+The nfs-storage storage class is now the default storage class for the cluster.
+
+Change to the /home/student/ directory.
+
+[student@workstation storage-file]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab storage-file finish
+This concludes the section.

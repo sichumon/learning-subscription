@@ -1,0 +1,181 @@
+Provisioning Block Storage for Databases
+Objectives
+After completing this section, you should be able to configure a database application with block storage.
+
+Overview of Block Storage
+Block storage refers to any storage technology that stores data in fixed-size blocks. Common examples include hard disk drives (HDDs) and solid state drives (SSDs).
+
+Block storage is not restricted to physically attached hardware. A Storage Area Network (SAN) presents storage to networked systems as locally attached block devices. Network protocols, such as iSCSI and Fibre Channel, provide block-level access to storage devices.
+
+Most cloud providers also have scalable, block storage solutions. Examples include Amazon Elastic Block Store (EBS), Google Persistent Disk, and Azure Disks.
+
+Describing Block Storage Use Cases
+Block storage technologies are designed for speed and efficiency. The storage system writes a data record to multiple blocks. When a data record is needed, the storage system retrieves multiple blocks. The blocks are reassembled and presented to the requesting user as a complete data record.
+
+Databases and transactional systems are examples of applications that require high throughput and I/O performance. Many of these systems use block storage technologies because of the increased I/O performance requirements.
+
+There are a few drawbacks to block storage:
+
+Block storage is not a shared read-write storage technology. Only one host at a time can write data.
+
+Block storage can be expensive.
+
+Block storage does not provide robust metadata about stored data. Adding a file system to a block device provides additional metadata for each record, such as a file name or permissions.
+
+Accessing Block Storage
+In many application scenarios, a file system is installed on a block storage device. Applications use the file system to read, write, and organize data on the block device. Without a file system, the application is responsible for organizing and writing data to the block device.
+
+In select scenarios, applications require direct access to the block device. With direct access, applications bypass file system overhead to achieve improved I/O performance. These applications must implement custom I/O capabilities, which are tuned for increased performance. As an example, some database technologies configure raw block devices rather than specifying a database data directory.
+
+Kubernetes and OpenShift support both block and file system persistent volumes for block storage technologies. Use the volumeMode attribute in a persistent volume specification to indicate the type of volume. Allowable values for the volume mode are: Filesystem and Block.
+
+Block Volumes
+As an example, the following defines a fibre channel block volume:
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: fc-block-pv-01  1
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  storageClassName: fc-block  2
+  volumeMode: Block  3
+  fc:  4
+    targetWWNs: ["500...fd1"]
+    lun: 0
+    readOnly: false
+1
+
+The name of the persistent volume.
+
+2
+
+The storage class name is fc-block, which indicates a fibre channel (fc) block volume.
+
+3 4
+
+OpenShift uses the fibre channel volume plug-in to mount the volume on a node.
+
+To request a block volume, an application developer must create a PVC that declares a Block volume mode. The following example defines a request for a block volume.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: block-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Block  1
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fc-block  2
+1
+
+The volume mode must be set to a value of Block. If the PVC definition does not include a volume mode, the default value is Filesystem.
+
+2
+
+The persistent volume must come from the fc-block storage class. If you do not specify a storage class, then OpenShift uses the default storage class, which might not support block volumes.
+
+To bind to a block volume, both the PVC and PV must explicitly define a Block volume mode. The table that follows outlines all possible binding scenarios for PV and PVC volume mode values.
+
+Table 8.5. Binding scenarios by Volume Mode
+
+PVC Volume Mode	PV Volume Mode	Result
+Unspecified	Block	Does not bind.
+Filesystem	Block	Does not bind.
+Block	Block	The PV binds to the PVC.
+Unspecified	Unspecified	The PV binds to the PVC, but the PV is not a block volume. Unspecified values default to Filesystem.
+
+If an application requires access to a raw block device, rather than a file system, you must modify the pod specification. The pod specification that follows attaches a raw block device at the /dev/xvda device path.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-block-volume
+spec:
+  containers:
+    - name: fc-container
+      image: fedora:26
+...output omitted...
+      volumeDevices:  1
+        - name: data  2
+          devicePath: /dev/xvda  3
+  volumes:
+    - name: data  4
+      persistentVolumeClaim:
+        claimName: block-pvc  5
+1
+
+Use volumeDevices to attach block volumes as a raw block device.
+
+2 3
+
+Attach the data volume as a block device at the /dev/xvda device path.
+
+4 5
+
+The data volume corresponds to persistent volume bound to the block-pvc persistent volume claim.
+
+File System Volumes for Block Storage
+Many applications require access to a file system, not a raw block device. For this reason, Kubernetes and OpenShift use a default volume mode of Filesystem for PVs and PVCs.
+
+Both shared file storage and block storage provide file system volumes. A file system volume, which is based on block storage, often provides better I/O performance than volumes based on shared file storage. To request block storage, an application developer must specify a storage class that corresponds to block storage. If a storage class is omitted, then OpenShift uses the default storage class, which might not correspond to a block storage technology.
+
+NOTE
+In this course, all example applications request file system storage.
+
+Sharing Block Storage
+Unlike shared file storage, block storage technologies only attach to a single host at a time. Some block storage technologies can attach to multiple hosts with read-only access. However, block storage technologies restrict write access to a single host to ensure data integrity.
+
+All block storage in Kubernetes and OpenShift has a ReadWriteOnce access mode. Some technologies, such as iSCSI, also support ReadOnlyMany access mode.
+
+If an application, such as a database, requires write access to block storage, then the persistent volume claim must request an access mode of ReadWriteOnce. Because the volume only attaches to one node at a time, you can safely use a volume with a single pod.
+
+To share a block storage volume with a different application, you must stop the current application that is using the volume. For example, to restore a database from a backup, you must first scale down the database to zero pods. A restoration application can mount the database volume after the database is scaled to zero.
+
+Before the database application is restarted, the restoration application must finish and release the database volume.
+
+Restricting Allocation of Block Storage Resources
+Block storage resources are often expensive, and as a result, a limited cluster resource. You might want to restrict the use of block storage resources on a project by project basis. In this way, you ensure the availability of limited storage resources to those projects with unique storage requirements.
+
+Use resource quotas for each project to restrict the use particular storage resources. The following resource quota definition restricts the database project to a single block storage persistent volume.
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: storage      1
+  namespace: test    2
+spec:
+  hard:
+    fc-block.storageclass.storage.k8s.io/persistentvolumeclaims: 1  3
+    fc-block.storageclass.storage.k8s.io/requests.storage: 100G    4
+1 2
+
+The storage resource quota restricts storage resources for the test project.
+
+3
+
+The test project is restricted to one persistent volume claim for the fc-block storage class.
+
+4
+
+The test project is restricted to 100 GB of storage from the fc-block storage class.
+
+You can also restrict access to storage class resources entirely.
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  namespace: dev     1
+spec:
+  hard:
+    fc-block.storageclass.storage.k8s.io/persistentvolumeclaims: 0  2
+1 2
+
+The dev project can not create a persistent volume claim that requests storage for the fc-block storage class.
+

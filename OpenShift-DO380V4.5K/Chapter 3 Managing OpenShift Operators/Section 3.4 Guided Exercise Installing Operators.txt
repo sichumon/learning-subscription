@@ -1,0 +1,100 @@
+
+Guided Exercise: Installing Operators
+In this exercise you will install an operator from the OpenShift marketplace.
+
+Outcomes
+
+You should be able to install the OpenShift metering operator using the OLM.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and that needed resources are setup for the exercise.
+
+[student@workstation ~]$ lab operators-install start
+Procedure 3.1. Instructions
+
+Create a namespace for the operator.
+
+The metering operator requires a namespace called openshift-metering.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Create a file called metering-operator-namespace.yaml with the following content:
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  name: openshift-metering
+Create the namespace.
+
+[student@workstation ~]$ oc apply -f metering-operator-namespace.yaml
+namespace/openshift-metering created
+Enter the new namespace.
+
+[student@workstation ~]$ oc project openshift-metering
+Now using project "openshift-metering" on server "https://api.ocp4.example.com:6443".
+Create a group for the operator.
+
+Operators that are installed using the OLM require a group that matches the namespace name.
+
+Create a file called metering-operator-group.yaml and add this content:
+
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-metering
+  namespace: openshift-metering
+spec:
+  targetNamespaces:
+  - openshift-metering
+Create the operator group.
+
+[student@workstation ~]$ oc apply -f metering-operator-group.yaml
+operatorgroup.operators.coreos.com/openshift-metering created
+Create the operator subscription.
+
+The operator must be subscribed to a namespace.
+
+Create the subscription object YAML file called metering-operator-subscription.yaml.
+
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ge-openshift-metering
+  namespace: openshift-metering
+spec:
+  channel: "4.5"
+  name: metering-ocp
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+Create the subscription object.
+
+[student@workstation ~]$ oc apply -f metering-operator-subscription.yaml
+Verify that the operator installed successfully.
+
+[student@workstation ~]$ oc describe sub ge-openshift-metering
+Name:         ge-openshift-metering
+Namespace:    openshift-metering
+Labels:       <none>
+Annotations:  API Version:  operators.coreos.com/v1alpha1
+Kind:         Subscription
+...output omitted...
+Spec:
+  Channel:           4.5
+  Name:              metering-ocp
+  Source:            redhat-operators
+  Source Namespace:  openshift-marketplace
+...output omitted...
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab operators-install finish
+This concludes the section.

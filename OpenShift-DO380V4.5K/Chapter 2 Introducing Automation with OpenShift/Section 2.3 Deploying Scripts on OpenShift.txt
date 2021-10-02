@@ -1,0 +1,186 @@
+Deploying Scripts on OpenShift
+Objectives
+After completing this section, you should be able to:
+
+Execute cluster operation scripts from inside and outside of OpenShift.
+
+Schedule automation scripts using OpenShift CronJobs.
+
+Automating Operations
+Replacing repetitive manual work with software automation is a core DevOps practice. By minimizing hands-on operational tasks, Site Reliability Engineers (SREs) can focus on adding features and increasing system reliability.
+
+Benefits of automation:
+
+Automated systems can scale beyond the linear capacity of human operators manually tending to servers. Without automation, growing the number or complexity of services requires adding increasingly more administrators to your operations group.
+
+Version control systems, such as Git, are a center of collaboration. Scripts and configuration files are easily shared across teams. Peer reviews and automated workflows replace manual, unreviewed system changes.
+
+Automated operation scripts are both testable and repeatable. Scripts can be unit tested using popular testing tools.
+
+Discussing Service Accounts
+Programs such as continuous integration applications, scripts, and operators provide identification in the form of a service account. User accounts are for real human users, whereas service accounts are for programs.
+
+When a user authenticates with the OpenShift OAuth server using the oc client, an access token is retrieved and saved to a kubeconfig file. This token is used to provide proof of identity to the OpenShift API server.
+
+Processes running inside an OpenShift cluster interact with the OpenShift API server using an access token for the service account. By default, OpenShift adds a file containing the service account access token to a running pod, located at /var/run/secrets/kubernetes.io/serviceaccount/token. Client binaries, such as oc, and client libraries use an access token to interact with the OpenShift API.
+
+Creating a Custom Service Account
+When running an operational script in OpenShift, create a custom service account to provide its identity.
+
+A basic service account must only specify the name and namespace. Notice that unlike users, service accounts belong to a namespace.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup_sa
+  namespace: database
+NOTE
+You can also create a service account manually using the oc create serviceaccount command. However, specifying resources in declarative YAML or JSON text files encourages the DevOps practices of version control and code review.
+
+By default, the service account does not have permission to make requests to the OpenShift API server. For that, use roles and role bindings.
+
+Defining Roles and Role Bindings
+An OpenShift Role or ClusterRole specifies the actions and resources that a user or service account can perform. Roles are namespaced and only define rules within the scope of the namespace. However, cluster roles are not namespaced and their rules can be applied to both namespaced and non-namespaced resources.
+
+OpenShift includes a useful set of predefined cluster roles, such as basic-user, cluster-reader, and view. Use the oc describe clusterrole CLUSTER_ROLE command to list the rules specified by the cluster role.
+
+[user01@host ~]$ oc describe clusterrole view
+Name:         view
+Labels:       kubernetes.io/bootstrapping=rbac-defaults
+              rbac.authorization.k8s.io/aggregate-to-edit=true
+Annotations:  rbac.authorization.kubernetes.io/autoupdate: true
+PolicyRule:
+  Resources                            ...    Verbs
+  ---------                            ...    -----
+  namespaces                           ...    [get get list watch]
+  packagemanifests.pac...coreos.com    ...    [get list watch get list watch]
+  appliedclusterresourcequotas         ...    [get list watch]
+...output omitted...
+OpenShift associates accounts with roles using role bindings.
+
+A RoleBinding resource is namespaced. It associates accounts with roles within its namespace. A namespaced role binding can also associate a cluster role with an account. In this case, the permissions defined by the cluster role only apply to the resources in the namespace.
+
+A ClusterRoleBinding resource is not namespaced and applies to all resources in the cluster. For example, to grant a service account cluster-reader permissions, create a cluster role binding as follows:
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup
+  namespace: database
+subjects: 1
+- kind: ServiceAccount
+  name: backup_sa
+  namespace: database
+roleRef: 2
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-reader
+1
+
+Subjects are either users, groups, or service accounts.
+
+2
+
+The roleRef must be either a ClusterRole or Role resource.
+
+NOTE
+Alternatively, use the oc policy add-role-to-user command to create or modify role bindings.
+
+Creating a Custom Role
+Assign permissions to accounts with the minimum amount of privileges required to operate. Limiting access avoids unintended consequences and restricts potential attack vectors.
+
+Roles define a list of policy rules. Each rule specifies the API groups, resources, and permitted verbs.
+
+In some cases, the predefined cluster roles grant more permissions than are required by a script.
+
+The following example demonstrates a role with a rule permitting the reading and creation of ConfigMaps.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configurator
+  namespace: database
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create"]
+Creating Jobs and CronJobs
+A Job creates and executes pods until they successfully complete their task. Jobs can be configured to run a single pod or many pods concurrently. Jobs are useful for automating one-off tasks that do not need to be constantly running, such as report generation or file clean up.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backup
+  namespace: database
+spec:
+  activeDeadlineSeconds: 600 1
+  parallelism: 2 2
+  template: 3
+    metadata:
+      name: backup
+    spec:
+      serviceAccountName: backup_sa 4
+      containers:
+      - name: backup
+        image: example/backup_maker:v1.2.3
+      restartPolicy: OnFailure
+1
+
+Optionally, provide a duration limit in seconds. The Job will attempt to terminate if it exceeds the deadline.
+
+2
+
+Specify the number of pods to run concurrently.
+
+3
+
+The spec includes a pod template.
+
+4
+
+Specify the name of the service account to associate with the pod. If you do not specify a service account, then the pod will use the default service account in the namespace.
+
+Scheduling OpenShift CronJobs
+CronJobs create jobs based on a given time schedule. Use CronJobs for running automation, such as backups or reports, which should be executed on a regular interval.
+
+When using CronJobs, the execution schedule is specified in the standard cron format.
+
+This follows the format "minute hour day-of-the-month month day-of-the-week".
+
+The * symbol is a wildcard that matches any value. For example, 1 * 1 1 * matches every hour of the first minute of January 1st.
+
+A slash / symbol denotes step values. For example, using the pattern */5 * * * * means that the job should run every five minutes.
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: backup-cron
+  namespace: database
+spec:
+  schedule: "1 0 * * *" 1
+  jobTemplate: 2
+    spec:
+      activeDeadlineSeconds: 600
+      parallelism: 2
+      template:
+        metadata:
+          name: backup
+        spec:
+          serviceAccountName: backup_sa
+          containers:
+          - name: backup
+            image: example/backup_maker:v1.2.3
+          restartPolicy: OnFailure
+1
+
+The example schedule executes the job at one minute past midnight.
+
+2
+
+Specify a regular job in the CronJob’s jobTemplate field.
+
+Comparing Script Deployment Strategies
+Strategy	Description
+Container Command	Specify short Bash scripts as arguments to a container in the spec. This method is easy to deploy, but makes reviewing and automated tests more difficult.
+Volume	Mount a ConfigMap or persistent storage as a volume.
+Container Image	Package the script in a container image with all necessary dependencies. Use a GitOps pipeline with build, test, and deployment automation.

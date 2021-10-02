@@ -1,0 +1,156 @@
+Chapter 7. Configuring Dedicated Node Pools
+Adding Worker Nodes
+Guided Exercise: Adding Worker Nodes
+Creating Custom Machine Config Pools
+Guided Exercise: Creating Custom Machine Config Pools
+Summary
+Abstract
+
+Goal	Add nodes to an OpenShift cluster with custom configurations.
+Objectives	
+Add nodes to an OpenShift cluster on user-provisioned infrastructure.
+
+Create custom machine configuration pools and edit existing machine configurations.
+
+Sections	
+Adding Worker Nodes (and Guided Exercise)
+
+Creating Custom Machine Config Pools (and Guided Exercise)
+
+Adding Worker Nodes
+Objectives
+After completing this section, you should be able to add nodes to an OpenShift cluster on user-provisioned infrastructure.
+
+Discussing Node Scaling
+Add more instances to your OpenShift cluster to increase the capacity of the cluster.
+
+The steps for performing instance scaling operations differ for installer-provisioned and user-provisioned OpenShift clusters.
+
+The Machine API automatically performs scaling operations for supported cloud providers. Modify the number of replicas specified in a Machine Set, and OpenShift communicates with the cloud provider to provision or deprovision instances.
+
+In user-provisioned infrastructure, you must manually provision new instances. The exact strategy for provisioning is specific to your data center and your IT processes, however the base steps remain the same:
+
+Update the worker Ignition file with an updated TLS certificate.
+
+Install Red Hat Enterprise Linux CoreOS (RHCOS) from an ISO image or using a Preboot eXecution Environment (PXE) boot.
+
+Add the new instance to the ingress load balancer.
+
+Approve Certificate Signing Requests (CSRs) to allow the worker to join the cluster.
+
+Discussing Ignition
+RHCOS is a RHEL-based operating system managed by the OpenShift Container Platform.
+
+Red Hat discourages directly manipulating a RHCOS configuration. Instead, provide initial instance configuration in the form of Ignition files.
+
+Ignition is a provisioning tool designed to configure RHCOS on first boot. Supply configuration in a JSON-formatted .ign file to declare changes to the disk, such as partitions, systemd units, certificates, and custom files.
+
+The OpenShift installer generates the following Ignition files:
+
+bootstrap.ign
+
+master.ign
+
+worker.ign
+
+Specify the worker.ign Ignition file as a kernel parameter when adding a new worker node.
+
+After the instance is provisioned, changes to RHCOS are managed by the Machine Config Operator. These changes are also specified in the Ignition format, but are limited in scope.
+
+Updating the Worker TLS Certificate
+The OpenShift installer creates the Ignition files with an initial bootstrapping TLS certificate. In most production installations, this certificate expires 24 hours after installation.
+
+Fetch the latest TLS certificate from the Machine Config Server listening on the control plane port 22623.
+
+Run the openssl s_client -connect api-int.ocp4.example.com:22623 -showcerts command to retrieve the certificate.
+
+Extract the text wrapped between the BEGIN CERTIFICATE and END CERTIFICATE markers.
+
+Replace the base64-encoded certificate in the worker.ign as follows.
+
+Use the base64 command to encode the certificate text.
+
+{
+  "ignition": {
+    "config": {
+      "append": [
+        {
+          "source": "https://api-int.ocp4.example.com:22623/config/worker",
+          "verification": {}
+        }
+      ]
+    },
+    "security": {
+      "tls": {
+        "certificateAuthorities": [
+          {
+            "source": "data:text/plain;charset=utf-8;base64,LS0...==", 1
+            "verification": {}
+          }
+        ]
+      }
+    },
+    "timeouts": {},
+    "version": "2.2.0"
+  },
+  "networkd": {},
+  "passwd": {},
+  "storage": {},
+  "systemd": {}
+}
+1
+
+Specify the TLS certificate as a base64-encoded value in the TLS source field of the certificateAuthorities list.
+
+NOTE
+Use the openssl x509 -text -noout command to view information about the certificate such as the issuer, subject, and expiration date.
+
+Installing with PXE boot
+Install RHCOS from an ISO image or by using PXE boot. PXE booting performs a network-based installation and is a common choice in an enterprise data center.
+
+PXE relies on a set of very basic technologies:
+
+Dynamic Host Configuration Protocol (DHCP) for locating instances.
+
+Trivial File Transfer Protocol (TFTP) for serving the PXE files.
+
+HTTP for the ISO images and configuration files.
+
+The RHCOS PXE configuration specifies the location of a kernel file, OS images, and an Ignition configuration file.
+
+Discussing Ingress Load Balancing
+When adding worker nodes to a cluster, add the instance to external load balancer back-end pools. For example, OpenShift schedules router pods on worker nodes. The ingress load balancer must direct traffic to the new worker node instance.
+
+OpenShift supports a variety of load balancers. The choice of specific load balancer technology is outside the scope of this course.
+
+The following is an example of an HAProxy configuration. HAProxy listens on port 443 and routes traffic to either of the two servers.
+
+Example /etc/haproxy/haproxy.cfg HAProxy configuration file
+
+frontend ingress_secure
+    bind *:443
+    mode tcp
+    default_backend ingress_secure_backend
+backend ingress_secure_backend
+    balance roundrobin
+    mode tcp
+    server worker01 192.168.50.13:443 check
+    server worker02 192.168.50.14:443 check
+Approving Certificate Signing Requests
+When a new node attempts to join the cluster, OpenShift creates two Certificate Signing Requests (CSRs). First, the Machine Config Operator client requests a CSR: system:serviceaccount:openshift-machine-config-operator:node-bootstrapper. Then, after you approve the node bootstrapper CSR, OpenShift creates a CSR with the new node as the requester, such as system:node:worker04.
+
+Approve the certificate using oc adm certificate approve CSR command as follows.
+
+[student@demo ~]$ oc get csr -A
+NAME        AGE     REQUESTOR                                                                   CONDITION
+csr-87kbl   75m     system:node:master01                                                        Approved,Issued
+csr-knhlw   106m    system:node:worker03                                                        Approved,Issued
+csr-lqcbd   4m19s   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Pending
+
+[student@demo ~]$ oc adm certificate approve csr-lqcbd
+certificatesigningrequest.certificates.k8s.io/csr-lqcbd approved
+Alternatively, approve all CSRs using the xargs command.
+
+[student@demo ~]$ oc get csr -A -o name | xargs oc adm certificate approve
+Adding RHEL Compute Nodes
+RHEL instances can join an OpenShift cluster as worker machines. RHEL instances are not automatically managed and updated by OpenShift operators. A system administrator must be responsible for update management and operations.

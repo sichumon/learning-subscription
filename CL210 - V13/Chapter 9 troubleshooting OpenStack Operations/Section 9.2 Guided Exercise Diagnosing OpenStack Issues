@@ -1,0 +1,280 @@
+Guided Exercise: Diagnosing OpenStack Issues
+In this exercise, you will walk through a proper diagnostic technique, look for log entries, query control plane services, and review the status of OpenStack components and services.
+
+Outcomes
+
+You should be able to locate and view log files, inspect services, and enable debug-level logging.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run lab troubleshooting-diagnose setup to ensure that the resources required to launch an instance are present.
+
+[student@workstation ~]$ lab troubleshooting-diagnose setup
+Examine the containerized Compute services running on controller0.
+
+Log in to controller0 and change to the root user.
+
+[student@workstation ~]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+List the containerized Compute services.
+
+[root@controller0 ~]# docker ps --filter "name=nova*" --all
+CONTAINER ID        IMAGE                                                             COMMAND                  CREATED             STATUS                   PORTS               NAMES
+340500c7cd3b        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "/usr/bin/bootstra..."   12 days ago         Exited (0) 12 days ago                       nova_api_discover_hosts
+5bfcf5bbf99b        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "kolla_start"            12 days ago         Up 3 hours                                   nova_metadata
+457d4ace92a0        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "kolla_start"            12 days ago         Up 3 hours (healthy)                         nova_api
+3a98c43a04f7        172.25.249.200:8787/rhosp13/openstack-nova-scheduler:latest       "kolla_start"            12 days ago         Up 3 hours (healthy)                         nova_scheduler
+35f522ad5783        172.25.249.200:8787/rhosp13/openstack-nova-novncproxy:latest      "kolla_start"            12 days ago         Up 3 hours (healthy)                         nova_vnc_proxy
+eb5d4133cd70        172.25.249.200:8787/rhosp13/openstack-nova-consoleauth:latest     "kolla_start"            12 days ago         Up 3 hours (healthy)                         nova_consoleauth
+a39f81aa4a8b        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "kolla_start"            12 days ago         Up 3 hours                                   nova_api_cron
+8ffb511c9318        172.25.249.200:8787/rhosp13/openstack-nova-conductor:latest       "kolla_start"            12 days ago         Up 3 hours (healthy)                         nova_conductor
+2178875e7453        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "/usr/bin/bootstra..."   12 days ago         Exited (0) 12 days ago                       nova_db_sync
+ee0b27e7e257        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "/usr/bin/bootstra..."   12 days ago         Exited (0) 12 days ago                       nova_api_ensure_default_cell
+b4eae39f8f50        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "/usr/bin/bootstra..."   12 days ago         Exited (0) 12 days ago                       nova_api_map_cell0
+53d487974cc1        172.25.249.200:8787/rhosp13/openstack-nova-placement-api:latest   "kolla_start"            12 days ago         Up 3 hours                                   nova_placement
+e77b4a296f8f        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "/usr/bin/bootstra..."   12 days ago         Exited (0) 12 days ago                       nova_api_db_sync
+d42de26be1af        172.25.249.200:8787/rhosp13/openstack-nova-placement-api:latest   "/bin/bash -c 'cho..."   12 days ago         Exited (0) 12 days ago                       nova_placement_init_log
+166d1e71b4f3        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "/bin/bash -c 'cho..."   12 days ago         Exited (0) 12 days ago                       nova_metadata_init_log
+26874e77508d        172.25.249.200:8787/rhosp13/openstack-nova-api:latest             "/bin/bash -c 'cho..."   12 days ago         Exited (0) 12 days ago                       nova_api_init_logs
+On workstation, open a new terminal. Examine the containerized Compute services running on compute0.
+
+Log in to compute0 and change to the root user.
+
+[student@workstation ~]$ ssh compute0
+[heat-admin@compute0 ~]$ sudo -i
+[root@compute0 ~]# 
+List the containerized Compute services.
+
+[root@compute0 ~]# docker ps --filter "name=nova*" --all
+CONTAINER ID        IMAGE                                                       COMMAND                  CREATED             STATUS                   PORTS               NAMES
+6b487f0500b4        172.25.249.200:8787/rhosp13/openstack-nova-compute:latest   "kolla_start"            12 days ago         Up 3 hours (healthy)                         nova_compute
+9e0eeaf96ccd        172.25.249.200:8787/rhosp13/openstack-nova-compute:latest   "kolla_start"            12 days ago         Up 3 hours                                   nova_migration_target
+3ff3bf523624        172.25.249.200:8787/rhosp13/openstack-nova-libvirt:latest   "/bin/bash -c '/us..."   12 days ago         Exited (0) 12 days ago                       nova_libvirt_init_secret
+635e1c629602        172.25.249.200:8787/rhosp13/openstack-nova-libvirt:latest   "kolla_start"            12 days ago         Up 3 hours                                   nova_libvirt
+1eea921b6ea1        172.25.249.200:8787/rhosp13/openstack-nova-libvirt:latest   "kolla_start"            12 days ago         Up 3 hours                                   nova_virtlogd
+On compute0, use the docker inspect command to determine the configuration and log file locations for the nova_compute service. List the configuration and log files.
+
+Determine the configuration and log file locations.
+
+[root@compute0 ~]# docker inspect nova_compute
+...output omitted...
+        "HostConfig": {
+            "Binds": [
+                "/etc/pki/tls/certs/ca-bundle.crt:/etc/pki/tls/certs/ca-bundle.crt:ro",
+...output omitted...
+                "/var/log/containers/nova:/var/log/nova",
+                "/var/lib/kolla/config_files/nova_compute.json:/var/lib/kolla/config_files/config.json:ro",
+                "/var/lib/config-data/puppet-generated/nova_libvirt/:/var/lib/kolla/config_files/src:ro",
+                "/etc/iscsi:/var/lib/kolla/config_files/src-iscsid:ro"
+            ],
+...output omitted...
+List the configuration files.
+
+[root@compute0 ~]# find /var/lib/config-data/puppet-generated/nova_libvirt
+/var/lib/config-data/puppet-generated/nova_libvirt
+/var/lib/config-data/puppet-generated/nova_libvirt/etc
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/libvirt
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/libvirt/libvirtd.conf
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/libvirt/passwd.db
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/libvirt/qemu.conf
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/my.cnf.d
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/my.cnf.d/tripleo.cnf
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/migration
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/migration/authorized_keys
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/migration/identity
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/nova.conf
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/secret.xml
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/sasl2
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/sasl2/libvirt.conf
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/ssh
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/ssh/sshd_config
+/var/lib/config-data/puppet-generated/nova_libvirt/var
+/var/lib/config-data/puppet-generated/nova_libvirt/var/lib
+/var/lib/config-data/puppet-generated/nova_libvirt/var/lib/nova
+/var/lib/config-data/puppet-generated/nova_libvirt/var/lib/nova/.ssh
+/var/lib/config-data/puppet-generated/nova_libvirt/var/lib/nova/.ssh/config
+List the log files.
+
+[root@compute0 ~]# find /var/log/containers/nova
+/var/log/containers/nova
+/var/log/containers/nova/privsep-helper.log
+/var/log/containers/nova/nova-compute.log.4.gz
+/var/log/containers/nova/nova-compute.log.3.gz
+/var/log/containers/nova/nova-compute.log.2.gz
+/var/log/containers/nova/nova-compute.log.1
+/var/log/containers/nova/nova-compute.log
+On compute0, enable debug level logging for the nova_compute service.
+
+Change the logging configuration for nova_compute.
+
+[root@compute0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/nova_libvirt/etc/nova/nova.conf \
+DEFAULT debug True
+Restart the nova_compute service.
+
+[root@compute0 ~]# docker restart nova_compute
+nova_compute
+View the /var/log/containers/nova/nova-compute.log file to verify that debug level logging is enabled.
+
+[root@compute0 ~]# tail -f /var/log/containers/nova/nova-compute.log
+...output omitted...
+2018-11-05 05:55:24.829 1 DEBUG nova.compute.resource_tracker [req-1de591a0-8e6d-497d-b006-2743ab124a22 - - - - -] Compute_service record updated for compute0.overcloud.example.com:compute0.overcloud.example.com _update_available_resource /usr/lib/python2.7/site-packages/nova/compute/resource_tracker.py:764
+2018-11-05 05:55:24.830 1 DEBUG oslo_concurrency.lockutils [req-1de591a0-8e6d-497d-b006-2743ab124a22 - - - - -] Lock "compute_resources" released by "nova.compute.resource_tracker._update_available_resource" :: held 1.309s inner /usr/lib/python2.7/site-packages/oslo_concurrency/lockutils.py:285
+2018-11-05 05:55:24.830 1 DEBUG nova.service [req-1de591a0-8e6d-497d-b006-2743ab124a22 - - - - -] Creating RPC server for service compute start /usr/lib/python2.7/site-packages/nova/service.py:184
+2018-11-05 05:55:24.865 1 DEBUG nova.service [req-1de591a0-8e6d-497d-b006-2743ab124a22 - - - - -] Join ServiceGroup membership for this service compute start /usr/lib/python2.7/site-packages/nova/service.py:202
+On controller0, force a failure in RabbitMQ by killing the appropriate pacemaker_remoted process.
+
+Determine the ID of the RabbitMQ container.
+
+[root@controller0 ~]# docker ps --filter "name=rabbit*"
+CONTAINER ID        IMAGE                                                       COMMAND                  CREATED             STATUS              PORTS               NAMES
+0ffafb46725d        172.25.249.200:8787/rhosp13/openstack-rabbitmq:pcmklatest   "/bin/bash /usr/lo..."   44 minutes ago      Up 44 minutes                           rabbitmq-bundle-docker-0
+Obtain the PID for the pacemaker_remoted process.
+
+[root@controller0 ~]# docker exec -it rabbitmq-bundle-docker-0 \
+ps -efwww | grep pacemaker
+root          20       1  0 Nov06 ?        00:00:03 /usr/sbin/pacemaker_remoted
+Kill the pacemaker_remoted process in the container.
+
+[root@controller0 ~]# docker exec -it rabbitmq-bundle-docker-0 \
+kill -9 20
+On compute0, review the /var/log/containers/nova/nova-compute.log file for activity related to the crash of the RabbitMQ container.
+
+2018-11-07 00:31:31.914 1 ERROR oslo.messaging._drivers.impl_rabbit [req-4f29dc69-6f17-4695-a2b9-b8bf491ea69b - - - - -] [66da1b1d-092a-4761-8294-3e188d08ee43] AMQP server on controller0.internalapi.overcloud.example.com:5672 is unreachable: [Errno 111] ECONNREFUSED. Trying again in 4 seconds. Client port: None: error: [Errno 111] ECONNREFUSED
+2018-11-07 00:31:33.049 1 ERROR oslo.messaging._drivers.impl_rabbit [req-4f29dc69-6f17-4695-a2b9-b8bf491ea69b - - - - -] [b6e28794-7a17-404c-a1b6-6f9123126c04] AMQP server on controller0.internalapi.overcloud.example.com:5672 is unreachable: [Errno 111] ECONNREFUSED. Trying again in 6 seconds. Client port: None: error: [Errno 111] ECONNREFUSED
+2018-11-07 00:31:33.064 1 ERROR oslo.messaging._drivers.impl_rabbit [req-4f29dc69-6f17-4695-a2b9-b8bf491ea69b - - - - -] [6eb337d7-d0c6-4eeb-aeb6-dd905d13358b] AMQP server on controller0.internalapi.overcloud.example.com:5672 is unreachable: [Errno 111] ECONNREFUSED. Trying again in 4 seconds. Client port: None: error: [Errno 111] ECONNREFUSED
+On controller0, determine the status of RabbitMQ.
+
+Determine the ID of the RabbitMQ container. A change from the previous value indicates that Pacemaker has restarted the failed resource. Note that the uptime also indicates a restart.
+
+[root@controller0 ~]# docker ps --filter "name=rabbit*"
+CONTAINER ID        IMAGE                                                       COMMAND                  CREATED             STATUS              PORTS               NAMES
+0fe6e34b1d49        172.25.249.200:8787/rhosp13/openstack-rabbitmq:pcmklatest   "/bin/bash /usr/lo..."   28 minutes ago      Up 28 minutes                           rabbitmq-bundle-docker-0
+Determine the status of the Pacemaker cluster using the pcs status command. RabbitMQ is the messaging system connecting all components, so expect many failed actions.
+
+[root@controller0 ~]# pcs status
+Cluster name: tripleo_cluster
+Stack: corosync
+Current DC: controller0 (version 1.1.18-11.el7_5.3-2b07d5c5a9) - partition with quorum
+Last updated: Wed Nov  7 01:02:22 2018
+Last change: Mon Nov  5 00:44:01 2018 by root via cibadmin on controller0
+
+5 nodes configured
+21 resources configured
+
+...output omitted...
+Failed Actions:
+* rabbitmq-bundle-docker-0_monitor_0 on controller0 'unknown error' (1): call=5, status=complete, exitreason='',
+    last-rc-change='Tue Nov  6 23:21:47 2018', queued=0ms, exec=109ms
+...output omitted...
+Identify the Compute service processes listening on ports 8775, 8774, and 6080.
+
+[root@controller0 ~]# ss -tnlp | egrep '8775|8774|6080'
+LISTEN  0 128  172.25.250.50:6080  *:*  users:(("haproxy",pid=16308,fd=31))
+LISTEN  0 128  172.24.1.50:6080    *:*  users:(("haproxy",pid=16308,fd=30))
+LISTEN  0 100  172.24.1.1:6080     *:*  users:(("nova-novncproxy",pid=4998,fd=4))
+LISTEN  0 128  172.25.250.50:8774  *:*  users:(("haproxy",pid=16308,fd=33))
+LISTEN  0 128  172.24.1.50:8774    *:*  users:(("haproxy",pid=16308,fd=32))
+LISTEN  0 128  172.24.1.1:8774     *:*  users:(("httpd",pid=20809,fd=3),("httpd",pid=20808,fd=3),("httpd",pid=20771,fd=3),("httpd",pid=19531,fd=3),("httpd",pid=17973,fd=3),("httpd",pid=10449,fd=3),("httpd",pid=10448,fd=3),("httpd",pid=10447,fd=3),("httpd",pid=10446,fd=3),("httpd",pid=10445,fd=3),("httpd",pid=10444,fd=3),("httpd",pid=10443,fd=3),("httpd",pid=10442,fd=3),("httpd",pid=5539,fd=3))
+LISTEN  0 128  172.24.1.1:8775     *:*  users:(("nova-api-metada",pid=22116,fd=4))
+LISTEN  0 128  172.24.1.50:8775    *:*  users:(("haproxy",pid=16308,fd=29))
+[root@controller0 ~]# logout
+[heat-admin@controller0 ~]$ logout
+[student@workstation ~]$ 
+On workstation, list the Compute services.
+
+Source the /home/student/architect1-finance-rc user environment file.
+
+[student@workstation ~]$ source ~/architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ 
+Execute the openstack compute service list command to view the status of the Compute services.
+
+[student@workstation ~(architect1-finance)]$ openstack compute service list \
+-f json
+[
+  {
+    "Status": "enabled",
+    "Binary": "nova-conductor",
+    "Zone": "internal",
+    "State": "up",
+    "Host": "controller0.overcloud.example.com",
+    "Updated At": "2018-11-07T02:50:30.000000",
+    "ID": 1
+  },
+  {
+    "Status": "enabled",
+    "Binary": "nova-compute",
+    "Zone": "nova",
+    "State": "up",
+    "Host": "compute1.overcloud.example.com",
+    "Updated At": "2018-11-07T02:50:31.000000",
+    "ID": 2
+  },
+  {
+    "Status": "enabled",
+    "Binary": "nova-compute",
+    "Zone": "nova",
+    "State": "up",
+    "Host": "computehci0.overcloud.example.com",
+    "Updated At": "2018-11-07T02:50:26.000000",
+    "ID": 3
+  },
+  {
+    "Status": "enabled",
+    "Binary": "nova-compute",
+    "Zone": "nova",
+    "State": "up",
+    "Host": "compute0.overcloud.example.com",
+    "Updated At": "2018-11-07T02:50:21.000000",
+    "ID": 4
+  },
+  {
+    "Status": "enabled",
+    "Binary": "nova-consoleauth",
+    "Zone": "internal",
+    "State": "up",
+    "Host": "controller0.overcloud.example.com",
+    "Updated At": "2018-11-07T02:50:28.000000",
+    "ID": 5
+  },
+  {
+    "Status": "enabled",
+    "Binary": "nova-scheduler",
+    "Zone": "internal",
+    "State": "up",
+    "Host": "controller0.overcloud.example.com",
+    "Updated At": "2018-11-07T02:50:24.000000",
+    "ID": 6
+  }
+]
+On workstation, launch an instance to verify that all services are functional.
+
+Source the /home/student/developer1-finance-rc user environment file.
+
+[student@workstation ~(architect1-finance)]$ source ~/developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ 
+Launch an instance named finance-server1, and use the --debug option to see detailed information.
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--image rhel7 \
+--flavor default \
+--security-group default \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--wait --debug finance-server1
+...output omitted...
+The debug output provides a wealth of information on all the processes and components involved in launching an instance. In the example below you can see that the call is to the compute service, the URL called, the resulting request ID, and the details of the request.
+
+GET call to compute for http://172.25.250.50:8774/v2.1/servers/f648a6ff-946e-409f-9316-e413013c4e42 used request id req-babca1b0-ed9a-4e17-9356-4ce49f26bc9b
+
+REQ: curl -g -i -X GET http://172.25.250.50:8774/v2.1/servers/f648a6ff-946e-409f-9316-e413013c4e42 -H "User-Agent: python-novaclient" -H "Accept: application/json" -H "X-Auth-Token: {SHA1}aa4da70ba16ede2fc5c4cc2e060c54d33f9d4464"
+The debug output for calls made to other components will contain the JSON payloads where applicable.
+
+Cleanup
+
+On workstation, run the lab troubleshooting-diagnose cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab troubleshooting-diagnose cleanup
+This concludes the guided exercise.

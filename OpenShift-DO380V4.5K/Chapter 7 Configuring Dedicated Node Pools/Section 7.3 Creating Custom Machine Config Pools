@@ -1,0 +1,229 @@
+Creating Custom Machine Config Pools
+Objectives
+After completing this section, you should be able to create custom machine configuration pools and edit existing machine configurations.
+
+Discussing the Machine Config Operator
+The Machine Config Operator (MCO) manages instance configuration changes and operating system upgrades. OpenShift administrators can set custom node configurations by declaring MachineConfig and MachineConfigPool resources.
+
+The MCO defines two custom resources.
+
+MachineConfig (MC)
+Machine Configs declare instance customizations using the Ignition config format. Machine Configs are labeled with a role such as worker or infra.
+
+MachineConfigPool (MCP)
+Machine Config Pools use labels to match one or more Machine Configs to one or more nodes. This creates a pool of nodes with the same configuration. The Machine Config Operator uses the Machine Config Pool to track status as it applies Machine Configs to the nodes.
+
+Creating Machine Configs
+Machine Configs use the Ignition configuration format. Ignition was originally designed as an immutable configuration tool to execute only during initial instance provisioning. The Machine Config Daemon supports a limited set of configuration changes including the following:
+
+Configuring core user SSH authorized keys.
+
+Declaring Systemd units.
+
+Writing custom files.
+
+The Machine Config Operator reads Machine Configs alphanumerically, from 00-* to 99-*. Changes to the same file are overwritten by Machine Configs named with a higher number. The resulting compilation of Machine Configs is stored in a "rendered" Machine Config resource.
+
+Machine Configs are specified with a machineconfiguration.openshift.io/role label. List Machine Configs for a specific role using the --selector argument.
+
+[student@demo ~]$ oc get machineconfig \
+>  --selector=machineconfiguration.openshift.io/role=worker
+NAME                         GENERATEDBYCONTROLLER        IGNITIONVERSION   AGE
+00-worker                    910f22cb1550a...2b1566ce5f   2.2.0             20d
+01-worker-container-runtime  910f22cb1550a...2b1566ce5f   2.2.0             20d
+01-worker-kubelet            910f22cb1550a...2b1566ce5f   2.2.0             20d
+99-worker-...-registries     910f22cb1550a...2b1566ce5f   2.2.0             20d
+99-worker-ssh                                             2.2.0             20d
+Writing Custom Files
+Specify custom file contents, such as the Systemd configuration or TLS certificates, in an escaped format following the data URL scheme standard. File contents are typically Base64 encoded in ignition files. Other content, like Systemd units or ssh keys, are not Base64 encoded. In a Terminal, use the base64 and base64 -d commands to encode files or standard input.
+
+Journald MachineConfig example
+
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker 1
+  name: 60-journald 2
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,VGVzdGl...E8gKItAo= 3
+        filesystem: root
+        mode: 0644
+        path: /etc/systemd/journald.conf
+1
+
+Label Machine Config resources by role.
+
+2
+
+Prefix the name with a two-digit number that specifies when to apply the configuration, relative to Machine Configs belonging to the same Machine Config Pool.
+
+3
+
+Use the data URL format to embed escaped file content. Base64 encoding is common for Ignition files.
+
+Creating Machine Config Pools
+Machine Config Pools specify a machineConfigSelector and a nodeSelector. By default, OpenShift includes only master and worker Machine Config Pools, but custom pools can be added.
+
+Custom pools are a composition of worker and custom Machine Configs. The machineConfigSelector match expression selects both worker and the custom role label. Nodes assigned to the custom pool use Machine Configs from the worker with additions supplied by the custom role. This is critical so that worker operating system updates managed by OpenShift are applied to the machines in the pool.
+
+The following MachineConfigPool specification demonstrates creating a separate pool for machine learning (ml) nodes.
+
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+    name: ml
+spec:
+    machineConfigSelector:
+        matchExpressions:
+            - key: machineconfiguration.openshift.io/role
+              operator: In
+              values: [worker, ml] 1
+    nodeSelector:
+        matchLabels:
+        node-role.kubernetes.io/ml: "" 2
+1
+
+Include both worker and ml Machine Configs.
+
+2
+
+Apply to nodes with the node-role.kubernetes.io/ml label.
+
+Labeling Nodes
+Add a custom role to a node by labeling the node with a node-role.kubernetes.io/ROLE key. Nodes can have multiple roles.
+
+The example below adds an infra node commonly used for scheduling infrastructure workloads, such as cluster logging.
+
+[student@demo ~]$ oc label node/worker03 node-role.kubernetes.io/infra=
+node/worker03 labeled
+
+[student@demo ~]$ oc get nodes
+NAME       STATUS   ROLES          AGE    VERSION
+master01   Ready    master         15d   v1.18.3+012b3ec
+master02   Ready    master         15d   v1.18.3+012b3ec
+master03   Ready    master         15d   v1.18.3+012b3ec
+worker01   Ready    worker         15d   v1.18.3+012b3ec
+worker02   Ready    worker         15d   v1.18.3+012b3ec
+worker03   Ready    infra,worker   15d   v1.18.3+012b3ec
+Notice that nodes can be assigned multiple roles, and Machine Config Pools can select multiple Machine Configs. Because the infra Machine Config Pool includes both worker and infra Machine Configs, you can remove the worker role from the node.
+
+[student@demo ~]$ oc label node/worker03 node-role.kubernetes.io/worker-
+node/worker03 labeled
+
+[student@demo ~]$ oc get nodes
+NAME       STATUS   ROLES          AGE     VERSION
+NAME       STATUS   ROLES    AGE   VERSION
+master01   Ready    master   15d   v1.18.3+012b3ec
+master02   Ready    master   15d   v1.18.3+012b3ec
+master03   Ready    master   15d   v1.18.3+012b3ec
+worker01   Ready    worker   15d   v1.18.3+012b3ec
+worker02   Ready    worker   15d   v1.18.3+012b3ec
+worker03   Ready    infra    15d   v1.18.3+012b3ec
+Alternatively, add custom roles to the existing worker roles.
+
+[student@demo ~]$ oc get nodes
+NAME       STATUS   ROLES           AGE   VERSION
+master01   Ready    master         15d   v1.18.3+012b3ec
+master02   Ready    master         15d   v1.18.3+012b3ec
+master03   Ready    master         15d   v1.18.3+012b3ec
+worker01   Ready    worker,app     15d   v1.18.3+012b3ec
+worker02   Ready    worker,app     15d   v1.18.3+012b3ec
+worker03   Ready    worker,infra   15d   v1.18.3+012b3ec
+Configuring Pod Scheduling
+Specify a nodeSelector to assign workloads to nodes that match the label.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: example
+  template:
+    metadata:
+      labels:
+        app: example
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/infra: ""
+      containers:
+      - image: example:v1.0
+        name: example
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+To define a default node selector, edit the defaultNodeSelector using the oc edit scheduler cluster command. After editing the scheduler resource, wait several minutes for all API server replicas to restart and the change to take effect.
+
+If a defaultNodeSelector is defined, you must specify a node selector to override the default. The oc debug node command cannot schedule on nodes other than the default. To work around this issue, create a new project with the --node-selector="" flag and run the debug in that namespace.
+
+[student@demo ~]$ oc debug node/master01
+Starting pod/master01-debug ...
+To use host binaries, run `chroot /host`
+
+Removing debug pod ...
+Error from server (BadRequest): container "container-00" in pod "master01-debug" is not available
+
+[student@demo ~]$ oc adm new-project debug --node-selector=""
+Created project debug
+
+[student@demo ~]$ oc debug node/master01 -n debug
+Starting pod/master01-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 192.168.50.10
+If you don't see a command prompt, try pressing enter.
+sh-4.2#
+Node taints prevent workloads from being scheduled on nodes without the proper tolerations. However, several OpenShift DaemonSets declare specific tolerations that will cause unexpected behavior if these tolerances conflict with custom taints.
+
+For example, the Machine Config Daemon tolerates master and etcd taints. If a custom NoSchedule taint is added, the Machine Config Daemon will not be able to apply operating system updates to the machine.
+
+Observing Machine Config Pool Updates
+The Machine Config Daemon manages the node update, using several node annotations that are useful for understanding the state of the update.
+
+machine-config-daemon.v1.openshift.com/currentConfig
+
+machine-config-daemon.v1.openshift.com/desiredConfig
+
+machine-config-daemon.v1.openshift.com/state
+
+Remember that you can use the oc describe command to view annotations.
+
+[student@demo ~]$ oc describe node worker01
+Name:        worker01
+Roles:       worker
+Labels:      beta.kubernetes.io/arch=amd64
+             beta.kubernetes.io/os=linux
+             kubernetes.io/arch=amd64
+             kubernetes.io/hostname=worker01
+             kubernetes.io/os=linux
+             node-role.kubernetes.io/worker=
+             node.openshift.io/os_id=rhcos
+Annotations: machinecon...openshift.io/currentConfig: rendered-worker-370...bfd
+             machinecon...openshift.io/desiredConfig: rendered-worker-370...bfd
+             machineconfiguration.openshift.io/reason:
+             machineconfiguration.openshift.io/state: Done
+             volumes.kubernetes.io/controller-managed-attach-detach: true
+...output omitted...
+When the desired config does not match the current config, the Machine Config Daemon will:
+
+Apply the rendered Machine Config.
+
+Drain pods from the node.
+
+Reboot the machine.
+
+List the overall status of pool updates using the oc get machineconfigpool command. During the first update the CONFIG field remains blank.
+
+[student@demo ~]$ oc get machineconfigpool
+NAME     CONFIG                      UPDATED   UPDATING   DEGRADED
+infra                                False     True       False
+master   rendered-master-716...267   True      False      False
+worker   rendered-worker-573...3db   True      False      False

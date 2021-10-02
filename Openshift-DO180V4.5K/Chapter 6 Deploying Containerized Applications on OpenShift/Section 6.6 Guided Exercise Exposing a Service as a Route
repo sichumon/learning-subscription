@@ -1,0 +1,187 @@
+Guided Exercise: Exposing a Service as a Route
+In this exercise, you will create, build, and deploy an application on an OpenShift cluster and expose its service as a route.
+
+Outcomes
+
+You should be able to expose a service as a route for a deployed OpenShift application.
+
+Open a terminal on workstation as the student user and run the following command:
+
+[student@workstation ~]$ lab openshift-routes start
+Prepare the lab environment.
+
+Load your classroom environment configuration.
+
+Run the following command to load the environment variables created in the first guided exercise:
+
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+Log in to the OpenShift cluster.
+
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER} -p \
+> ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+Login successful
+...output omitted...
+Create a new project that contains your RHOCP developer username for the resources you create during this exercise:
+
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-route
+Create a new PHP application using Source-to-Image from the php-helloworld directory in the Git repository at http://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps/
+
+Use the oc new-app command to create the PHP application.
+
+IMPORTANT
+The following example uses a backslash (\) to indicate that the second line is a continuation of the first line. If you wish to ignore the backslash, you can type the entire command in one line.
+
+[student@workstation ~]$ oc new-app --as-deployment-config \
+> php:7.3~https://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps \
+> --context-dir php-helloworld --name php-helloworld
+--> Found image fbe3911 (13 days old) in image stream "openshift/php" under tag "7.3" for "php:7.3"
+...output omitted...
+--> Creating resources ...
+...output omitted...
+--> Success
+    Build scheduled, use 'oc logs -f bc/php-helloworld' to track its progress.
+    Application is not exposed. You can expose services to the outside world by executing one or more of the commands below:
+     'oc expose svc/php-helloworld'
+    Run 'oc status' to view your app.
+Wait until the application finishes building and deploying by monitoring the progress with the oc get pods -w command:
+
+[student@workstation ~]$ oc get pods -w
+NAME                     READY   STATUS     RESTARTS   AGE
+php-helloworld-1-build   0/1     Init:0/2   0          2s
+php-helloworld-1-build   0/1   Init:0/2   0     4s
+php-helloworld-1-build   0/1   Init:1/2   0     5s
+php-helloworld-1-build   0/1   PodInitializing   0     6s
+php-helloworld-1-build   1/1   Running   0     7s
+php-helloworld-1-deploy   0/1   Pending   0     0s
+php-helloworld-1-deploy   0/1   Pending   0     0s
+php-helloworld-1-deploy   0/1   ContainerCreating   0     0s
+php-helloworld-1-build   0/1   Completed   0     5m8s
+php-helloworld-1-cnphm   0/1   Pending   0     0s
+php-helloworld-1-cnphm   0/1   Pending   0     1s
+php-helloworld-1-deploy   1/1   Running   0     4s
+php-helloworld-1-cnphm   0/1   ContainerCreating   0     1s
+php-helloworld-1-cnphm   1/1   Running   0     62s
+php-helloworld-1-deploy   0/1   Completed   0     65s
+php-helloworld-1-deploy   0/1   Terminating   0     66s
+php-helloworld-1-deploy   0/1   Terminating   0     66s
+^C
+Your exact output may differ in names, status, timing, and order. Look for the Completed container with the deploy suffix: That means the application is deployed successfully. The container in Running status with a random suffix (cnphm in the example) contains the application and shows it is up and running.
+
+Alternatively, monitor the build and deployment logs with the oc logs -f bc/php-helloworld and oc logs -f dc/php-helloworld commands, respectively. Press Ctrl+C to exit the command if necessary.
+
+[student@workstation ~]$ oc logs -f bc/php-helloworld
+Cloning "https://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps" ...
+	Commit:	f7cd8963ef353d9173c3a21dcccf402f3616840b (Initial commit, including all apps previously in course)
+...output omitted...
+STEP 7: USER 1001
+STEP 8: RUN /usr/libexec/s2i/assemble
+---> Installing application source...
+...output omitted...
+Push successful
+[student@workstation ~]$ oc logs -f dc/php-helloworld
+-> Cgroups memory limit is set, using HTTPD_MAX_REQUEST_WORKERS=136
+=> sourcing 20-copy-config.sh ...
+...output omitted...
+[core:notice] [pid 1] AH00094: Command line: 'httpd -D FOREGROUND'
+^C
+Your exact output may differ.
+
+Review the service for this application using the oc describe command:
+
+[student@workstation ~]$ oc describe svc/php-helloworld
+Name:              php-helloworld
+Namespace:         ${RHT_OCP4_DEV_USER}-route
+Labels:            app=php-helloworld
+                   app.kubernetes.io/component=php-helloworld
+                   app.kubernetes.io/instance=php-helloworld
+Annotations:       openshift.io/generated-by: OpenShiftNewApp
+Selector:          deploymentconfig=php-helloworld
+Type:              ClusterIP
+IP:                172.30.228.124
+Port:              8080-tcp  8080/TCP
+TargetPort:        8080/TCP
+Endpoints:         10.10.0.35:8080
+Port:              8443-tcp  8443/TCP
+TargetPort:        8443/TCP
+Endpoints:         10.10.0.35:8443
+Session Affinity:  None
+Events:            <none>
+The IP address displayed in the output of the command may differ.
+
+Expose the service, which creates a route. Use the default name and fully qualified domain name (FQDN) for the route:
+
+[student@workstation ~]$ oc expose svc/php-helloworld
+route.route.openshift.io/php-helloworld exposed
+[student@workstation ~]$ oc describe route
+Name:              php-helloworld
+Namespace:         ${RHT_OCP4_DEV_USER}-route
+Created:           5 seconds ago
+Labels:            app=php-helloworld
+                   app.kubernetes.io/component=php-helloworld
+                   app.kubernetes.io/instance=php-helloworld
+Annotations:       openshift.io/host.generated=true
+Requested Host:    php-helloworld-$RHT_OCP4_DEV_USER}-route.${RHT_OCP4_WILDC...
+   exposed on router default (host ${RHT_OCP4_WILDCARD_DOMAIN}) 4 seconds ago
+Path:              <none>
+TLS Termination:   <none>
+Insecure Policy:   <none>
+Endpoint Port:     8080-tcp
+
+Service:    php-helloworld
+Weight:     100 (100%)
+Endpoints:  10.10.0.35:8443, 10.10.0.35:8080
+Access the service from a host external to the cluster to verify that the service and route are working.
+
+[student@workstation ~]$ curl \
+> php-helloworld-${RHT_OCP4_DEV_USER}-route.${RHT_OCP4_WILDCARD_DOMAIN}
+Hello, World! php version is 7.3.11
+NOTE
+The output of the PHP application depends on the actual code in the Git repository. It may be different if you updated the code in previous sections.
+
+Notice the FQDN is comprised of the application name and project name by default. The remainder of the FQDN, the subdomain, is defined when OpenShift is installed.
+
+Replace this route with a route named xyz.
+
+Delete the current route:
+
+[student@workstation ~]$ oc delete route/php-helloworld
+route.route.openshift.io "php-helloworld" deleted
+NOTE
+Deleting the route is optional. You can have multiple routes for the same service, provided they have different names.
+
+Create a route for the service with a name of ${RHT_OCP4_DEV_USER}-xyz.
+
+[student@workstation ~]$ oc expose svc/php-helloworld \
+> --name=${RHT_OCP4_DEV_USER}-xyz
+route.route.openshift.io/${RHT_OCP4_DEV_USER}-xyz exposed
+[student@workstation ~]$ oc describe route
+Name:              ${RHT_OCP4_DEV_USER}-xyz
+Namespace:         ${RHT_OCP4_DEV_USER}-route
+Created:           5 seconds ago
+Labels:            app=php-helloworld
+                   app.kubernetes.io/component=php-helloworld
+                   app.kubernetes.io/instance=php-helloworld
+Annotations:       openshift.io/host.generated=true
+Requested Host:    ${RHT_OCP4_DEV_USER}-xyz-${RHT_OCP4_DEV_USER}-route.${RHT_...
+   exposed on router default (host ${RHT_OCP4_WILDCARD_DOMAIN}) 4 seconds ago
+Path:              <none>
+TLS Termination:   <none>
+Insecure Policy:   <none>
+Endpoint Port:     8080-tcp
+
+Service:    php-helloworld
+Weight:     100 (100%)
+Endpoints:  10.10.0.35:8443, 10.10.0.35:8080
+Note the new FQDN that was generated based on the new route name. Both the route name and the project name contain your user name, hence it appears twice in the route FQDN.
+
+Make an HTTP request using the FQDN on port 80:
+
+[student@workstation ~]$ curl \
+> ${RHT_OCP4_DEV_USER}-xyz-${RHT_OCP4_DEV_USER}-route.${RHT_OCP4_WILDCARD_DOMAIN}
+Hello, World! php version is 7.3.11
+Finish
+
+On workstation, run the lab openshift-routes finish script to complete this exercise.
+
+[student@workstation ~]$ lab openshift-routes finish
+This concludes the guided exercise.

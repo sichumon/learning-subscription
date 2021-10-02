@@ -1,0 +1,154 @@
+
+Guided Exercise: Troubleshooting Worker Node Capacity Issues
+In this exercise, you will identify a capacity issue on a worker node and remediate the root cause.
+
+Outcomes
+
+You should be able to:
+
+Identify cluster capacity issues.
+
+Inspect and isolate the specific cause of a capacity constraint.
+
+Repair the problem and restore proper worker node functionality.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+The workstation VM and cluster administrator credentials.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and downloads the sample job.
+
+[student@workstation ~]$ lab workers-capacity start
+Procedure 11.2. Instructions
+
+Log in to the OpenShift cluster and create a workers-capacity project.
+
+Log in as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Create a new project workers-capacity.
+
+[student@workstation ~]$ oc new-project workers-capacity
+Now using project "workers-capacity" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Deploy a job that uses disk space.
+
+Change to the ~/DO380/labs/workers-capacity/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/workers-capacity/
+Deploy the job.
+
+[student@workstation workers-capacity]$ oc apply -f job.yml
+job.batch/diskuser created
+Monitor the job execution.
+
+Use the watch command to monitor the job execution. Note that a pod is created, runs for a while, and then is evicted. A new pod is created, but it stays in the Pending state. Press Ctrl+C to exit the watch command.
+
+[student@workstation workers-capacity]$ watch oc get job,pod
+NAME                 COMPLETIONS   DURATION   AGE
+job.batch/diskuser   0/1           107s       107s
+
+NAME                 READY   STATUS    RESTARTS   AGE
+pod/diskuser-4cfdd   0/1     Pending   0          7s
+pod/diskuser-ck4df   0/1     Evicted   0          107s
+NOTE
+The job can also create new pods that are evicted immediately.
+
+Use the oc command to see which node executed the evicted pod.
+
+[student@workstation workers-capacity]$ oc get pod -o wide
+NAME             READY   STATUS    ...  NODE      ...
+diskuser-4cfdd   0/1     Pending   ...  <none>    ...
+diskuser-ck4df   0/1     Evicted   ...  worker02  ...
+NOTE
+The job has a node selector ensuring it runs on worker02.
+
+Use the oc describe command to inspect the worker02 node. Note that the worker02 node has a disk pressure taint and condition. The disk pressure taint has a NoSchedule effect.
+
+[student@workstation workers-capacity]$ oc describe node worker02
+Name:               worker02
+...output omitted...
+Taints:             node.kubernetes.io/disk-pressure:NoSchedule
+...output omitted...
+Conditions:
+  Type             Status  ...   Reason                       ...
+  ----             ------  ...   ------                       ...
+  MemoryPressure   False   ...   KubeletHasSufficientMemory   ...
+  DiskPressure     True    ...   KubeletHasDiskPressure       ...
+  PIDPressure      False   ...   KubeletHasSufficientPID      ...
+  Ready            True    ...   KubeletReady                 ...
+...output omitted...
+Examine the job and remediate the problem.
+
+Delete the diskuser job.
+
+[student@workstation workers-capacity]$ oc delete job diskuser
+job.batch "diskuser" deleted
+Run the oc describe command until the node has no disk pressure taint. Press Ctrl+C to exit the watch command.
+
+[student@workstation workers-capacity]$ watch \
+> "oc describe node worker02 | grep -i taint"
+Taints:             <none>
+NOTE
+The diskuser job runs a pod that consumes all the available ephemeral disk space in the node. The kubelet detects the lack of disk space on the node and starts evicting pods from the node. Then, the kubelet adds a disk pressure taint and condition to the node.
+
+The job can start new pods before the kubelet adds the disk pressure taint. The kubelet evicts the pods immediately because the node has a disk pressure condition.
+
+When the kubelet evicts the diskuser pod that consumes disk space, the pod frees the space.
+
+The kubelet takes some time to clear the disk pressure taint. As the job can only run on the worker02 node, while the node has the disk pressure taint, new pods wait in the pending state until the kubelet clears the taint. If you wait until the kubelet clears the disk pressure taint, then the new pod executes and consumes disk space again, restarting the sequence.
+
+Correct the job.yml file. The job tries to create a file of 1 TB that exceeds the node capacity. Change the job to create a 1 MB file. Update the file to match the following.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: diskuser
+spec:
+  template:
+    spec:
+      containers:
+      - name: diskuser
+        image: registry.redhat.io/openshift4/ose-cli:v4.5
+        command: ["sh", "-c", "dd if=/dev/zero of=/tmp/big_file bs=1M count=1 || sleep infinity"]
+      nodeSelector:
+        kubernetes.io/hostname: worker02
+      restartPolicy: OnFailure
+NOTE
+The command: …​ infinity"] fragment must be typed as a single line.
+
+Run the job and monitor the job execution.
+
+Deploy the job.
+
+[student@workstation workers-capacity]$ oc apply -f job.yml
+job.batch/diskuser created
+Use the watch command to monitor the job execution. The job completes successfully. Press Ctrl+C to exit the watch command.
+
+[student@workstation workers-capacity]$ watch oc get job,pod
+NAME                 COMPLETIONS   DURATION   AGE
+job.batch/diskuser   1/1           3s         14s
+
+NAME                 READY   STATUS      RESTARTS   AGE
+pod/diskuser-qgtzb   0/1     Completed   0          14s
+Remove the project to clean up the exercise.
+
+[student@workstation workers-capacity]$ oc delete project workers-capacity
+project.project.openshift.io "workers-capacity" deleted
+Change to the /home/student/ directory.
+
+[student@workstation workers-capacity]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab workers-capacity finish
+This concludes the section.
+

@@ -1,0 +1,357 @@
+Lab: Troubleshooting OpenStack
+Performance Checklist
+
+In this lab, you will find and fix issues in the OpenStack environment. You will solve problems in the areas of authentication, networking, compute nodes, and security. Finally, you will launch an instance and ensure that everything is working as it should.
+
+Outcomes
+
+You should be able to:
+
+Troubleshoot authentication issues within OpenStack
+
+Search log files to help describe the nature of the problem
+
+Troubleshoot messaging issues within OpenStack
+
+Troubleshoot networking issues within OpenStack
+
+Log in to workstation as student using student as the password.
+
+From workstation, run lab troubleshooting-review setup, which verifies that OpenStack services are running and the resources required for the lab are available. This script also breaks the Compute configuration, authentication, and networking.
+
+[student@workstation ~]$ lab troubleshooting-review setup
+As the operator1 user in the production project, remove the existing image named production-rhel7. Troubleshoot any problems.
+
+Source the /home/student/operator1-production-rc file.
+
+[student@workstation ~]$ source ~/operator1-production-rc
+Delete the production-rhel7 image.
+
+[student@workstation ~(operator1-production)]$ openstack image delete \
+production-rhel7
+Failed to delete image with name or ID '21b3b8ba-e28e-4b41-9150-ac5b44f9d8ef': 403 Forbidden
+Image 21b3b8ba-e28e-4b41-9150-ac5b44f9d8ef is protected and cannot be deleted.
+    (HTTP 403)
+    Failed to delete 1 of 1 images.
+The error you see is because the image is currently protected. You need to unprotect the image before it can be deleted.
+
+[student@workstation ~(operator1-production)]$ openstack image set \
+--unprotected production-rhel7
+[student@workstation ~(operator1-production)]$ openstack image delete \
+production-rhel7
+Source the /home/student/architect1-production-rc environment file. Run the lab troubleshooting-review break command to set up the next part of the lab exercise.
+
+[student@workstation ~(operator1-production)]$ source ~/architect1-production-rc
+[student@workstation ~(architect1-production)]$ lab troubleshooting-review break
+Source the /home/student/operator1-production-rc environment file, then list all OpenStack images. Troubleshoot and fix any issues.
+
+List all the OpenStack images.
+
+[student@workstation ~(architect1-production)]$ source ~/operator1-production-rc
+[student@workstation ~(operator1-production)]$ openstack image list
+Failed to discover available identity versions when contacting http://172.25.251.50:5000/v3. Attempting to parse version from URL.
+Unable to establish connection to http://172.25.251.50:5000/v3/auth/tokens: HTTPConnectionPool(host='172.25.251.50', port=5000): Max retries exceeded with url: /v3/auth/tokens (Caused by NewConnectionError('<requests.packages.urllib3.connection.HTTPConnection object at 0x7fbbbbc445d0>: Failed to establish a new connection: [Errno 111] Connection refused',))
+The error occurs because OpenStack cannot authenticate the operator1 user. This can happen when the environment file for the user contains incorrect information. Log in to controller0. Search for listen keystone_public in /var/lib/config-data/puppet-generated/haproxy/ etc/haproxy/haproxy.cfg. The second IP address is the one that must be used in the environment file. When done, log off from the controller node.
+
+[student@workstation ~(operator1-production)]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo cat \
+/var/lib/config-data/puppet-generated/haproxy/etc/haproxy/haproxy.cfg
+...output omitted...
+listen keystone_public
+ bind 172.24.1.50:5000 transparent
+ bind 172.25.250.50:5000 transparent
+...output omitted...
+[heat-admin@controller0 ~]$ logout
+[student@workstation ~(operator1-production)]$ 
+Compare the IP address from HAProxy with the OS_AUTH_URL variable in the environment file. Update the environment file to match if required.
+
+...output omitted...
+export OS_AUTH_URL=http://172.25.250.50:5000/v3
+...output omitted...
+Source the /home/student/operator1-production-rc file again. Use the openstack image list command to ensure that the OS_AUTH_URL option is correct.
+
+[student@workstation ~(operator1-production)]$ source ~/operator1-production-rc
+[student@workstation ~(operator1-production)]$ openstack image list
++--------------------------------------+-----------------+--------+
+| ID                                   | Name            | Status |
++--------------------------------------+-----------------+--------+
+| ec9473de-4048-4ebb-b08a-a9be619477ac | octavia-amphora | active |
+| 6b0128a9-4481-4ceb-b34e-ffe92e0dcfdd | rhel7           | active |
+| 5f7f8208-33b5-4f17-8297-588f938182c0 | rhel7-db        | active |
+| 14b7e8b2-7c6d-4bcf-b159-1e4e7582107c | rhel7-web       | active |
++--------------------------------------+-----------------+--------+
+Create a new server instance named production-web1 using the settings from the table below. This action will fail. Troubleshoot and fix any issues.
+
+Table 9.4. Instance Options
+
+Option	Value
+--flavor	default
+--image	rhel7
+--key-name	example-keypair
+--network	production-network1
+--security-group	production-web
+
+Create a new server instance.
+
+[student@workstation ~(operator1-production)]$ openstack server create \
+--flavor default \
+--key-name example-keypair \ 
+--nic net-id=production-network1 \
+--security-group production-web \
+--image rhel7 --wait production-web1
+Error creating server: production-web1
+Error creating server
+This error is due to a problem with the Compute service. List the Compute services. Source the /home/student/architect1-production-rc environment file first, because operator1 does not have permission to interact directly with the Compute services.
+
+[student@workstation ~(operator1-production)]$ source ~/architect1-production-rc
+[student@workstation ~(architect1-production)]$ openstack compute service list \
+-c Binary -c Host -c Status
++------------------+-----------------------------------+----------+
+| Binary           | Host                              | Status   |
++------------------+-----------------------------------+----------+
+| nova-conductor   | controller0.overcloud.example.com | enabled  |
+| nova-compute     | compute1.overcloud.example.com    | disabled |
+| nova-compute     | computehci0.overcloud.example.com | enabled  |
+| nova-compute     | compute0.overcloud.example.com    | disabled |
+| nova-consoleauth | controller0.overcloud.example.com | enabled  |
+| nova-scheduler   | controller0.overcloud.example.com | enabled  |
++------------------+-----------------------------------+----------+
+Enable the nova-compute services on compute0 and compute1.
+
+[student@workstation ~(architect1-production)]$ openstack compute service set \
+--enable compute0.overcloud.example.com nova-compute
+[student@workstation ~(architect1-production)]$ openstack compute service set \
+--enable compute1.overcloud.example.com nova-compute
+Verify the state of the nova-compute services.
+
+[student@workstation ~(architect1-production)]$ openstack compute service list \
+-c Binary -c Host -c Status
++------------------+-----------------------------------+---------+
+| Binary           | Host                              | Status  |
++------------------+-----------------------------------+---------+
+| nova-conductor   | controller0.overcloud.example.com | enabled |
+| nova-compute     | compute1.overcloud.example.com    | enabled |
+| nova-compute     | computehci0.overcloud.example.com | enabled |
+| nova-compute     | compute0.overcloud.example.com    | enabled |
+| nova-consoleauth | controller0.overcloud.example.com | enabled |
+| nova-scheduler   | controller0.overcloud.example.com | enabled |
++------------------+-----------------------------------+---------+
+Source the /home/student/operator1-production-rc environment file, delete the failed instance, and then try to create the instance again.
+
+[student@workstation ~(architect1-production)]$ source ~/operator1-production-rc
+[student@workstation ~(operator1-production)]$ openstack server delete \
+production-web1
+[student@workstation ~(operator1-production)]$ openstack server list
+
+[student@workstation ~(operator1-production)]$ openstack server create \ 
+--flavor default \
+--key-name example-keypair \ 
+--nic net-id=production-network1 \
+--security-group production-web \
+--image rhel7 --wait production-web1
+Create a floating IP address and assign it to the instance. Troubleshoot and fix any issues.
+
+Create a floating IP address.
+
+[student@workstation ~(operator1-production)]$ openstack floating ip create \
+provider-datacentre
++--------------------+---------------------+------------------+------+
+| ID                 | Floating IP Address | Fixed IP Address | Port |
++--------------------+---------------------+------------------+------+
+| ce31(...)9ecb      | 172.25.250.N        | None             | None |
++--------------------+---------------------+------------------+------+
+[student@workstation ~(operator1-production)]$ openstack server add \
+floating ip production-web1 172.25.250.N
+Unable to associate floating IP 172.25.250.N to fixed IP 192.168.0.6 for instance a53e66d9-6413-4ae4-b95b-2012dd52f908. Error: External network 7aaf57c1-3c34-45df-94d3-dbc12754b22e is not reachable from subnet cfc7ddfa-4403-41a7-878f-e8679596eafd.  Therefore, cannot associate Port dcb6692d-0094-42ec-bc8e-a52fd97d7a4c with a Floating IP.
+Neutron server returns request_ids: ['req-4f88fb24-7628-4155-a921-ff628cb4b371'] (HTTP 400) (Request-ID: req-d6862c58-66c4-44b6-a4d1-bf26514bf04b)
+This error message occurs because the external network is not attached to the router that is the gateway for the production-network1 network.
+
+Connect production-router1 to the provider-datacentre external network.
+
+[student@workstation ~(operator1-production)]$ openstack router set \
+--external-gateway provider-datacentre production-router1
+Attach the floating IP address to the instance. Verify that the instance has been assigned the floating IP address.
+
+[student@workstation ~(operator1-production)]$ openstack server add \
+floating ip production-web1 172.25.250.N
+[student@workstation ~(operator1-production)]$ openstack server list \ 
+-c Name -c Networks
++-----------------+-----------------------------------------------+
+| Name            | Networks                                      |
++-----------------+-----------------------------------------------+
+| production-web1 | production-network1=192.168.0.P, 172.25.250.N |
++-----------------+-----------------------------------------------+
+Attempt to log in to production-web1 using SSH. Troubleshoot and fix any issues.
+
+Attempt to log in to the instance using SSH.
+
+[student@workstation ~(operator1-production)]$ ssh cloud-user@172.25.250.N
+ssh: connect to host 172.25.250.N port 22: Connection timed out
+Find out which security group the instance is using, and then list the rules in that security group.
+
+[student@workstation ~(operator1-production)]$ openstack server show \
+production-web1 -f json
+...output omitted...
+  "security_groups": "name='production-web'",
+...output omitted...
+[student@workstation ~(operator1-production)]$ openstack security group rule \
+list production-web
++---------------+-------------+----------+------------+-----------------------+
+| ID            | IP Protocol | IP Range | Port Range | Remote Security Group |
++---------------+-------------+----------+------------+-----------------------+
+| cc92(...)95b1 | None        | None     |            | None                  |
+| eb84(...)c6e7 | None        | None     |            | None                  |
++---------------+-------------+----------+------------+-----------------------+
+Note that there is no rule to allow SSH access to the instance.
+
+Create a security group rule to allow SSH access.
+
+[student@workstation ~(operator1-production)]$ openstack security group rule \
+create --protocol tcp --dst-port 22:22 production-web
++-------------------+--------------------------------------+
+| Field             | Value                                |
++-------------------+--------------------------------------+
+| created_at        | 2017-06-12T07:24:34Z                 |
+| description       |                                      |
+| direction         | ingress                              |
+| ethertype         | IPv4                                 |
+| headers           |                                      |
+| id                | 06070264-1427-4679-bd8e-e3a8f2e189e9 |
+| port_range_max    | 22                                   |
+| port_range_min    | 22                                   |
+| project_id        | 9913a8abd192443c96587a8dc1c0a364     |
+| project_id        | 9913a8abd192443c96587a8dc1c0a364     |
+| protocol          | tcp                                  |
+| remote_group_id   | None                                 |
+| remote_ip_prefix  | 0.0.0.0/0                            |
+| revision_number   | 1                                    |
+| security_group_id | ac9ae6e6-0056-4501-afea-f83087b8297f |
+| updated_at        | 2017-06-12T07:24:34Z                 |
++-------------------+--------------------------------------+
+Attempt to log in to the instance again.
+
+[student@workstation ~(operator1-production)]$ ssh cloud-user@172.25.250.N
+Warning: Permanently added '172.25.250.N' (ECDSA) to the list of known hosts.
+[cloud-user@production-web1 ~]$ logout
+[student@workstation ~(operator1-production)]$ 
+Create a 1 GB volume named production-volume1. Verify the volume status. Use the admin user's environment file on controller0 at /home/heat-admin/overcloudrc. Troubleshoot and fix any issues.
+
+Create the volume.
+
+[student@workstation ~(operator1-production)]$ openstack volume create \
+--size 1 production-volume1
+...output omitted...
+Determine the status of production-volume1.
+
+[student@workstation ~(operator1-production)]$ openstack volume list
++---------------+--------------------+-----------+------+-------------+
+| ID            | Display Name       | Status    | Size | Attached to |
++---------------+--------------------+-----------+------+-------------+
+| 0da8(...)be3f | production-volume1 | creating  |    1 |             |
++---------------+--------------------+-----------+------+-------------+
+The volume status stays at creating.
+
+Log in to controller0 as heat-admin, and then review the log files for the Block Storage Scheduler service.
+
+[student@workstation ~(operator1-production)]$ ssh heat-admin@controller0
+[heat-admin@controller ~]$ sudo less \
+/var/log/containers/cinder/cinder-scheduler.log
+...output omitted...
+2018-11-16 01:57:52.112 1 ERROR oslo_service.service MessageDeliveryFailure: Unable to connect to AMQP server on controller0.
+internalapi.overcloud.example.com:5672 after None tries: (0, 0): (403) ACCESS_REFUSED - Login was refused using authentication mechanism AMQPLAIN. For details see the broker logfile.
+...output omitted...
+The repeated error above indicates that the Block Storage Scheduler service is unable to authenticate to RabbitMQ.
+
+Inspect the Block Storage Volume service log file for errors.
+
+(overcloud) [heat-admin@controller0 ~]$ sudo less \
+/var/log/containers/cinder/cinder-volume.log
+...output omitted...
+2018-11-16 01:00:47.170 194544 ERROR oslo_service.service [req-2086d653-8982-40dc-9e75-7c0bba9e4774 - - - - -] Error starting thread.: MessageDeliveryFailure: Unable to connect to AMQP server on controller0.internalapi.overcloud.example.com:5672 after None tries: (0, 0): (403) ACCESS_REFUSED - Login was refused using authentication mechanism AMQPLAIN. For details see the broker logfile.
+...output omitted...
+The error above indicates that the Volume service is also unable to authenticate to RabbitMQ.
+
+Source the /home/heat-admin/overcloudrc environment file, and then determine the state of the Volume services.
+
+[heat-admin@controller0 ~]$ source ~/overcloudrc
+(overcloud) [heat-admin@controller0 ~]$ openstack volume service list \
+-c Binary -c Host -c Status -c State
++------------------+------------------------+---------+-------+
+| Binary           | Host                   | Status  | State |
++------------------+------------------------+---------+-------+
+| cinder-scheduler | controller0            | enabled | down  |
+| cinder-volume    | hostgroup@tripleo_ceph | enabled | down  |
++------------------+------------------------+---------+-------+
+Use the docker exec command to list the RabbitMQ users.
+
+(overcloud) [heat-admin@controller0 ~]$ sudo docker exec -t \
+rabbitmq-bundle-docker-0 rabbitmqctl list_users
+Listing users
+guest	[administrator]
+The only nonadministrative user is guest
+
+Investigate the block service configuration file. Locate the transport_url option.
+
+(overcloud) [heat-admin@controller0 ~]$ sudo grep ^transport_url \
+/var/lib/config-data/puppet-generated/cinder/etc/cinder/cinder.conf
+transport_url=rabbit://change_me:V6VpJgBNvThefbnRyE3xx9sag@controller0.internalapi.
+overcloud.example.com:5672/?ssl=0
+transport_url=rabbit://change_me:V6VpJgBNvThefbnRyE3xx9sag@controller0.internalapi.
+overcloud.example.com:5672/?ssl=0
+The user portion of the URL is set to change_me, which does not exist as a RabbitMQ user.
+
+Change the username in both transport_url options to guest. Restart the openstack-cinder-volume Pacemaker resource, and the cinder_scheduler containerized service.
+
+(overcloud) [heat-admin@controller0 ~]$ sudo pcs resource restart \
+openstack-cinder-volume
+openstack-cinder-volume successfully restarted
+(overcloud) [heat-admin@controller0 ~]$ sudo docker restart cinder_scheduler
+cinder_scheduler
+(overcloud) [heat-admin@controller0 ~]$ logout
+[student@workstation ~(operator1-production)]$ 
+On workstation, delete the incorrect volume and recreate it. Verify that it has been properly created.
+
+[student@workstation ~(operator1-production)]$ openstack volume delete \
+production-volume1
+[student@workstation ~(operator1-production)]$ openstack volume create \
+--size 1 production-volume1
++---------------------+--------------------------------------+
+| Field               | Value                                |
++---------------------+--------------------------------------+
+| attachments         | []                                   |
+| availability_zone   | nova                                 |
+| bootable            | false                                |
+| consistencygroup_id | None                                 |
+| created_at          | 2017-06-14T08:08:01.726844           |
+| description         | None                                 |
+| encrypted           | False                                |
+| id                  | 128a9514-f8bd-4162-9f7e-72036f684cba |
+| multiattach         | False                                |
+| name                | production-volume1                   |
+| properties          |                                      |
+| replication_status  | disabled                             |
+| size                | 1                                    |
+| snapshot_id         | None                                 |
+| source_volid        | None                                 |
+| status              | creating                             |
+| type                | None                                 |
+| updated_at          | None                                 |
+| user_id             | 0ac575bb96e24950a9551ac4cda082a4     |
++---------------------+--------------------------------------+
+[student@workstation ~(operator1-production)]$ openstack volume list
++--------------------------------------+--------------------+-----------+------+
+| ID                                   | Display Name       | Status    | Size |
++--------------------------------------+--------------------+-----------+------+
+| 128a9514-f8bd-4162-9f7e-72036f684cba | production-volume1 | available |    1 |
++--------------------------------------+--------------------+-----------+------+
+Evaluation
+
+On workstation, run the lab troubleshooting-review grade command to confirm success of this exercise.
+
+[student@workstation ~]$ lab troubleshooting-review grade
+Cleanup
+
+On workstation, run the lab troubleshooting-review cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab troubleshooting-review cleanup
+This concludes the lab.

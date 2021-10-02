@@ -1,0 +1,215 @@
+Guided Exercise: Synchronizing OpenShift Groups with LDAP
+In this exercise you will configure OpenShift for LDAP group synchronization.
+
+Outcomes
+
+You should be able to:
+
+Create a CronJob to perform the synchronization.
+
+Use the oc policy who-can command to list users and groups who can perform specific actions on specific resources according to a scenario.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the environment for this lab is properly setup.
+
+[student@workstation ~]$ lab auth-ldapsync start
+Procedure 5.2. Instructions
+
+Perform a dry run of the group synchronization process.
+
+Log into your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Change to the ~/DO380/labs/auth-ldapsync/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/auth-ldapsync/
+Fetch the IdM certificate to trust in the synchronization process.
+
+[student@workstation auth-ldapsync]$ wget \
+> http://idm.ocp4.example.com/ipa/config/ca.crt
+...output omitted...
+2020-09-09 09:51:47 (300 MB/s) - ‘ca.crt’ saved [1655/1655]
+Edit the ldap-sync.yml file and change the bindPassword and ca values as shown.
+
+kind: LDAPSyncConfig
+apiVersion: v1
+url: ldaps://idm.ocp4.example.com
+bindDN: uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com
+bindPassword: Redhat123@!
+insecure: false
+ca: ca.crt
+rfc2307:
+...output omitted...
+Run the synchronization without performing any action.
+
+[student@workstation auth-ldapsync]$ oc adm groups sync \
+> --sync-config ldap-sync.yml
+apiVersion: v1
+items:
+- metadata:
+    annotations:
+      openshift.io/ldap.sync-time: 2020-07-07T15:15:34-0400
+      openshift.io/ldap.uid: cn=admins,cn=groups,cn=accounts,dc=ocp4,dc=example,dc=com
+      openshift.io/ldap.url: idm.ocp4.example.com:636
+    creationTimestamp: null
+    labels:
+      openshift.io/ldap.host: idm.ocp4.example.com
+    name: admins
+  users:
+  - admin
+...output omitted...
+Create the auth-ldapsync project.
+
+[student@workstation auth-ldapsync]$ oc new-project auth-ldapsync
+Now using project "auth-ldapsync" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Create a service account with suitable minimal permissions to manage groups.
+
+Review the file named rbac.yml, which contains an ldap-group-syncer service account, a cluster role with write access to groups, and a cluster role binding.
+
+Deploy the OpenShift resources.
+
+[student@workstation auth-ldapsync]$ oc create -f rbac.yml
+serviceaccount/ldap-group-syncer created
+clusterrole.rbac.authorization.k8s.io/ldap-group-syncer created
+clusterrolebinding.rbac.authorization.k8s.io/ldap-group-syncer created
+Create the configuration for the CronJob.
+
+Modify the cronjob.yml file to match the following.
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: group-sync
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: hello
+            image: registry.redhat.io/openshift4/ose-cli:v4.5
+            command:
+            - /bin/sh
+            - -c
+            - oc adm groups sync --sync-config /etc/config/cron-ldap-sync.yml --confirm
+            volumeMounts:
+              - mountPath: "/etc/config"
+                name: "ldap-sync-volume"
+              - mountPath: "/etc/secrets"
+                name: "ldap-bind-password"
+          volumes:
+            - name: "ldap-sync-volume"
+              configMap:
+                name: ldap-config
+            - name: "ldap-bind-password"
+              secret:
+                secretName: ldap-secret
+          serviceAccountName: ldap-group-syncer
+          serviceAccount: ldap-group-syncer
+NOTE
+The - oc adm groups sync …​ --confirm fragment must be typed as a single line.
+
+Copy ldap-sync.yml to a new file named cron-ldap-sync.yml. Edit the cron-ldap-sync.yml file and change the bindPassword and ca values as shown.
+
+kind: LDAPSyncConfig
+apiVersion: v1
+url: ldaps://idm.ocp4.example.com
+bindDN: uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com
+bindPassword:
+  file: /etc/secrets/bindPassword
+insecure: false
+ca: /etc/config/ca.crt
+rfc2307:
+...output omitted...
+Create a ConfigMap containing the LDAPSyncConfig and the trusted certificate.
+
+[student@workstation auth-ldapsync]$ oc create configmap ldap-config \
+> --from-file cron-ldap-sync.yml=cron-ldap-sync.yml,ca.crt=ca.crt
+configmap/ldap-config created
+Create a Secret containing the LDAP bind password.
+
+[student@workstation auth-ldapsync]$ oc create secret generic ldap-secret \
+> --from-literal bindPassword='Redhat123@!'
+secret/ldap-secret created
+Create a CronJob to automatically run the audit script on a schedule.
+
+Create the CronJob.
+
+[student@workstation auth-ldapsync]$ oc create -f cronjob.yml
+cronjob.batch/group-sync created
+Watch the CronJob, Job, and Pod resources until the group synchronization completes. Press Ctrl+C to exit the watch command.
+
+[student@workstation auth-ldapsync]$ watch oc get cronjobs,jobs,pods
+NAME                       SCHEDULE      SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob.batch/group-sync   */1 * * * *   False     0        35s             50s
+
+NAME                              COMPLETIONS   DURATION   AGE
+job.batch/group-sync-1595239320   1/1           16s        28s
+
+NAME                              READY   STATUS      RESTARTS   AGE
+pod/group-sync-1595239320-zl7h6   0/1     Completed   0          28s
+Review that the user openshift-admin is in the openshift-admins group.
+
+[student@workstation auth-ldapsync]$ oc get group openshift-admins
+NAME               USERS
+openshift-admins   openshift-admin
+Change to the /home/student/ directory.
+
+[student@workstation auth-ldapsync]$ cd
+Temporarily, give the LDAP group openshift-admins cluster administrators privileges.
+
+Note that the openshift-admin user cannot view the OAuth cluster resource.
+
+[student@workstation ~]$ oc policy who-can get oauth
+resourceaccessreviewresponse.authorization.openshift.io/<unknown>
+
+Namespace: auth-ldapsync
+Verb:      get
+Resource:  oauths.config.openshift.io
+
+Users:  admin
+        system:admin
+...output omitted...
+Groups: system:cluster-admins
+        system:cluster-readers
+        system:masters
+Grant the permissions.
+
+[student@workstation ~]$ oc adm policy add-cluster-role-to-group \
+> cluster-admin openshift-admins
+clusterrole.rbac.authorization.k8s.io/cluster-admin added: "openshift-admins"
+Note that openshift-admin can view the OAuth cluster resource.
+
+[student@workstation ~]$ oc policy who-can get oauth
+...output omitted...
+Groups: openshift-admins
+...output omitted...
+Revoke the permissions. You can safely ignore the warning that displays.
+
+[student@workstation ~]$ oc adm policy remove-cluster-role-from-group \
+> cluster-admin openshift-admins
+Warning: Your changes may get lost whenever a master is restarted, unless you prevent reconciliation of this rolebinding using the following command: oc annotate clusterrolebinding.rbac cluster-admin 'rbac.authorization.kubernetes.io/autoupdate=false' --overwrite
+Warning: Your changes may get lost whenever a master is restarted, unless you prevent reconciliation of this rolebinding using the following command: oc annotate clusterrolebinding.rbac cluster-admins 'rbac.authorization.kubernetes.io/autoupdate=false' --overwrite
+clusterrole.rbac.authorization.k8s.io/cluster-admin removed: "openshift-admins"
+Delete the auth-ldapsync project.
+
+[student@workstation ~]$ oc delete project auth-ldapsync
+project.project.openshift.io "auth-ldapsync" deleted
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab auth-ldapsync finish
+This concludes the section.

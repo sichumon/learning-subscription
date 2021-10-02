@@ -1,0 +1,216 @@
+Guided Exercise: Creating a Containerized Application with Source-to-Image
+In this exercise, you will build an application from source code and deploy the application to an OpenShift cluster.
+
+Outcomes
+
+You should be able to:
+
+Build an application from source code using the OpenShift command-line interface.
+
+Verify the successful deployment of the application using the OpenShift command-line interface.
+
+Run the following command to download the relevant lab files and configure the environment:
+
+[student@workstation ~]$ lab openshift-s2i start
+Inspect the PHP source code for the sample application and create and push a new branch named s2i to use during this exercise.
+
+Enter your local clone of the DO180-apps Git repository and checkout the master branch of the course's repository to ensure you start this exercise from a known good state:
+
+[student@workstation openshift-s2i]$ cd ~/DO180-apps
+[student@workstation DO180-apps]$ git checkout master
+...output omitted...
+Create a new branch to save any changes you make during this exercise:
+
+[student@workstation DO180-apps]$ git checkout -b s2i
+Switched to a new branch 's2i'
+[student@workstation DO180-apps]$ git push -u origin s2i
+...output omitted...
+ * [new branch]      s2i -> s2i
+Branch 's2i' set up to track remote branch 's2i' from 'origin'.
+Review the PHP source code of the application, inside the the php-helloworld folder.
+
+Open the index.php file in the /home/student/DO180-apps/php-helloworld folder:
+
+<?php
+print "Hello, World! php version is " . PHP_VERSION . "\n";
+?>
+The application implements a simple response which returns the PHP version it is running.
+
+Prepare the lab environment.
+
+Load your classroom environment configuration.
+
+Run the following command to load the environment variables created in the first guided exercise:
+
+[student@workstation DO180-apps]$ source /usr/local/etc/ocp4.config
+Log in to the OpenShift cluster.
+
+[student@workstation DO180-apps]$ oc login -u ${RHT_OCP4_DEV_USER} -p \
+> ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+Login successful
+...output omitted...
+Create a new project that contains your RHOCP developer username for the resources you create during this exercise:
+
+[student@workstation DO180-apps]$ oc new-project ${RHT_OCP4_DEV_USER}-s2i
+Create a new PHP application using Source-to-Image from the php-helloworld directory using the s2i branch you created in the previous step in your fork of the DO180-apps Git repository.
+
+Use the oc new-app command to create the PHP application.
+
+IMPORTANT
+The following example uses the number sign (#) to select a specific branch from the git repository, in this case the s2i branch created in the previous step.
+
+[student@workstation DO180-apps]$ oc new-app --as-deployment-config php:7.3 \
+> --name=php-helloworld \
+> https://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps#s2i \
+> --context-dir php-helloworld
+Wait for the build to complete and the application to deploy. Verify that the build process starts with the oc get pods command.
+
+[student@workstation openshift-s2i]$ oc get pods
+NAME                     READY   STATUS    RESTARTS   AGE
+php-helloworld-1-build   1/1     Running   0          5s
+Examine the logs for this build. Use the build pod name for this build, php-helloworld-1-build.
+
+[student@workstation DO180-apps]$ oc logs --all-containers \
+> -f php-helloworld-1-build
+Cloning "https://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps" ...
+	Commit:	f7cd8963ef353d9173c3a21dcccf402f3616840b (Initial commit, including all apps previously in course)
+
+...output omitted...
+
+Writing manifest to image destination
+Storing signatures
+Generating dockerfile with builder image image-registry.openshift-image-...
+php@sha256:f3c9...7546
+STEP 1: FROM image-registry.openshift-image-registry.svc:5000/...
+
+...output omitted...
+
+Pushing image ...openshift-image-registry.svc:5000/s2i/php-helloworld:latest...
+Getting image source signatures
+...output omitted...
+STEP 8: RUN /usr/libexec/s2i/assemble
+---> Installing application source...
+...output omitted...
+Copying config sha256:6ce5730f48d9c746e7cbd7ea7b8ed0f15b83932444d1d2bd7711d7...
+ 21.45 KiB / 21.45 KiB  0s
+Writing manifest to image destination
+Storing signatures
+Successfully pushed .../php-helloworld:latest@sha256:63e757a4c0edaeda497dab7...
+Push successful
+Notice the clone of the Git repository as the first step of the build. Next, the Source-to-Image process built a new container called s2i/php-helloworld:latest. The last step in the build process is to push this container to the OpenShift private registry.
+
+Review the DeploymentConfig for this application:
+
+[student@workstation DO180-apps]$ oc describe dc/php-helloworld
+Name:           php-helloworld
+Namespace:      ${RHT_OCP4_DEV_USER}-s2i
+Created:        About a minute ago
+Labels:         app=php-helloworld
+                app.kubernetes.io/component=php-helloworld
+                app.kubernetes.io/instance=php-helloworld
+Annotations:    openshift.io/generated-by=OpenShiftNewApp
+Latest Version: 1
+Selector:       deploymentconfig=php-helloworld
+Replicas:       1
+Triggers:       Config, Image(php-helloworld@latest, auto=true)
+Strategy:       Rolling
+Template:
+Pod Template:
+  Labels:       deploymentconfig=php-helloworld
+  Annotations:  openshift.io/generated-by: OpenShiftNewApp
+  Containers:
+   php-helloworld:
+    Image:          image-registry.openshift-image-registry.svc:5000/${RHT_OCP4_DEV_USER}-s2i/php-helloworld@sha256:ae3ec890625f153c0163812501f2522fddc96431036374aa2472ddd52bc7ccb4
+    Ports:          8080/TCP, 8443/TCP
+    Host Ports:	    0/TCP, 0/TCP
+    Environment:    <none>
+    Mounts:         <none>
+  Volumes:          <none>
+
+Deployment #1 (latest):
+  Name:             php-helloworld-1
+  Created:          about a minute ago
+  Status:           Complete
+  Replicas:         1 current / 1 desired
+  Selector:         deployment=php-helloworld-1,deploymentconfig=php-helloworld
+  Labels:           app.kubernetes.io/component=php-helloworld,app.kubernetes.io/instance=php-helloworld,app=php-helloworld,openshift.io/deployment-config.name=php-helloworld
+  Pods Status:      1 Running / 0 Waiting / 0 Succeeded / 0 Failed
+...output omitted...
+Add a route to test the application:
+
+[student@workstation DO180-apps]$ oc expose service php-helloworld \
+> --name ${RHT_OCP4_DEV_USER}-helloworld
+route.route.openshift.io/${RHT_OCP4_DEV_USER}-helloworld exposed
+Find the URL associated with the new route:
+
+[student@workstation DO180-apps]$ oc get route -o jsonpath='{..spec.host}{"\n"}'
+${RHT_OCP4_DEV_USER}-helloworld-${RHT_OCP4_DEV_USER}-s2i.${RHT_OCP4_WILDCARD_DOMAIN}
+Test the application by sending an HTTP GET request to the URL you obtained in the previous step:
+
+[student@workstation DO180-apps]$ curl -s \
+> ${RHT_OCP4_DEV_USER}-helloworld-${RHT_OCP4_DEV_USER}-s2i.\
+> ${RHT_OCP4_WILDCARD_DOMAIN}
+Hello, World! php version is 7.3.11
+Explore starting application builds by changing the application in its Git repository and executing the proper commands to start a new Source-to-Image build.
+
+Enter the source code directory.
+
+[student@workstation DO180-apps]$ cd ~/DO180-apps/php-helloworld
+Edit the index.php file as shown below:
+
+<?php
+print "Hello, World! php version is " . PHP_VERSION . "\n";
+print "A change is a coming!\n";
+?>
+Save the file.
+
+Commit the changes and push the code back to the remote Git repository:
+
+[student@workstation php-helloworld]$ git add .
+[student@workstation php-helloworld]$ git commit -m 'Changed index page contents.'
+[s2i b1324aa] changed index page contents
+ 1 file changed, 1 insertion(+)
+[student@workstation php-helloworld]$ git push origin s2i
+...output omitted...
+Counting objects: 7, done.
+Delta compression using up to 2 threads.
+Compressing objects: 100% (3/3), done.
+Writing objects: 100% (4/4), 417 bytes | 0 bytes/s, done.
+Total 4 (delta 1), reused 0 (delta 0)
+remote: Resolving deltas: 100% (1/1), completed with 1 local object.
+To https://github.com/${RHT_OCP4_GITHUB_USER}/DO180-apps
+   f7cd896..b1324aa  s2i -> s2i
+Start a new Source-to-Image build process and wait for it to build and deploy:
+
+[student@workstation php-helloworld]$ oc start-build php-helloworld
+build.build.openshift.io/php-helloworld-2 started
+[student@workstation php-helloworld]$ oc logs php-helloworld-2-build -f
+...output omitted...
+
+Successfully pushed .../php-helloworld:latest@sha256:74e757a4c0edaeda497dab7...
+Push successful
+NOTE
+Logs may take some seconds to be available after the build starts. If the previous command fails, wait a bit and try again.
+
+After the second build has completed use the oc get pods command to verify that the new version of the application is running.
+
+[student@workstation php-helloworld]$ oc get pods
+NAME                      READY   STATUS      RESTARTS   AGE
+php-helloworld-1-build    0/1     Completed   0          11m
+php-helloworld-1-deploy   0/1     Completed   0          10m
+php-helloworld-2-build    0/1     Completed   0          45s
+php-helloworld-2-deploy   0/1     Completed   0          16s
+php-helloworld-2-wq9wz    1/1     Running     0          13s
+Test that the application serves the new content:
+
+[student@workstation php-helloworld]$ curl -s \
+> ${RHT_OCP4_DEV_USER}-helloworld-${RHT_OCP4_DEV_USER}-s2i.\
+> ${RHT_OCP4_WILDCARD_DOMAIN}
+Hello, World! php version is 7.3.11
+A change is a coming!
+Finish
+
+On workstation, run the lab openshift-s2i finish script to complete this lab.
+
+[student@workstation php-helloworld]$ lab openshift-s2i finish
+This concludes the guided exercise.

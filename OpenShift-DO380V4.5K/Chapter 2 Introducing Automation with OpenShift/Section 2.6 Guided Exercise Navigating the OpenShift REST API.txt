@@ -1,0 +1,194 @@
+Guided Exercise: Navigating the OpenShift REST API
+In this exercise you will explore the OpenShift REST API using the curl command.
+
+Outcomes
+
+You should be able to:
+
+Authenticate with the OpenShift OAuth server to retrieve an access token.
+
+Find and inspect OpenShift resources using the curl command.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+[student@workstation ~]$ lab automation-rest start
+Procedure 2.3. Instructions
+
+Attempt a GET request to the OpenShift API server without authentication.
+
+[student@workstation ~]$ curl -k https://api.ocp4.example.com:6443/api
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {
+
+  },
+  "status": "Failure",
+  "message": "forbidden: User \"system:anonymous\" cannot get path \"/api\"",
+  "reason": "Forbidden",
+  "details": {
+
+  },
+  "code": 403
+}
+Authenticate with the OpenShift OAuth server to retrieve an access token.
+
+Log in to OpenShift as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Find the route to the OpenShift OAuth server using the oc command, and then assign it to a variable.
+
+[student@workstation ~]$ oc get route -n openshift-authentication
+NAME              HOST/PORT                               PATH   SERVICES          PORT   TERMINATION            WILDCARD
+oauth-openshift   oauth-openshift.apps.ocp4.example.com          oauth-openshift   6443   passthrough/Redirect   None
+[student@workstation ~]$ OAUTH_HOST=$(oc get route oauth-openshift \
+> -n openshift-authentication -o jsonpath='{.spec.host}')
+Authenticate with the OAuth server using the curl command. OpenShift responds with an HTTP 302 Redirect response code, but there is no need to follow it. The token can be found as the access_token parameter in the Location URL.
+
+[student@workstation ~]$ curl -u admin -kv "https://$OAUTH_HOST/oauth/\
+> authorize?client_id=openshift-challenging-client&response_type=token"
+Enter host password for user 'admin': redhat
+*   Trying 192.168.50.254...
+* TCP_NODELAY set
+* Connected to oauth-openshift.apps.ocp4.example.com (192.168.50.254) port 443 (#0)
+* ALPN, offering h2
+* ALPN, offering http/1.1
+* successfully set certificate verify locations:
+*   CAfile: /etc/pki/tls/certs/ca-bundle.crt
+  CApath: none
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+...output omitted...
+* Server auth using Basic with user 'admin'
+...output omitted...
+< Location: https://oauth-openshift.apps...example.com/oauth/token/implicit#access_token=xvZ8SsTiA3jRIiEX9QMUOLdaZRUPqubLy2AiQbQGDb0
+&expires_in=86400&scope=user%3Afull&token_type=Bearer
+...output omitted...
+Save the token to a variable.
+
+[student@workstation ~]$ TOKEN=xvZ8SsTiA3jRIiEX9QMUOLdaZRUPqubLy2AiQbQGDb0
+Attempt a GET request to the OpenShift API server using the access token.
+
+[student@workstation ~]$ HEADER="Authorization: Bearer $TOKEN"
+[student@workstation ~]$ curl -k --header "$HEADER" \
+> -X GET https://api.ocp4.example.com:6443/api
+{
+  "kind": "APIVersions",
+  "versions": [
+    "v1"
+  ],
+  "serverAddressByClientCIDRs": [
+    {
+      "clientCIDR": "0.0.0.0/0",
+      "serverAddress": "192.168.50.10:6443"
+    }
+  ]
+}
+Traverse the v1 API group using curl requests.
+
+Fetch the list of API resources available in the v1 API group.
+
+[student@workstation ~]$ curl -k --header "$HEADER" \
+> -X GET https://api.ocp4.example.com:6443/api/v1
+{
+  "kind": "APIResourceList",
+  "groupVersion": "v1",
+  "resources": [
+    {
+      "name": "bindings",
+      "singularName": "",
+      "namespaced": true,
+      "kind": "Binding",
+      "verbs": [
+        "create"
+      ]
+    },
+    {
+      "name": "componentstatuses",
+      "singularName": "",
+      "namespaced": false,
+      "kind": "ComponentStatus",
+      "verbs": [
+        "get",
+        "list"
+      ],
+      "shortNames": [
+        "cs"
+      ]
+    },
+...output omitted...
+Then, fetch a list of one of the resources, such as pods.
+
+[student@workstation ~]$ curl -k --header "$HEADER" \
+> -X GET https://api.ocp4.example.com:6443/api/v1/pods
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "selfLink": "/api/v1/pods",
+    "resourceVersion": "7148472"
+  },
+  "items": [
+...output omitted...
+Filter the results to list only the names that include jq.
+
+[student@workstation ~]$ curl -k --header "$HEADER" \
+> -X GET https://api.ocp4.example.com:6443/api/v1/pods/ | \
+> jq ".items[].metadata.name"
+"nfs-client-provisioner-865c67f466-k2b98"
+"nfs-client-provisioner-865c67f466-spfv6"
+"openshift-apiserver-operator-54b67788df-7k9k9"
+"apiserver-848cb9fb66-lmjf7"
+"apiserver-848cb9fb66-ssl5w"
+"apiserver-848cb9fb66-twmcq"
+"authentication-operator-5b96cc9776-f8fcv"
+"oauth-openshift-6dd57bd6b5-4krw9"
+"oauth-openshift-6dd57bd6b5-5zdqk"
+"cloud-credential-operator-594567c7b4-4xqwk"
+...output omitted...
+Locate the API endpoint for the Route resources using the oc command, and then fetch a list of all of the hosts using the curl command.
+
+Use the oc explain command to discover the resource Kind and API Version.
+
+[student@workstation ~]$ oc explain routes
+KIND:     Route
+VERSION:  route.openshift.io/v1
+...output omitted...
+List the available APIs for the route.openshift.io/v1 API version group.
+
+[student@workstation ~]$ curl -k --header "$HEADER" \
+> -X GET https://api.ocp4.example.com:6443/apis/route.openshift.io/v1
+{
+  "kind": "APIResourceList",
+  "apiVersion": "v1",
+  "groupVersion": "route.openshift.io/v1",
+  "resources": [
+    {
+      "name": "routes",
+      "singularName": "",
+      "namespaced": true,
+      "kind": "Route",
+...output omitted...
+Notice that both routes and routes/status resources are located under the route.openshift.io/v1 API version group.
+
+List the hosts for all routes using the curl and jq commands.
+
+[student@workstation ~]$ curl -k --header "$HEADER" \
+> -X GET https://api.ocp4.example.com:6443/apis/route.openshift.io/v1/routes | \
+> jq '.items[].spec.host'
+"oauth-openshift.apps.ocp4.example.com"
+"console-openshift-console.apps.ocp4.example.com"
+"downloads-openshift-console.apps.ocp4.example.com"
+"alertmanager-main-openshift-monitoring.apps.ocp4.example.com"
+"grafana-openshift-monitoring.apps.ocp4.example.com"
+"prometheus-k8s-openshift-monitoring.apps.ocp4.example.com"
+"thanos-querier-openshift-monitoring.apps.ocp4.example.com"
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab automation-rest finish

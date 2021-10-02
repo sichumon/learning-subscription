@@ -1,0 +1,136 @@
+Lab: Configuring Application Security
+In this lab, you will create a secret to share sensitive configuration information and modify a deployment so that it runs with less restrictive settings.
+
+Outcomes
+
+You should be able to:
+
+Provide sensitive information to deployments using secrets.
+
+Allow applications to run in a less restrictive environment using security context constraints.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and that you can log in to the cluster.
+
+[student@workstation ~]$ lab authorization-review start
+As the developer user, create the authorization-review project. All additional tasks in this exercise use the authorization-review project.
+
+
+
+Create a secret named review-secret that you will use with the MySQL database and WordPress applications. The secret must include three key-value pairs: user=wpuser, password=redhat123, and database=wordpress.
+
+
+Deploy a MySQL database application named mysql using the container image located at registry.access.redhat.com/rhscl/mysql-57-rhel7:5.7-47. Modify the mysql deployment to use the review-secret secret as environment variables. The environment variables must use the MYSQL_ prefix.
+
+
+
+
+
+
+Deploy a WordPress application named wordpress using the container image located at quay.io/redhattraining/wordpress:5.3.0. This image is a copy of the container image availabe at docker.io/library/wordpress:5.3.0. When creating the application, add the WORDPRESS_DB_HOST=mysql and WORDPRESS_DB_NAME=wordpress environment variables. Once deployed, modify the wordpress deployment to use the review-secret secret as additional environment variables. The additional environment variables must use the WORDPRESS_DB_ prefix.
+
+NOTE
+The wordpress pod does not run successfully until you modify the deployment to use a less restrictive security context constraint.
+
+Deploy a wordpress application.
+
+[student@workstation ~]$ oc new-app --name wordpress \
+>    --docker-image quay.io/redhattraining/wordpress:5.3.0 \
+>    -e WORDPRESS_DB_HOST=mysql \
+>    -e WORDPRESS_DB_NAME=wordpress
+...output omitted...
+-> Creating resources ...
+    imagestream.image.openshift.io "wordpress" created
+    deployment.apps "wordpress" created
+    service "wordpress" created
+--> Success
+...output omitted...
+Use the review-secret secret to initialize the environment variables on the wordpress deployment. The --prefix option ensures that the variables injected from the secret into the pod all start with WORDPRESS_DB_.
+
+[student@workstation ~]$ oc set env deployment/wordpress \
+>   --prefix WORDPRESS_DB_ --from secret/review-secret
+deployment.apps/wordpress updated
+Verify that the wordpress pod does not successfully redeploy, even after injecting variables from the review-secret secret.
+
+[student@workstation ~]$ watch oc get pods -l deployment=wordpress
+Wait up to one minute, and then press Ctrl+C to exit the watch command. The wordpress pod continually restarts. Each time the pod transitions to a status of Error and then CrashLoopBackOff.
+
+Every 2.0s: oc get pods -l deployment=wordpress                              ...
+
+NAME                        READY   STATUS             RESTARTS   AGE
+wordpress-68c49c9d4-wq46g   0/1     CrashLoopBackOff   5          4m30s
+Check the pod logs for error messages.
+
+[student@workstation ~]$ oc logs wordpress-68c49c9d4-wq46g
+...output omitted...
+(13)Permission denied: AH00072: make_sock: could not bind to address [::]:80
+(13)Permission denied: AH00072: make_sock: could not bind to address 0.0.0.0:80
+no listening sockets available, shutting down
+AH00015: Unable to open logs
+By default, OpenShift prevents pods from starting services that listen on ports lower than 1024.
+
+As the admin user, identify a less restrictive SCC that allows the wordpress deployment to run successfully. Create a service account named wordpress-sa and grant the anyuid SCC to it. Modify the wordpress deployment to use the wordpress-sa service account.
+
+Log in as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat
+Login successful.
+...output omitted...
+Check whether using a different SCC resolves the permissions problem.
+
+[student@workstation ~]$ oc get pod/wordpress-68c49c9d4-wq46g -o yaml \
+>    | oc adm policy scc-subject-review -f -
+RESOURCE                        ALLOWED BY
+Pod/wordpress-68c49c9d4-wq46g   anyuid
+IMPORTANT
+The oc adm policy command must be run as the admin user.
+
+Create a service account named wordpress-sa.
+
+[student@workstation ~]$ oc create serviceaccount wordpress-sa
+serviceaccount/wordpress-sa created
+Grant the anyuid SCC to the wordpress-sa service account. If the wordpress pod runs as the root user, then OpenShift allows the pod to start a service on port 80.
+
+[student@workstation ~]$ oc adm policy add-scc-to-user anyuid -z wordpress-sa
+clusterrole.rbac.authorization.k8s.io/system:openshift:scc:anyuid added: "wordpress-sa"
+Configure the wordpress deployment to use the wordpress-sa service account.
+
+[student@workstation ~]$ oc set serviceaccount deployment/wordpress \
+>    wordpress-sa
+deployment.apps/wordpress serviceaccount updated
+Verify that the wordpress pod successfully redeploys after configuring the service account.
+
+[student@workstation ~]$ watch oc get pods -l deployment=wordpress
+Press Ctrl+C to exit the watch command after the wordpress pod displays both 1/1 and Running.
+
+Every 2.0s: oc get pods -l deployment=wordpress                              ...
+
+NAME                        READY   STATUS    RESTARTS   AGE
+wordpress-bcb5d97f6-mwljs   1/1     Running   0          21s
+As the developer user, make the wordpress service accessible to external requests using the wordpress-review.apps.ocp4.example.com host name. Access the route using a web browser and verify the WordPress application displays the setup wizard.
+
+Use the oc expose command to create a route to the wordpress application.
+
+[student@workstation ~]$ oc expose service/wordpress \
+>    --hostname wordpress-review.apps.ocp4.example.com
+route.route.openshift.io/wordpress exposed
+Use a web browser to verify access to the URL http://wordpress-review.apps.ocp4.example.com. When you correctly deploy the application, a setup wizard displays in the browser.
+
+Alternatively, use the curl command to access the installation URL directly.
+
+[student@workstation ~]$ curl -s \
+>    http://wordpress-review.apps.ocp4.example.com/wp-admin/install.php \
+>    | grep Installation
+	<title>WordPress &rsaquo; Installation</title>
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab authorization-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab authorization-review finish
+This concludes the section.

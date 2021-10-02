@@ -1,0 +1,187 @@
+Guided Exercise: Describing the Instance Launch Process
+In this exercise, you will view the placement server's log files and data and observe scheduler messages.
+
+Outcomes
+
+You should be able to view the placement service log file, and observe scheduler messages for both a successful and an unsuccessful instance creation.
+
+Log in to workstation as student using student as the password.
+
+Run the lab computeresources-launch setup command. This script ensures that OpenStack services are running and the environment is properly configured for the guided exercise.
+
+[student@workstation ~]$ lab computeresources-launch setup
+From workstation, log on to the controller0 node and change to the root user. Configure the compute services for debugging, then restart the containers and confirm their status.
+
+From workstation, log on to controller0 as the heat-admin user and change to the root user.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+Edit the /var/lib/config-data/puppet-generated/nova/etc/nova/nova.conf file and set debug to true. Restart the nova_scheduler and nova_api containers, then wait for 45 seconds. Use the docker ps command to ensure the containers are running and healthy.
+
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/nova/etc/nova/nova.conf \
+DEFAULT debug True
+[root@controller0 ~]# docker restart nova_api
+nova_api
+[root@controller0 ~]# docker restart nova_scheduler
+nova_scheduler
+[root@controller0 ~]# docker ps \
+--format="{{.Names}}\t{{.Status}}" | grep nova
+...output omitted...
+nova_api        Up About 31 seconds (healthy)
+nova_scheduler  Up About 46 seconds (healthy)
+...output omitted...
+Open three additional terminal windows. From workstation, log in to the compute0 node. From workstation, log in to the controller0 node. From workstation, log in to the controller0 node. Use the sudo -i command to gain root privileges on each machine. Change into the /var/log/containers/nova directory on each node.
+
+These extra terminal windows will be used to inspect the compute service log files.
+
+Open a new terminal window and log in to the compute0 node as the heat-admin user. Use the sudo -i command to gain root privileges. Change into the log directory.
+
+[student@workstation ~]$ ssh heat-admin@compute0
+[heat-admin@compute0 ~]$ sudo -i
+[root@compute0 ~]# cd /var/log/containers/nova
+[root@compute0 nova]# 
+Open a new terminal window and log in to the controller0 node as the heat-admin user. Use the sudo -i command to gain root privileges. Change into the log directory.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# cd /var/log/containers/nova
+[root@controller0 nova]# 
+Open a new terminal window and log in to the controller0 node as the heat-admin user. Use the sudo -i command to gain root privileges. Change into the log directory.
+
+[student@workstation ~]$ ssh heat-admin@controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# cd /var/log/containers/nova
+[root@controller0 nova]# 
+On workstation, as the architect1 user, create a new instance called finance-server1.
+
+Source the /home/student/architect1-finance-rc environment identity file.
+
+[student@workstation ~]$ source ~/architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ 
+Use the openstack server create command to create an instance called finance-server1. Use the rhel7 image, the default flavor, the default security group, and the finance-network1 network. Specify compute0 as the availability zone. Note the ID of the instance, because it will be used to inspect the nova log files.
+
+[student@workstation ~(architect1-finance)]$ openstack server create \
+--image rhel7 \
+--flavor default \
+--nic net-id=finance-network1 \
+--security-group finance-web \
+--availability-zone nova:compute0.overcloud.example.com \
+--wait finance-server1
++-------------------------------------+--------------------------------------+
+| Field                               | Value                                |
++-------------------------------------+--------------------------------------+
+| OS-DCF:diskConfig                   | MANUAL                               |
+| OS-EXT-AZ:availability_zone         | nova                                 |
+| OS-EXT-SRV-ATTR:host                | compute0.overcloud.example.com       |
+| OS-EXT-SRV-ATTR:hypervisor_hostname | compute0.overcloud.example.com       |
+...output omitted...
+| id                                  | 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b |
+...output omitted...
+On compute0, inspect the nova-compute.log log file. Use the grep command to list the entries that relate to the ID of finance-server1.
+
+[root@compute0 nova]# grep 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b nova-compute.log
+There are several entries in the nova-compute.log file for the creation of finance-server1. Notice the entries where the compute service is attempting to claim space on compute0. Also notice that this log entry informs the user about the memory, disk, and vCPUs required by finance-server1.
+
+2018-11-01 09:34:08.050 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] Attempting claim on node compute0.overcloud.example.com: memory 2048 MB, disk 10 GB, vcpus 2 CPU
+The next entries inform the user about the memory, disk, and vCPUs available on compute0.
+
+2018-11-01 09:34:08.050 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] Total memory: 6143 MB, used: 4096.00 MB
+2018-11-01 09:34:08.050 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] memory limit not specified, defaulting to unlimited
+2018-11-01 09:34:08.050 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] Total disk: 113 GB, used: 0.00 GB
+2018-11-01 09:34:08.051 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] disk limit not specified, defaulting to unlimited
+2018-11-01 09:34:08.051 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] Total vcpu: 4 VCPU, used: 0.00 VCPU
+2018-11-01 09:34:08.051 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] vcpu limit not specified, defaulting to unlimited
+The following entry informs the user that the claim by the nova compute service was successful.
+
+2018-11-01 09:34:08.051 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] Claim successful on node compute0.overcloud.example.com
+The remaining entries inform the user that the instance is being created. The final entry tells the user how long it took to build the instance.
+
+2018-11-01 09:34:09.021 1 INFO nova.virt.libvirt.driver [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] Creating image
+2018-11-01 09:34:29.110 1 INFO nova.compute.manager [req-92997d21-381c-4cba-9d97-c83d5d51cee8 d5ea361ac1d44b3fa6aa289cd0a52756 d8f51de41e7e4f4b8c71ed7dfc226c97 - default default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] VM Started (Lifecycle Event)
+...output omitted...
+2018-11-01 09:34:34.016 1 INFO nova.compute.manager [req-bd300177-3613-4ec6-8bd7-da20a7857a6b d5ea361ac1d44b3fa6aa289cd0a52756 d8f51de41e7e4f4b8c71ed7dfc226c97 - default default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] Took 25.98 seconds to build instance.
+Notice that in all the log entries, before the Life-cycle Event starts, all contain the same ID. It appears just before the ID for finance-server1. This ID will be used in the next steps to inspect the nova-scheduler.log log file.
+
+2018-11-01 09:34:08.051 1 INFO nova.compute.claims [req-c41919ad-a82e-43b0-89eai-6b268a64d15b                          69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] [instance: 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b] vcpu limit not specified, defaulting to unlimited
+On one of the controller0 terminals, use the grep command and the ID of finance-server1 to list the entries in the nova-placement log file. There are three entries created for each instance created. Notice that there are two GET entries and one PUT entry.
+
+[root@controller0 nova]# grep 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b \
+nova-placement.log
+2018-11-01 09:34:07.772 12 INFO nova.api.openstack.placement.requestlog [req-7980d973-6aac-49bf-b58c-d44e1f90a084 a48dc9ff61c54efb8104440971e1ffdd d8f51de41e7e4f4b8c71ed7dfc226c97 - default default] 172.24.1.1 "GET /placement/allocations/1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b" status: 200 len: 19 microversion: 1.0
+2018-11-01 09:34:07.811 12 INFO nova.api.openstack.placement.requestlog [req-cbbb796e-5d99-4e04-a2c0-ed62ec389cd9 a48dc9ff61c54efb8104440971e1ffdd d8f51de41e7e4f4b8c71ed7dfc226c97 - default default] 172.24.1.1 "PUT /placement/allocations/1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b" status: 204 len: 0 microversion: 1.17
+2018-11-01 09:34:08.956 12 INFO nova.api.openstack.placement.requestlog [req-c7076539-5929-457c-bbde-8069e990ea9b a48dc9ff61c54efb8104440971e1ffdd d8f51de41e7e4f4b8c71ed7dfc226c97 - default default] 172.24.1.1 "GET /placement/allocations/1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b" status: 200 len: 136 microversion: 1.0
+On one of the controller0 terminals, use the grep command with the ID copied from the nova-compute.log file to list the entries in the nova-scheduler log file.
+
+[root@controller0 nova]# grep 8dd2d316acc74f54b890bae519ea75b9 nova-scheduler.log
+The first entries are a series of host locking and releasing actions by the nova_scheduler service.
+
+2018-11-01 09:33:54.461 1 DEBUG oslo_concurrency.lockutils [req-58612dbf-305f-4a13-b1e1-638a65324c0a 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Lock "host_instance" acquired by "nova.scheduler.host_manager.delete_instance_info" :: waited 0.000s inner /usr/lib/python2.7/site-packages/oslo_concurrency/lockutils.py:273
+        2018-11-01 09:33:54.461 1 DEBUG oslo_concurrency.lockutils [req-58612dbf-305f-4a13-b1e1-638a65324c0a 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Lock "host_instance" released by "nova.scheduler.host_manager.delete_instance_info" :: held 0.000s inner /usr/lib/python2.7/site-packages/oslo_concurrency/lockutils.py:285
+In this extract, the first entry shows nova_scheduler starting the schedule for instance finance-server1. The next one shows nova_scheduler getting the compute nodes and services for instance creation.
+
+2018-11-01 09:34:06.397 1 DEBUG nova.scheduler.manager [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Starting to schedule for instances: [u'1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b'] select_destinations /usr/lib/python2.7/site-packages/nova/scheduler/manager.py:110
+        2018-11-01 09:34:06.934 1 DEBUG nova.scheduler.host_manager [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Getting compute nodes and services for cell 00000000-0000-0000-0000-000000000000(cell0) _get_computes_for_cells /usr/lib/python2.7/site-packages/nova/scheduler/host_manager.py:623
+The nova_scheduler service then checks for host aggregates.
+
+2018-11-01 09:34:06.958 1 DEBUG nova.scheduler.host_manager [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Update host state with aggregates: [] _locked_update /usr/lib/python2.7/site-packages/nova/scheduler/host_manager.py:175
+On the same controller0 node, and using the same grep command, search for the ID of finance-server1.
+
+[root@controller0 nova]# grep 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b nova-scheduler.log
+There are three entries for the creation of each instance. The first entry shows nova_scheduler scheduling the instance. The second entry shows nova_scheduler claiming resources. The third entry is the creation of the instance.
+
+2018-11-01 09:34:06.397 1 DEBUG nova.scheduler.manager [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Starting to schedule for instances: [u'1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b'] select_destinations /usr/lib/python2.7/site-packages/nova/scheduler/manager.py:110
+2018-11-01 09:34:06.961 1 DEBUG nova.scheduler.utils [req-c41919ad-a82e-43b0-89ea-6b268a64d15b 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Attempting to claim resources in the placement API for instance 1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b claim_resources /usr/lib/python2.7/site-packages/nova/scheduler/utils.py:786
+2018-11-01 10:10:29.698 1 DEBUG nova.scheduler.host_manager [req-a56f6380-23a3-4ba4-9296-69075401800d 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Update host state with instances: {u'1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b': Instance(access_ip_v4=None,access_ip_v6=None,architecture=None, auto_disk_config=False,availability_zone='nova',cell_name=None, cleaned=False,config_drive='',created_at=2018-11-01T09:34:06Z, default_ephemeral_device=None,default_swap_device=None, deleted=False,deleted_at=None,device_metadata=None,
+disable_terminate=False,display_description='finance-server1',display_name='finance-server1',
+ec2_ids=EC2Ids,ephemeral_gb=0,ephemeral_key_uuid=None,fault=
+...output omitted...
+flavor=Flavor(2),host='compute0.overcloud.example.com',hostname='finance-server1',id=4,image_ref='6b0128a9-4481-4ceb-b34e-ffe92e0dcfdd',info_cache=InstanceInfoCache,instance_type_id=2,kernel_id='', key_data=None,key_name=None,keypairs=KeyPairList,launch_index=0,   launched_at=2018-11-01T09:34:33Z,launched_on='compute0.overcloud.example.com', locked=False,locked_by=None,memory_mb=2048,metadata={},migration_context=
+...output omitted...
+image_container_format='bare',image_cpu_arch='x86_64',image_disk_format='qcow2',
+image_min_disk='10',image_min_ram='2048',image_owner_specified.shade.md5=
+'9300685c8287e30b967ca4cb71057b3b',image_owner_specified.shade.object='images/rhel7',image_owner_specified.shade.sha256= 'e5855605fdce3754c3d600f6d3b8a9bd58e93371b376fc7c6b5af8dc9c16d952',
+owner_project_name='finance',owner_user_name='architect1'},
+tags=TagList,task_state=None,terminated_at=None,updated_at=2018-11-01T09:34:09Z,
+user_data=None,user_id=
+'69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726',
+uuid=1dd346b7-8b39-4b0f-988b-90f1c3d4ef3b,vcpu_model=VirtCPUModel,
+vcpus=2,vm_mode=None,vm_state='active')} _locked_update /usr/lib/python2.7/site-packages/nova/scheduler/host_manager.py:181
+Use the openstack server create command to create an instance called finance-server2. Use the rhel7 image, the launch flavor, the finance-web security group, and the finance-network1 network. Specify compute0 as the availability zone.
+
+[student@workstation ~(architect1-finance)]$ openstack server create \
+--image rhel7 \
+--flavor launch \
+--nic net-id=finance-network1 \
+--security-group finance-web \
+--availability-zone nova:compute0.overcloud.example.com \
+--wait finance-server2
+The instance launch will fail because the flavor's memory is too small for the image.
+
+Flavor's memory is too small for requested image. (HTTP 400) (Request-ID: req-5f1ca5b7-94ee-4a62-9703-3cbe78e6c513)
+On a controller0 node, inspect the nova-api.log log file. Use the request ID from the error message received following the failed instance creation.
+
+[root@controller0 nova]# grep req-5f1ca5b7-94ee-4a62-9703-3cbe78e6c513 \ 
+nova-api.log
+The first entry shows the attempt to create the server on compute0.
+
+2018-11-01 10:52:46.193 14 DEBUG nova.api.openstack.wsgi [req-5f1ca5b7-94ee-4a62-9703-3cbe78e6c513 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Action: 'create', calling method: <bound method ServersController.create of <nova.api.openstack.compute.servers.ServersController object at 0x7f42cb10fd50>>, body: {"server": {"name": "finance-server2", "imageRef": "6b0128a9-4481-4ceb-b34e-ffe92e0dcfdd", "availability_zone": "nova:compute0.overcloud.example.com", "flavorRef": "10b69784-0ed5-4394-982c-b6239e663a9c", "max_count": 1, "min_count": 1, "networks": [{"uuid": "7a6556ab-6083-403e-acfc-79caf3873660"}]}} _process_stack /usr/lib/python2.7/site-packages/nova/api/openstack/wsgi.py:604
+The next entry shows the lock obtained by the nova_scheduler service.
+
+2018-11-01 10:52:46.214 14 DEBUG oslo_concurrency.lockutils [req-5f1ca5b7-94ee-4a62-9703-3cbe78e6c513 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Lock "00000000-0000-0000-0000-000000000000" acquired by "nova.context.get_or_set_cached_cell_and_set_connections" :: waited 0.000s inner /usr/lib/python2.7/site-packages/oslo_concurrency/lockutils.py:273
+Some entries later the nova_scheduler service obtains quotas for the project.
+
+2018-11-01 10:52:46.740 14 DEBUG nova.quota [req-5f1ca5b7-94ee-4a62-9703-3cbe78e6c513 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Getting quotas for project 3c003f65d8d64914a053f178fbbf953c. Resources: ['injected_files'] _get_quotas /usr/lib/python2.7/site-packages/nova/quota.py:409
+Some entries later notice the error message informing the user that the flavor's memory is too small.
+
+2018-11-01 10:52:46.762 14 INFO nova.api.openstack.wsgi [req-5f1ca5b7-94ee-4a62-9703-3cbe78e6c513 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] HTTP exception thrown: Flavor's memory is too small for requested image.
+        2018-11-01 10:52:46.763 14 DEBUG nova.api.openstack.wsgi [req-5f1ca5b7-94ee-4a62-9703-3cbe78e6c513 69fb452af3dc1c1b54fb342df19d898fe3928e50cc930ebb8f112b1a59e91726 3c003f65d8d64914a053f178fbbf953c - 8dd2d316acc74f54b890bae519ea75b9 default] Returning 400 to user: Flavor's memory is too small for requested image. __call__ /usr/lib/python2.7/site-packages/nova/api/openstack/wsgi.py:1064
+Close all the terminal windows used in this guided exercise.
+
+Cleanup
+
+On workstation, run the lab computeresources-launch cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab computeresources-launch cleanup
+This concludes the guided exercise.

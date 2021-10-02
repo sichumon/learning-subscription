@@ -1,0 +1,153 @@
+
+Chapter 5. Configuring Enterprise Authentication
+Configuring the LDAP Identity Provider
+Guided Exercise: Configuring the LDAP Identity Provider
+Synchronizing OpenShift Groups with LDAP
+Guided Exercise: Synchronizing OpenShift Groups with LDAP
+Lab: Configuring OpenShift Enterprise Authentication
+Summary
+Abstract
+
+Goal	Configure OpenShift integration with enterprise identity providers
+Objectives	
+Configure OpenShift to authenticate using an IdM user and credentials.
+
+Automate group synchronization with an LDAP directory.
+
+Sections	
+Configuring the LDAP Identity Provider (and Guided Exercise)
+
+Synchronizing OpenShift Groups with LDAP (and Guided Exercise)
+
+Lab	
+Configuring OpenShift Enterprise Authentication
+
+Configuring the LDAP Identity Provider
+Objectives
+After completing this section, you should be able to:
+
+Configure OpenShift to authenticate using an IdM user and credentials.
+
+Troubleshoot issues with IdM user login integration.
+
+Enterprise Authentication
+OpenShift clusters have two categories of users: normal users and service accounts. Normal users represent human operators and are assumed to be managed by an independent system, such as HTPasswd, LDAP or OpenStack Keystone. Service Accounts are managed by OpenShift and are usually associated to projects to perform specific tasks with different levels of authorization. When the OpenShift API receives a request with no authentication or an invalid authentication, this request is assumed to be made by the anonymous user.
+
+Users can be associated to groups, which can also be managed by an external service.
+
+Authentication Methods
+OpenShift API requests use one of the following methods to authenticate:
+
+OAuth Access Tokens: the API reads a token from the HTTP headers to verify that the request is authenticated. * X.509 Client Certificates: the API checks the certificate validity to verify the authenticity of the request.
+
+OpenShift OAuth Server
+
+The OpenShift OAuth server uses an identity provider to validate the identity of users and issue OAuth tokens so users can interact with the API.
+
+Identity Providers
+
+OpenShift supports the following Identity Providers:
+
+HTPasswd
+
+Keystone
+
+LDAP
+
+Basic authentication
+
+Request header
+
+GitHub or GitHub Enterprise
+
+GitLab
+
+Google
+
+OpenID Connect
+
+Configuring the LDAP Identity Provider
+To configure an LDAP server as an identity provider:
+
+Create a secret with the IdM admin user password. This secret will be used for the LDAP identity provider:
+
+[student@demo ~]$ oc create secret generic ldap-secret \
+>   --from-literal=bindPassword=${LDAP_ADMIN_PASSWORD} \
+>   -n openshift-config
+TLS communication needs certificate authority validation, in this case, the CA is obtained from the IdM, which is configured with the classroom.
+
+Create a configuration map containing the IdM Certificate Authority’s root certificate to make OpenShift trust the IdM certificates:
+
+[student@demo ~]$ oc create configmap ca-config-map \
+>   --from-file=\
+>   ca.crt=<(curl http://idm.ocp-${GUID}.example.com/ipa/config/ca.crt) \
+>   -n openshift-config
+Create a file to modify the OpenShift OAuth configuration by adding the LDAP identity provider and the other elements required for proper configuration.
+
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  name: cluster
+spec:
+  identityProviders:
+  - name: ldapidp
+    mappingMethod: claim
+    type: LDAP
+    ldap:
+      attributes:
+        id:
+        - dn
+        email:
+        - mail
+        name:
+        - cn
+        preferredUsername:
+        - uid
+      bindDN: "uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com"
+      bindPassword:
+        name: ldap-secret
+      ca:
+        name: ca-config-map
+      insecure: false
+      url: "ldaps://idm.ocp4.example.com/cn=users,cn=accounts,dc=ocp4,dc=example,dc=com?uid"
+NOTE
+The url: "ldaps://…​?uid" fragment must be typed as a single line.
+
+Apply the custom resource and wait until the pods in the openshift-authentication namespace are restarted so that the identity provider is active:
+
+[student@demo ~]$ oc apply -f tmp/ldap-cr.yml
+Verify that you are be able to log in with the IdM users. If further users are added to the IdM, then they will be immediately available and the OpenShift OAuth pods will not be restarted, unlike in the HTPasswd use case.
+
+[student@demo ~]$ oc login -u admin -p ${LDAP_ADMIN_PASSWORD}
+[student@demo ~]$ oc whoami
+To verify if there are any issues with the IdM integration, check the pod status and logs of the deployment.apps/oauth-openshift deployment in the openshift-authentication namespace.
+
+[student@demo ~]$ oc get pods -n openshift-authentication
+[student@demo ~]$ oc logs deployment.apps/oauth-openshift
+When users log in using the LDAP server as identity provider, OpenShift creates new user and identity entries.
+
+[student@demo ~]$ oc get user
+[student@demo ~]$ oc get identity
+NOTE
+To perform a clean up, remove both: user and identity. If the user is removed but not the identity, then you won’t be able to log in with that user and will get 500 errors.
+
+LDAP Users and Role Based Access Control
+Role Based Access Control (RBAC) is a technique to assign privileges to users and groups in a project or cluster. The OpenShift RBAC implementation uses roles as descriptors of permissions, and rolebindings to define the relationship between roles and users and groups.
+
+Cluster administrators can use RBAC to delegate tasks or to give developers permission to perform administrative operations in their projects.
+
+Add the cluster-admin role to users of the IdM that need cluster administration privileges.
+
+[student@demo ~]$ oc adm policy add-cluster-role-to-user cluster-admin admin
+Troubleshooting
+Authentication troubleshooting can be a complex task; the things to check include:
+
+Authentication Operator Logs.
+
+Oauth Pods status.
+
+LDAP server logs.
+
+The steps to troubleshoot are nearly identical to the steps taken while performing initial configuration as detailed earlier in this chapter.
+
+The identity manager logs, status, and network communication with the OpenShift Cluster should be checked while troubleshooting.

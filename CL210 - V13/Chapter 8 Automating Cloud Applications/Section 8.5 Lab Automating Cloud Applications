@@ -1,0 +1,163 @@
+Lab: Automating Cloud Applications
+Performance Checklist
+
+In this exercise, you will edit an orchestration template to launch identical customized web servers.
+
+Outcomes
+
+You should be able to:
+
+Edit an orchestration template to launch multiple customized web servers.
+
+Provision identical resources using the OS::Heat::ResourceGroup resource type.
+
+Launch a stack using the orchestration template.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab orchestration-review setup command. The script downloads the orchestration templates and environment file to the /home/student/heat-templates directory.
+
+[studentworkstation ~]$ lab orchestration-review setup
+Edit the /home/student/heat-templates/production-stack.yaml orchestration template. Add a new input parameter named instance_count under the parameters section. The parameter must define constraints to specify a minimum of one and a maximum of two instances.
+
+Use the range constraint to specify the minimum number of one and a maximum number of two instances.
+
+parameters:
+  ...output omitted...
+  instance_count:
+    type: number
+    description: count of servers to be provisioned
+    constraints:
+      - range: { min: 1, max: 2 }
+Edit the /home/student/heat-templates/production-stack.yaml orchestration template. Add a resource named production_resource to launch identical resources based on user input. Use the OS::Heat::ResourceGroup resource type.
+
+Set the count property to use the instance_count input parameter.
+
+...output omitted...
+resources:
+  production_resource:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: instance_count }
+      ...output omitted...
+Save and exit the file.
+
+Edit the /home/student/heat-templates/production-environment.yaml environment file to set the instance_count input parameter to 2.
+
+parameters:
+  key_name: "example-keypair"
+  image_name: "rhel7-web"
+  instance_name: "production-server"
+  instance_flavor: "default"
+  public_net: "provider-datacentre"
+  private_net: "production-network1"
+  private_subnet: "production-subnet1"
+  instance_count: 2
+Edit the /home/student/heat-templates/production-environment.yaml environment file to define a custom resource type named Production::Custom::WebServer. This custom resource type must point to the /home/student/heat-templates/production-app1.yaml template.
+
+resource_registry:
+  Production::Custom::WebServer: /home/student/heat-templates/production-app1.yaml
+parameters:
+  key_name: "example-keypair"
+  image_name: "rhel7-web"
+  instance_name: "production-server"
+  instance_flavor: "default"
+  public_net: "provider-datacentre"
+  private_net: "production-network1"
+  private_subnet: "production-subnet1"
+  instance_count: 2
+Save and exit the file.
+
+Edit the /home/student/heat-templates/production-stack.yaml orchestration template. Set the resource definition of the production_resource resource to use the Production::Custom::WebServer custom resource type. Set the required properties to launch the custom resource.
+
+Use the list_join intrinsic function and the %index% default value of the index_var property of OS::Heat::ResourceGroup to concatenate the instance name with the index of the resource group as the suffix. Set the instance_name property of the resource to use the concatenated name. Name the instances production-server0 and production-server1.
+
+Set the resource_def property of the production_resource resource type to use the Production::Custom::WebServer custom resource type. The Production::Custom::WebServer custom resource type uses the input parameters required to provision the instance. Edit the file to add the following highlighted content:
+
+resources:
+  production_resource:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: instance_count }
+      resource_def:
+        type: Production::Custom::WebServer
+        properties:
+          instance_name:
+            list_join: [ '', [ {get_param: instance_name}, "%index%" ] ]
+          instance_flavor: { get_param: instance_flavor }
+          image_name: { get_param: image_name }
+          key_name: { get_param: key_name }
+          public_net: { get_param: public_net }
+          private_net: { get_param: private_net }
+          private_subnet: { get_param: private_subnet }
+Save and exit the file.
+
+Source the /home/student/operator1-production-rc identity environment file to launch the stack as operator1. Launch the stack using the production-stack.yaml template file and the production-environment.yaml environment file. Name the stack production-webstack.
+
+Use the operator1 user credentials to perform a dry-run stack deployment and inspect the resources that will be created. Name the stack production-webstack. Use the production-stack.yaml template and the production-environment.yaml environment file to create the stack. Rectify any errors before proceeding to the next step.
+
+NOTE
+Before you perform a dry run of deploying the stack, download the http://materials.example.com/heat/production-stack.yaml-final template file to the /home/student/heat-templates directory. Use the diff command to compare the production-stack.yaml template file with the known good template file, production-stack.yaml-final. Fix any differences you find, and then proceed to launch the stack.
+
+[student@workstation ~]$ cd ~/heat-templates
+[student@workstation heat-templates]$ source ~/operator1-production-rc
+[student@workstation heat-templates(operator1-production)]$ openstack stack \
+create --environment production-environment.yaml \
+--template production-stack.yaml \
+--dry-run production-webstack
+...output omitted...
+If the dry run succeeds, run the openstack stack create command. Do not use the --dry-run option while launching the stack.
+
+[student@workstation heat-templates(operator1-production)]$ openstack stack \
+create --environment production-environment.yaml \
+--template production-stack.yaml \
+--wait production-webstack
+... [production-webstack]: CREATE_IN_PROGRESS  Stack CREATE started
+... [production-webstack.production_resource]: CREATE_IN_PROGRESS  state changed
+... [production-webstack.production_resource]: CREATE_COMPLETE  state changed
+... [production-webstack]: CREATE_COMPLETE  Stack CREATE completed successfully
++---------------------+----------------------------------------+
+| Field               | Value                                  |
++---------------------+----------------------------------------+
+| id                  | 6964c8c2-0ac0-4f16-902a-8013773bc2f4   |
+| stack_name          | production-webstack                    |
+| description         | Launch multiple custom webservers      |
+| creation_time       | 2018-09-25T13:37:10Z                   |
+| updated_time        | None                                   |
+| stack_status        | CREATE_COMPLETE                        |
+| stack_status_reason | Stack CREATE completed successfully    |
++---------------------+----------------------------------------+
+Verify that the production-webstack stack provisioned two instances. Use the instance_ipaddress output parameter of the production-webstack stack to retrieve the private IP addresses attached to the instances.
+
+View the instances launched by the orchestration stack. The IP addresses for your instances might vary.
+
+[student@workstation heat-templates(operator1-production)]$ openstack server \
+list -c Name -c Status -c Networks
++--------------------+--------+-----------------------------------+
+| Name               | Status | Networks                          |
++--------------------+--------+-----------------------------------+
+| production-server0 | ACTIVE | production-network1=192.168.1.107 |
+| production-server1 | ACTIVE | production-network1=192.168.1.108 |
++--------------------+--------+-----------------------------------+
+Use the instance_ipaddress output parameter of the production-webstack stack to retrieve the private IP address attached to the instances that were launched. The example output displays private IP addresses; 192.168.1.107, and 192.168.1.108, but the actual IP address might vary.
+
+[student@workstation heat-templates(operator1-production)]$ openstack stack \
+output show production-webstack instance_ipaddress
++--------------+--------------------------------------+
+| Field        | Value                                |
++--------------+--------------------------------------+
+| description  | private IP address of the webservers |
+| output_key   | instance_ipaddress                   |
+| output_value | [u'192.168.1.107', u'192.168.1.108'] |
++--------------+--------------------------------------+
+Evaluation
+
+On workstation, run the lab orchestration-review grade command to confirm success of this exercise. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~] lab orchestration-review grade
+Cleanup
+
+On workstation, run the lab orchestration-review cleanup command to clean up this exercise.
+
+[student@workstation ~] lab orchestration-review cleanup
+This concludes the lab.

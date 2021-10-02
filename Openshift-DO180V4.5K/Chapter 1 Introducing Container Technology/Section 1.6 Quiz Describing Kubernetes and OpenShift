@@ -1,0 +1,50 @@
+Quiz: Describing Kubernetes and OpenShift
+Choose the correct answers to the following questions:
+
+1.	Which three of the following statements are correct regarding container limitations? (Choose three.)
+
+A	Containers are easily orchestrated in large numbers.
+
+B	Lack of automation increases response time to problems.
+
+C	Containers do not manage application failure inside them.
+
+D	Containers are not load-balanced.
+
+E	Containers are heavily isolated packaged applications.
+
+2.	Which two of the following statements are correct regarding Kubernetes? (Choose two.)
+
+A	Kubernetes is a container.
+
+B	Kubernetes can only use Docker containers.
+
+C	Kubernetes is a container orchestration system.
+
+D	kubernetes simplifies management, deployment, and scaling of containerized applications.
+
+E	Applications managed in a Kubernetes cluster are harder to maintain.
+
+3.	Which three of the following statements are true regarding Red Hat OpenShift v4? (Choose three.)
+
+A	OpenShift provides additional features to a Kubernetes infrastructure.
+
+B	Kubernetes and OpenShift are mutually exclusive.
+
+C	OpenShift hosts use Red Hat Enterprise Linux as the base operating system.
+
+D	OpenShift simplifies development incorporating a Source-to-Image technology and CI/CD pipelines.
+
+E	OpenShift simplifies routing and load balancing.
+
+4.	What features does OpenShift offer that extend Kubernetes capabilities? (choose two.)
+
+A	Operators and the Operator Framework.
+
+B	Routes to expose services to the outside world.
+
+C	An integrated development workflow.
+
+D	Self-healing and health checks.
+
+1. B,C,D 2.C,D 3.A,D.E 4. B,C 

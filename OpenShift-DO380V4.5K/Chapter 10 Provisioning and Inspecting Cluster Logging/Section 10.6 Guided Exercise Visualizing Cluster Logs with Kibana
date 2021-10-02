@@ -1,0 +1,89 @@
+
+Guided Exercise: Visualizing Cluster Logs with Kibana
+In this exercise you will create visualizations in Kibana.
+
+Outcomes
+
+You should be able to:
+
+Create a simple Kibana chart.
+
+Create a time series chart using Timelion.
+
+Before starting this exercise, you must set up cluster logging by completing the the section called “Guided Exercise: Deploying Cluster Logging”.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise. The command ensures that an application that creates access logs containing HTTP status codes is deployed.
+
+[student@workstation ~]$ lab logging-visualize start
+Procedure 10.3. Instructions
+
+Navigate to the Kibana UI and log in as the admin user.
+
+Navigate to https://console-openshift-console.apps.ocp4.example.com in Firefox.
+
+Click the Application Launcher and select Monitoring → Logging in the OpenShift web console.
+
+Create a bar chart displaying buckets of the status codes.
+
+Select the menu:[Visualize] option, and then click Create a visualization.
+
+Click the Horizontal Bar basic chart.
+
+Select the app index pattern.
+
+Click Add a filter. Create a filter on the kubernetes.container_name field. Select the is operator and a value of logger. Click Save.
+
+Click the Split Series bucket type, and then select Filters as the Aggregation.
+
+Click Add Filter twice. Enter the following values in the Filter 1, Filter 2, and Filter 3 inputs respectively: message:200, message:40?, message:50?. The ? question mark symbol matches any character in that position. For example, message:40? will match 400 and 403.
+
+Click the Apply changes arrow icon to view the chart.
+
+Create a Timelion chart that displays the count of 500 Internal Server Error status codes per minute.
+
+Click Timelion to navigate to the timeline chart tool.
+
+Enter the following Timelion expression to create a graph of logs with a 500 status code compared with the total count of logs.
+
+.es('+kubernetes.container_name:logger +message:500'),
+.es('+kubernetes.container_name:logger +message:*')
+IMPORTANT
+Timelion queries must be typed in a single line. The queries are presented here as multiline statements for readability.
+
+An error stating "Timelion: Error: in cell #1: input must be a seriesList" displays if there are spaces between function calls.
+
+Press Enter, or click the arrow button to render the graph.
+
+Select an interval of 1m from the interval selection list to the right of the query input field.
+
+Click the arrow button to re-render the graph with the updated time interval.
+
+Update the Timelion chart to display the percent of 500 status code messages using the divide() and multiply() functions.
+
+Modify the Timelion expression to match the following:
+
+.es('+kubernetes.container_name:logger +message:500')
+.divide(.es('+kubernetes.container_name:logger +message:*'))
+.multiply(100)
+Press Enter or click the arrow button to render the updated graph.
+
+Create a Timelion chart that compares now to five minutes ago.
+
+Modify the Timelion expression to match the following:
+
+.es('+kubernetes.container_name:logger +message:500').label(current)
+Click the time range selector, click Relative, update the first set of text fields to read 5 Minutes ago, and then click Go.
+
+Add a second Elasticsearch es query with a -5m offset labeled previous.
+
+.es('+kubernetes.container_name:logger +message:500').label(current),
+.es(q='+kubernetes.container_name:logger +message:500', offset=-5m).label(previous)
+Press Enter or click the arrow button to render the updated graph.
+
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab logging-visualize finish
+This concludes the section.
+

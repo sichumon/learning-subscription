@@ -1,0 +1,159 @@
+Lab: Managing Internal OpenStack Communication
+
+Performance Checklist
+
+In this lab, you will configure the Identity service to use memcached as a caching layer for tokens.
+
+Outcomes
+
+You should be able to:
+
+Change the configuration of a containerized service.
+
+Verify the use of Memcached for token caching.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run the lab controlplane-review setup command. This ensures that the environment has been properly configured for this lab.
+
+[student@workstation ~]$ lab controlplane-review setup
+Determine the current rate of increase for the memcached get_hits parameter.
+
+
+
+
+Enable token caching for the Identity service on controller0. Use the settings in the table below to configure /var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf.
+
+Section	Option	Value
+cache	enabled	true
+cache	backend	dogpile.cache.memcached
+cache	backend_argument	url:172.24.1.1:11211
+catalog	caching	false
+domain_config	caching	false
+federation	caching	false
+revoke	caching	false
+role	caching	false
+token	caching	true
+token	cache_on_issue	true
+identity	caching	false
+Open a new terminal on workstation, connect using SSH to controller0, then become root.
+
+[student@workstation ~]$ ssh controller0
+[heat-admin@controller0 ~]$ sudo -i
+[root@controller0 ~]# 
+Use crudini to modify the relevant options.
+
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+cache enabled true
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+cache backend dogpile.cache.memcached
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+cache backend_argument url:172.24.1.1:11211
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+catalog caching false
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+domain_config caching false
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+federation caching false
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+revoke caching false
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+role caching false
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+token caching true
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+token cache_on_issue true
+[root@controller0 ~]# crudini --set \
+/var/lib/config-data/puppet-generated/keystone/etc/keystone/keystone.conf \
+identity caching false
+Restart the keystone container to effect the changes.
+
+[root@controller0 ~]# docker restart keystone
+keystone
+[root@controller0 ~]# logout
+[heat-admin@controller0 ~]$ logout
+[student@workstation ~]$ 
+Use the openstack command to test for a sharp increase in the value for the memcached get_hits parameter.
+
+In the first terminal, verify the current value of get_hits.
+
+Every 5.0s: memcached-tool 172.24.1.1 stats | grep -A2 get_hits
+
+                get_hits        1283
+              get_misses         265
+              hash_bytes      524288
+In the second terminal, source the environment file for operator1 in the production project. Perform several openstack commands.
+
+[student@workstation ~]$ source ~/operator1-production-rc
+[student@workstation ~(operator1-production)]$ openstack image list -f json
+...output omitted...
+  {
+    "Status": "active",
+    "ID": "47c4a5c1-27cb-49c8-a38a-639654e8bb35",
+    "Name": "rhel7"
+  },
+...output omitted...
+[student@workstation ~(operator1-production)]$ openstack flavor list -f json
+...output omitted...
+  {
+    "Name": "default",
+    "RAM": 2048,
+    "Ephemeral": 0,
+    "VCPUs": 2,
+    "Is Public": true,
+    "Disk": 10,
+    "ID": "4d1f2fe1-cb51-4e53-99b9-00334eaf8c7b"
+  },
+...output omitted...
+[student@workstation ~(operator1-production)]$ openstack network list -f json
+...output omitted...
+  {
+    "Subnets": "de0c65db-5d75-49a3-b834-ffafb384c4c6",
+    "ID": "50060e33-2385-45b2-8a23-7fc589a31c8a",
+    "Name": "production-network1"
+  },
+...output omitted...
+[student@workstation ~(operator1-production)]$ openstack subnet list -f json
+[
+...output omitted...
+  {
+    "Network": "50060e33-2385-45b2-8a23-7fc589a31c8a",
+    "Subnet": "192.168.1.0/24",
+    "ID": "de0c65db-5d75-49a3-b834-ffafb384c4c6",
+    "Name": "production-subnet1"
+  }
+]
+In the first terminal, recheck the value of get_hits.
+
+Every 5.0s: memcached-tool 172.24.1.1 stats | grep -A2 get_hits
+
+                get_hits        1407
+              get_misses         265
+              hash_bytes      524288
+
+[root@controller0 ~]# logout
+[heat-admin@controller0 ~]$ logout
+[student@workstation ~]$ 
+Note that the value of get_hits has increased at a faster rate than previously.
+
+Evaluation
+
+On workstation, run the lab controlplane-review grade script to confirm the success of this exercise.
+
+[student@workstation ~]$ lab controlplane-review grade
+Cleanup
+
+On workstation, run the lab controlplane-review cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab controlplane-review cleanup
+This concludes the lab.

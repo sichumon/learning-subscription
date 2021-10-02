@@ -1,0 +1,108 @@
+Chapter 8. Managing a Cluster with the Web Console
+Performing Cluster Administration
+Guided Exercise: Performing Cluster Administration
+Managing Workloads and Operators
+Guided Exercise: Managing Workloads and Operators
+Examining Cluster Metrics
+Guided Exercise: Examining Cluster Metrics
+Lab: Managing a Cluster with the Web Console
+Summary
+Abstract
+
+Goal	Manage a Red Hat OpenShift cluster using the web console.
+Objectives	
+Perform cluster administration with the web console.
+
+Manage applications and Kubernetes Operators with the web console.
+
+Examine performance and health metrics for cluster nodes and applications.
+
+Sections	
+Performing Cluster Administration (and Guided Exercise)
+
+Managing Workloads and Operators (and Guided Exercise)
+
+Examining Cluster Metrics (and Guided Exercise)
+
+Lab	
+Managing a Cluster with the Web Console
+
+Performing Cluster Administration
+Objectives
+After completing this section, you should be able to perform cluster administration with the web console.
+
+Describing the Web Console
+The Red Hat OpenShift web console provides a graphical user interface to perform administrative, management, and troubleshooting tasks. It supports both Administrator and Developer perspectives. This course explores the Administrator perspective.
+
+The following list outlines some of the most important parts of the web console, grouped by the main navigation menu items. The ability to view individual items depends upon the roles and role bindings associated with a user. Users with the cluster-admin cluster role can view and modify everything. Users with the view cluster role can view most items, but cannot make changes. Additional roles can provide access to specific items.
+
+Home
+The Home → Overview page provides a quick overview of the cluster, including health metrics, resource counts, and a streaming list of events, such as machine updates or pod failures.
+
+You can navigate to Home → Search page to find or create resources of any type. This is also a useful starting point to navigate to resources that do not have dedicated navigation in the menu.
+
+The Home → Events page displays a filterable stream of events that occur in the cluster and is a good starting point for troubleshooting.
+
+Operators
+Explore and install operators curated by Red Hat using OperatorHub, then navigate to the Installed Operators page to managed the operators.
+
+Workloads, Networking, and Storage
+Manage common resources such as deployments, services, and persistent volumes. Of particular interest for troubleshooting is the ability to view pod logs and connect to a terminal.
+
+Builds
+Manage build configurations, builds, and image streams.
+
+Monitoring
+View alerts and perform ad hoc Prometheus queries.
+
+Compute
+View and manage compute resources such as nodes, machines, and machine autoscalers.
+
+User Management
+View and manage users, groups, service accounts, roles, and role bindings.
+
+Administration
+View and manage a wide variety of settings that are of particular interest to cluster administrators, such as cluster updates, cluster operators, CRDs, and resource quotas.
+
+Accessing the OpenShift Web Console
+The OpenShift web console runs as pods in the openshift-console project and is managed by an operator running in the openshift-console-operator project. You can discover the URL by listing the route.
+
+[student@workstation ~]$ oc get routes -n openshift-console
+NAME       HOST/PORT                                             ...  PORT   ...
+console    console-openshift-console.apps.cluster.example.com    ...  https  ...
+downloads  downloads-openshift-console.apps.cluster.example.com  ...  http   ...
+In non-production systems, self-signed certificates are commonly used for the HTTPS endpoint. Web browsers will warn you about the certificate, and you will need to add a security exception when navigating to the web console for the first time.
+
+Finding Resources
+The web UI provides multiple ways to locate resources. Many common resources, such as Deployments and Services, are available in the main menu on the left. You can use the Home → Search page to find other resource types. This page provides a complete menu of resource types and a label selector field.
+
+Use the name filter to quickly locate resources on pages with long lists such as the Projects page.
+
+
+It may be useful to filter pods by state to identify potential issues or problematic deployments.
+
+
+The details page of a resource displays common useful information. The contents of this page vary for different types. For example, the Pod Details page displays metrics and status information and the Secret Details page allows you to reveal or copy data stored in the secret.
+
+Detail pages provide a YAML editor to view and modify the resource specification from the web console. Some resource types, such as secrets and role bindings, provide more advanced UIs tailored to the resource type.
+
+Creating Users and Groups
+The Users page accessible from User Management → Users displays users who have previously logged in to OpenShift. As discussed in Chapter 3, Configuring Authentication and Authorization, OpenShift supports a variety of identity providers (IdPs), including HTPasswd, LDAP, and OpenID Connect.
+
+When using the HTPasswd identity provider, the secrets editor can simplify adding, updating, or removing entries in the HTPasswd secret. After using a terminal to generate a new or updated HTPasswd entry, switch to the web console to modify the secret.
+
+In the web UI, locate the secret in the openshift-config project and then click Actions → Edit Secret. The Edit Key/Value Secret tool handles the base64 encoding for you. Add a line to allow a new user to log in to OpenShift. Update a line to change the password for a user. Delete a line so that a user cannot log in to OpenShift.
+
+The Groups page accessible from User Management → Groups displays existing groups, and provides the ability to create new groups.
+
+Creating a Project
+The web UI features a variety of pages and forms for configuring projects.
+
+Navigate to the Home → Projects page to display the full list of projects. Click Create Project and complete the form to create a new project.
+
+After you have created your new project, you can navigate to the Role Bindings tab on the project details page.
+
+Red Hat recommends that administrators responsible for multitenant clusters configure Resource Quotas and Limit Ranges, which enforce total project limits and container limits, respectively. Navigate to either Administration → Resource Quotas or Administration → Limit Ranges to access the appropriate YAML editor, where you can configure these limits.
+
+Discussing Limitations
+The OpenShift web console is a powerful tool for graphically administrating OpenShift clusters, however some administrative tasks are not currently available in the web console. For example, viewing node logs and executing node debug sessions requires the oc command-line tool.

@@ -1,0 +1,65 @@
+
+Guided Exercise: Managing Cluster Operators
+In this exercise you will examine the Cluster Samples Operator.
+
+Outcomes
+
+You should be able to:
+
+View the Cluster Samples Operator components and associated logs.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable.
+
+[student@workstation ~]$ lab operators-cluster start
+Procedure 3.2. Instructions
+
+Examine the Cluster Samples Operator components by extracting the manifests that define them from the release image.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Extract the release.
+
+[student@workstation ~]$ VER=$(oc get clusterversion version \
+> -o jsonpath='{.status.desired.image}')
+[student@workstation ~]$ oc adm release extract --from=$VER --to=release-image
+Extracted release payload created at 2020-07-28T05:51:05Z
+View the Cluster Samples Operator manifests.
+
+[student@workstation ~]$ ls release-image/*samples*
+release-image/0000_10_samplesconfig.crd.yaml
+release-image/0000_50_cluster-samples-operator_010-prometheus-rules.yaml
+...output omitted...
+Examine the Cluster Samples Operator deployment.
+
+[student@workstation ~]$ less release-image/*samples*06-operator.yaml
+...output omitted...
+Examine the Cluster Samples Operator components.
+
+List the Cluster Samples Operator pods.
+
+[student@workstation ~]$ oc get pods -n openshift-cluster-samples-operator
+NAME                                        READY   STATUS    RESTARTS   AGE
+cluster-samples-operator-5d7d5b94b6-rw284   2/2     Running   0          4d15h
+View logs for the Cluster Samples Operator pods.
+
+[student@workstation ~]$ oc logs pod/cluster-samples-operator-5d7d5b94b6-rw284 \
+>   -n openshift-cluster-samples-operator --all-containers
+...output omitted...
+View Cluster Samples Operator events.
+
+[student@workstation ~]$ oc get events -n openshift-cluster-samples-operator
+LAST SEEN   TYPE   REASON   OBJECT   MESSAGE
+...output omitted...
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab operators-cluster finish
+This concludes the section.

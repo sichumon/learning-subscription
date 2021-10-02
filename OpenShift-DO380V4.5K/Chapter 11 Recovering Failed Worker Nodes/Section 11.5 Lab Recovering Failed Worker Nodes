@@ -1,0 +1,133 @@
+Lab: Recovering Failed Worker Nodes
+In this lab, you will identify, troubleshoot, and restore a failing worker node to a healthy status.
+
+Outcomes
+
+You should be able to:
+
+Profile worker nodes to examine healthy nodes, ensure the node services function properly, and identify adverse performance or degradation.
+
+Diagnose and troubleshoot issues that occur on worker nodes.
+
+Verify that proper worker node functionality is restored.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+Administrative access to the CLI and web console.
+
+On the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable.
+
+[student@workstation ~]$ lab workers-review start
+Procedure 11.3. Instructions
+
+Access the cluster CLI and web console and inspect the monitoring alerts.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Display the address for the web console by running the following command:
+
+[student@workstation ~]$ oc whoami --show-console
+https://console-openshift-console.apps.ocp4.example.com
+Open the link provided in the command output in a browser, and then log in as the admin user with the redhat password.
+
+From the web console, navigate to the Monitoring section. Inspect the Firing tab found on the Alerting page for alerts that provide information regarding cluster performance degradation. After a few minutes, several alerts with a severity of Warning are displayed alongside additional AlertManager notifications. These alerts provide details about the cluster degradation, cluster member absence, and make explicit mention that worker02 is not ready.
+
+Review the status of all cluster nodes and identify the unhealthy node.
+
+Utilize CLI commands to profile the status of the worker nodes to determine affected worker node, and then formulate an appropriate remediation.
+
+Check the status of all nodes. Notice that one worker node reports a Not Ready status.
+
+[student@workstation ~]$ oc get nodes
+NAME         STATUS        ROLES      AGE     VERSION
+master01     Ready         master     14d     ...
+master02     Ready         master     14d     ...
+master03     Ready         master     14d     ...
+worker01     Ready         worker     14d     ...
+worker02     Not Ready     worker     14d     ...
+worker03     Ready         worker     14d     ...
+worker04     Ready         infra      14d     ...
+worker05     Ready         infra      14d     ...
+worker01     Ready         infra      14d     ...
+Inspect the worker02 node showing a Not Ready status using the oc describe command.
+
+[student@workstation ~]$ oc describe node/worker02
+...output omitted...
+Taints:             node.kubernetes.io/unreachable:NoExecute
+                    node.kubernetes.io/unreachable:NoSchedule
+...output omitted...
+Conditions:
+  Type             Status    ...   Reason              ...
+  ----             ------    ...   ------              ...
+  MemoryPressure   Unknown   ...   NodeStatusUnknown   ...
+  DiskPressure     Unknown   ...   NodeStatusUnknown   ...
+  PIDPressure      Unknown   ...   NodeStatusUnknown   ...
+  Ready            Unknown   ...   NodeStatusUnknown   ...
+...output omitted...
+OpenShift is unable to schedule pods for this worker node because the worker02 node has an unreachable taint with the NoExecute and NoSchedule effects. The Conditions section shows NodeStatusUnknown, and a message of Kubelet stopped posting node status. This condition details the reason for the taint and Not Ready status.
+
+Correct the issue with the unhealthy worker node.
+
+Use the oc debug command to log in to the cluster and attempt remediation. The oc debug command fails to start the debug pod because the worker node is in a Not Ready state. Press Ctrl+C to stop the oc debug command.
+
+[student@workstation ~]$ oc debug node/worker02
+Starting pod/worker02-debug ...
+To use host binaries, run `chroot /host`
+^C
+Removing debug pod ...
+Inspect the OpenShift services on the worker02 worker node and correct the outage for the kubelet service.
+
+Check the status of kubelet service for worker02 to reveal that the service is not running.
+
+[student@workstation ~]$ ssh core@worker02 "sudo systemctl is-active kubelet"
+inactive
+Start kubelet service for worker02.
+
+[student@workstation ~]$ ssh core@worker02 "sudo systemctl start kubelet"
+Verify the status of the kubelet service for worker02 and confirm that the service is running.
+
+[student@workstation ~]$ ssh core@worker02 "sudo systemctl is-active kubelet"
+active
+Verify the worker node health is restored and that the monitoring alerts have subsided.
+
+Check the status of all Nodes and verify the node has been properly restored. It can take several minutes for the worker02 node to return to the Ready status.
+
+[student@workstation ~]$ oc get nodes
+NAME         STATUS     ROLES      AGE     VERSION
+master01     Ready      master     14d     ...
+master02     Ready      master     14d     ...
+master03     Ready      master     14d     ...
+worker01     Ready      worker     14d     ...
+worker02     Ready      worker     14d     ...
+worker03     Ready      worker     14d     ...
+worker04     Ready      infra      14d     ...
+worker05     Ready      infra      14d     ...
+worker01     Ready      infra      14d     ...
+Inspect the worker02 node for taints using the oc describe command.
+
+[student@workstation ~]$ oc describe node worker02 | grep -i taints
+Taints:         <none>
+Worker node worker02 is healthy and no longer displays any taints.
+
+Revisit the monitoring section of the web console to verify that the monitoring alerts have cleared. This might take several minutes of additional polling before the status is returned to normal and the alerts clear.
+
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab workers-review grade
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab workers-review finish
+This concludes the section.

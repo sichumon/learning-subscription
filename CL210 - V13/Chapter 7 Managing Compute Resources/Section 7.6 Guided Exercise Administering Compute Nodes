@@ -1,0 +1,123 @@
+
+Guided Exercise: Administering Compute Nodes
+In this exercise, you will migrate an instance, disable and enable compute nodes, and evacuate a compute node.
+
+Outcomes
+
+You should be able to enable and disable compute nodes, migrate instances, and evacuate an entire compute node.
+
+Log in to workstation as student using student as the password.
+
+Run the lab computeresources-migrate setup command. This script ensures that OpenStack services are running and the environment is properly configured for the guided exercise.
+
+[student@workstation ~]$ lab computeresources-migrate setup
+On workstation, source the /home/student/architect1-finance-rc environment identity file and then list the compute services.
+
+Source the /home/student/architect1-finance-rc file.
+
+[student@workstation ~]$ source ~/architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ 
+Use the openstack compute service list command to list the Host, Zone, and Status columns for each of the service nodes. Ensure that the status of the compute nodes is enabled.
+
+[student@workstation ~(architect1-finance)]$ openstack compute service list \
+-c Host -c Zone -c Status
++-----------------------------------+----------+---------+
+| Host                              | Zone     | Status  |
++-----------------------------------+----------+---------+
+| controller0.overcloud.example.com | internal | enabled |
+| controller0.overcloud.example.com | internal | enabled |
+| controller0.overcloud.example.com | internal | enabled |
+| computehci0.overcloud.example.com | nova     | enabled |
+| compute0.overcloud.example.com    | nova     | enabled |
+| compute1.overcloud.example.com    | nova     | enabled |
++-----------------------------------+----------+---------+
+Use the openstack server list command to list the servers on both compute0 and compute1.
+
+[student@workstation ~(architect1-finance)]$ openstack server list \
+--host compute0.overcloud.example.com --all-projects \
+-c ID -c Name
++--------------------------------------+-----------------+
+| ID                                   | Name            |
++--------------------------------------+-----------------+
+| e1060cd2-154b-48fc-930e-36ac92ad00ae | finance-server3 |
+| d70a2397-77f3-4fa4-8af4-1404ac4f2b0d | finance-server2 |
+| a181bb99-e8b1-4d74-8e46-37d46a7d5024 | finance-server1 |
++--------------------------------------+-----------------+
+[student@workstation ~(architect1-finance)]$ openstack server list \
+--host compute1.overcloud.example.com --all-projects \
+-c ID -c Name
+
+[student@workstation ~(architect1-finance)]$ 
+Notice that all three instances are hosted on compute0.
+
+Migrate finance-server1 from compute0 to compute1. Verify that the server has been migrated.
+
+Use the openstack server migrate command to migrate finance-server1. The ID for finance-server1 can be found in the output of the previous step.
+
+[student@workstation ~(architect1-finance)]$ openstack server migrate \
+a181bb99-e8b1-4d74-8e46-37d46a7d5024 \
+--live compute1.overcloud.example.com
+Use the openstack server list command to verify that finance-server1 is now hosted on compute1. The migration may take a minute so retry this command if required.
+
+[student@workstation ~(architect1-finance)]$ openstack server list \
+--host compute1.overcloud.example.com --all-projects \
+-c ID -c Name
++--------------------------------------+-----------------+
+| ID                                   | Name            |
++--------------------------------------+-----------------+
+| a181bb99-e8b1-4d74-8e46-37d46a7d5024 | finance-server1 |
++--------------------------------------+-----------------+
+Disable the nova-compute service on compute0. Evacuate the remaining servers to compute1. Verify the servers are migrated to compute1. Lastly, enable the nova-compute service on compute0.
+
+Use the openstack compute service set command to disable the nova-compute service on compute0.
+
+[student@workstation ~(architect1-finance)]$ openstack compute service set \
+compute0.overcloud.example.com nova-compute --disable
+Use the openstack compute service list command to verify that compute0 is disabled.
+
+[student@workstation ~(architect1-finance)]$ openstack compute service list \
+-c Binary -c Host -c Status
+...output omitted...
+| nova-compute     | computehci0.overcloud.example.com | enabled  |
+| nova-compute     | compute0.overcloud.example.com    | disabled |
+| nova-compute     | compute1.overcloud.example.com    | enabled  |
++------------------+-----------------------------------+----------+
+Use the nova host-evacuate-live command to evacuate the remaining servers from compute0.
+
+[student@workstation ~(architect1-finance)]$ nova host-evacuate-live \
+compute0
++--------------------------------------+-------------------------+---------------+
+| Server UUID                          | Live Migration Accepted | Error Message |
++--------------------------------------+-------------------------+---------------+
+| d70a2397-77f3-4fa4-8af4-1404ac4f2b0d | True                    |               |
+| e1060cd2-154b-48fc-930e-36ac92ad00ae | True                    |               |
++--------------------------------------+-------------------------+---------------+
+Use the openstack server list command to verify that the instances have been migrated to compute1. It may take a minute to complete the migration. Retry the command until all servers are migrated.
+
+[student@workstation ~(architect1-finance)]$ openstack server list \
+--host compute1.overcloud.example.com --all-projects \
+-c ID -c Name
++--------------------------------------+-----------------+
+| ID                                   | Name            |
++--------------------------------------+-----------------+
+| e1060cd2-154b-48fc-930e-36ac92ad00ae | finance-server3 |
+| d70a2397-77f3-4fa4-8af4-1404ac4f2b0d | finance-server2 |
+| a181bb99-e8b1-4d74-8e46-37d46a7d5024 | finance-server1 |
++--------------------------------------+-----------------+
+Use the openstack compute service set command to enable the nova-compute service on compute0. Use the openstack compute service list command to verify the status of the service.
+
+[student@workstation ~(architect1-finance)]$ openstack compute service set \
+compute0.overcloud.example.com nova-compute --enable
+[student@workstation ~(architect1-finance)]$ openstack compute service list \
+-c Host -c Status
+...output omitted...
+| computehci0.overcloud.example.com | enabled |
+| compute0.overcloud.example.com    | enabled |
+| compute1.overcloud.example.com    | enabled |
++-----------------------------------+---------+
+Cleanup
+
+On workstation, run the lab computeresources-migrate cleanup script to clean up the resources created in this exercise.
+
+[student@workstation ~]$ lab computeresources-migrate cleanup
+This concludes the guided exercise.

@@ -1,0 +1,174 @@
+Guided Exercise: Configuring Storage for the Cluster Monitoring Stack
+In this exercise you will configure Prometheus and Alertmanager to use persistent storage.
+
+Outcomes
+
+You should be able to:
+
+Create a new configuration map for the cluster monitoring operator.
+
+Define persistent storage for Prometheus and Alertmanager using an existing storage class.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+An existing storage class capable of dynamically provisioning persistent volumes.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command ensures that the cluster API is reachable and that Prometheus and Alertmanager use ephemeral storage.
+
+[student@workstation ~]$ lab monitor-storage start
+Procedure 9.3. Instructions
+
+Determine if your cluster already contains a configuration map for the cluster monitoring operator.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Look for the cluster-monitoring-config configuration map in the openshift-monitoring namespace. This command returns an error because the cluster-monitoring-config configuration map does not exist by default.
+
+[student@workstation ~]$ oc get configmap cluster-monitoring-config \
+>   -n openshift-monitoring
+Error from server (NotFound): configmaps "cluster-monitoring-config" not found
+Identify storage files used by Prometheus.
+
+Connect to the prometheus container in one of the prometheus-k8s pods in the openshift-monitoring namespace.
+
+[student@workstation ~]$ oc rsh -n openshift-monitoring -c prometheus \
+>   prometheus-k8s-0
+sh-4.2$
+List files in the /prometheus/ directory. Although the Prometheus pods use ephemeral storage, the pods are stopped and restarted in the classroom environment rather than being recreated. The result is that you might see directories created on a previous day.
+
+sh-4.2$ ls -l /prometheus/
+total 20
+drwxr-sr-x. 3 1000360000 1000360000    68 Jun 18 17:05 01EB469DE6GQC85YE72ZGXRZ6F
+-rw-r--r--. 1 1000360000 1000360000 20001 Jun 18 18:15 queries.active
+drwxr-sr-x. 4 1000360000 1000360000   156 Jun 18 18:15 wal
+NOTE
+Although your output displays the queries.active file and the wal directory, all other output will vary.
+
+Check to see if the /prometheus/ directory is a mount point.
+
+sh-4.2$ df -h /prometheus/
+Filesystem                            Size  Used Avail Use% Mounted on
+/dev/mapper/coreos-luks-root-nocrypt   40G  5.9G   34G  15% /prometheus
+Although the /prometheus/ directory is a mount point, the volume definition in the prometheus-k8s stateful set uses emptyDir to indicate that it is a placeholder. The /dev/mapper/coreos-luks-root-nocrypt devices indicates ephemeral storage on the node.
+
+NOTE
+The values of your output for the Used, Avail, and Use% columns might differ.
+
+Exit from the pod.
+
+sh-4.2$ exit
+Delete the Prometheus pods and notice how the new pods do not contain the files previously identified.
+
+Delete the prometheus-k8s pods in the openshift-monitoring namespace.
+
+[student@workstation ~]$ oc delete pods -l app=prometheus \
+>   -n openshift-monitoring
+pod "prometheus-k8s-0" deleted
+pod "prometheus-k8s-1" deleted
+After the new prometheus-k8s-0 pod transitions to a running state, list the contents of the /prometheus/ directory in the prometheus-k8s-0 pod. Aside from the /prometheus/wal/ directory, the previously listed directories no longer exist.
+
+[student@workstation ~]$ oc rsh -n openshift-monitoring -c prometheus \
+>   prometheus-k8s-0 ls -l /prometheus/
+total 20
+-rw-r--r--. 1 1000030000 1000030000 20001 May 21 14:50 queries.active
+drwxr-sr-x. 2 1000030000 1000030000    38 May 21 14:49 wal
+Configure the cluster monitoring operator so that both Prometheus and Alertmanager use persistent storage.
+
+Identify the existing storage class for the cluster. You will use this storage class name for Prometheus and Alertmanager.
+
+[student@workstation ~]$ oc get storageclass
+NAME                    PROVISIONER               RECLAIMPOLICY   ...
+nfs-storage (default)   nfs-storage-provisioner   Delete          ...
+WARNING
+Using NFS to back persistent volumes used by core services, such as Prometheus, is not recommended for production environments. Block storage is recommended for Prometheus.
+
+The classroom environment uses NFS storage for simplicity.
+
+Change to the ~/DO380/labs/monitor-storage/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/monitor-storage/
+Modify the persistent-storage.yml file.
+
+[student@workstation monitor-storage]$ vim persistent-storage.yml
+Ensure that the file matches the following bold lines, and then save the file.
+
+prometheusK8s:
+  retention: 15d
+  volumeClaimTemplate:
+    spec:
+      storageClassName: nfs-storage
+      resources:
+        requests:
+          storage: 40Gi
+alertmanagerMain:
+  volumeClaimTemplate:
+    spec:
+      storageClassName: nfs-storage
+      resources:
+        requests:
+          storage: 20Gi
+IMPORTANT
+This configuration indicates that each Prometheus pod requests a 40GB persistent volume claim, and each Alertmanager pod requests a 20GB persistent volume claim.
+
+Although the storage class creates each persistent volume claim with the desired size, the classroom environment only allocates 40GB in total to the NFS server (utility.lab.example.com).
+
+Apply the configuration using the oc create command.
+
+[student@workstation monitor-storage]$ oc create configmap \
+>   cluster-monitoring-config --from-file config.yaml=persistent-storage.yml \
+>   -n openshift-monitoring
+configmap/cluster-monitoring-config created
+Verify that Prometheus uses persistent storage.
+
+List the persistent volume claims using the app=prometheus label in the openshift-monitoring namespace. The nfs-storage storage class creates the persistent volume claims dynamically, and this process might take up to a minute to complete. After the persistent volume claims display, press Ctrl+C to exit the watch command.
+
+[student@workstation monitor-storage]$ watch oc get pvc -n openshift-monitoring \
+>   -l app=prometheus
+NAME                                 STATUS   VOLUME                         ...
+prometheus-k8s-db-prometheus-k8s-0   Bound    pvc-d029d039-d26c-4e68-a743-3b3...
+prometheus-k8s-db-prometheus-k8s-1   Bound    pvc-e804510d-7e38-4687-b3ba-4c5...
+Verify that the prometheus-k8s-db-prometheus-k8s-0 persistent volume claim is mounted to the /prometheus/ directory in the prometheus-k8s-0 pod. The /exports/ directory on the NFS server (listed under Filesystem) includes the name of the namespace, the name of the persistent volume claim, and the name of the associated volume.
+
+[student@workstation monitor-storage]$ oc rsh -n openshift-monitoring \
+>   -c prometheus prometheus-k8s-0 df -h /prometheus/
+Filesystem                                               Size Used  Avail  Use%
+Mounted on
+192.168.50.254:/exports/openshift-monitoring-prometheus-k8s-db-prometheus-k8s-0
+-pvc-d029d039-d26c-4e68-a743-3b3586dd00e9/prometheus-db  40G  1.1G  39G    3%
+/prometheus
+Verify that Alertmanager uses persistent storage.
+
+List the persistent volume claims using the app=alertmanager label in the openshift-monitoring namespace.
+
+[student@workstation monitor-storage]$ oc get pvc -n openshift-monitoring \
+>   -l app=alertmanager
+NAME                                       STATUS   VOLUME                   ...
+alertmanager-main-db-alertmanager-main-0   Bound    pvc-4f168ac5-2161-4daa-a8...
+alertmanager-main-db-alertmanager-main-1   Bound    pvc-51d64a64-4abc-43c8-af...
+alertmanager-main-db-alertmanager-main-2   Bound    pvc-404420c4-a7e3-4ff4-b1...
+Verify that the alertmanager-main-db-alertmanager-main-0 persistent volume claim is mounted to the /alertmanager/ directory in the alertmanager-main-0 pod. The /exports/ directory on the NFS server (listed under Filesystem) includes the name of the namespace, the name of the persistent volume claim, and the name of the associated volume.
+
+[student@workstation monitor-storage]$ oc rsh -n openshift-monitoring \
+>   -c alertmanager alertmanager-main-0 df -h /alertmanager/
+Filesystem                                                       Size Used  Avail
+Use% Mounted on
+192.168.50.254:/exports/openshift-monitoring-alertmanager-main-db-alertmanager-
+main-0-pvc-4f168ac5-2161-4daa-a896-98233b32430e/alertmanager-db  40G  981M  40G
+3%   /alertmanager
+Change to the /home/student/ directory.
+
+[student@workstation monitor-storage]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab monitor-storage finish
+This concludes the section.

@@ -1,0 +1,426 @@
+Guided Exercise: Installing the Local Storage Operator
+In this exercise you will create persistent volumes from locally-attached block storage.
+
+Outcomes
+
+You should be able to
+
+Install the Local Storage operator.
+
+Create a LocalVolume custom resource that is managed by the Local Storage Operator.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+The additional worker nodes (worker04, worker05, and worker06), which are active and in a Ready state. If the additional worker nodes are not active, then ensure you have completed the section called “Guided Exercise: Adding Worker Nodes”.
+
+On the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable.
+
+[student@workstation ~]$ lab storage-local start
+Procedure 8.3. Instructions
+
+Verify that an additional block device is attached to each of the worker04, worker05, and worker06 nodes.
+
+As the admin user, open a debug shell to one of the worker nodes. Execute the lsblk command to list the attached block devices for the node.
+
+Log in as the admin user.
+
+[student@workstation ~]$  oc login -u admin -p redhat \
+>  https://api.ocp4.example.com:6443
+Login Successful.
+
+...output omitted...
+Display the cluster nodes.
+
+[student@workstation ~]$ oc get nodes
+NAME       STATUS   ROLES    AGE    VERSION
+master01   Ready    master   16d    v1.18.3+012b3ec
+master02   Ready    master   16d    v1.18.3+012b3ec
+master03   Ready    master   16d    v1.18.3+012b3ec
+worker01   Ready    worker   16d    v1.18.3+012b3ec
+worker02   Ready    worker   16d    v1.18.3+012b3ec
+worker03   Ready    worker   16d    v1.18.3+012b3ec
+worker04   Ready    infra   114s   v1.18.3+012b3ec
+worker05   Ready    infra   113s   v1.18.3+012b3ec
+worker06   Ready    infra   99s    v1.18.3+012b3ec
+Use a debug shell to execute the lsblk command on the worker06 node. Verify that the node contains a 20GB, unpartitioned vdb device.
+
+[student@workstation ~]$ oc debug node/worker06
+Starting pod/worker06-debug ...
+...output omitted...
+sh-4.2# lsblk
+...output omitted...
+NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+vdb    252:16   0   20G  0 disk
+sr0     11:0    1    1G  0 rom
+vda    252:0    0   40G  0 disk
+|-vda4 252:4    0 39.5G  0 part
+|-vda2 252:2       127M  0 part /host/boot/efi
+|-vda3 252:3         1M  0 part
+`-vda1 252:1       384M  0 part /host/boot
+sh-4.2# exit
+exit
+
+Removing debug pod ...
+[student@workstation ~]$
+Verify that the worker01 node does not contain an additional vdb block device.
+
+[student@workstation ~]$ oc debug node/worker01 -- lsblk
+Starting pod/worker01-debug ...
+...output omitted...
+NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+vda    252:0    0   40G  0 disk
+|-vda4 252:4    0 39.5G  0 part
+|-vda2 252:2       127M  0 part /host/boot/efi
+|-vda3 252:3         1M  0 part
+`-vda1 252:1       384M  0 part /host/boot
+
+Removing debug pod ...
+[student@workstation ~]$
+No vdb device is listed in the output.
+
+As the admin user, create a storage-local project.
+
+[student@workstation ~]$  oc whoami
+admin
+[student@workstation ~]$  oc new-project storage-local
+Now using project "storage-local" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+To install the Local Storage operator, first create an operator group resource in the storage-local project.
+
+The ~/DO380/labs/storage-local/resources directory contains an operator group resource definition file. Review the file and create the operator group resource.
+
+NOTE
+Although you can install the Local Storage Operator from the web console, this exercise uses resource definition files to install the operator from the command line.
+
+A file-based installation method integrates with version control, GitOps, and other infrastructure-as-code techniques.
+
+Change to the ~/DO380/labs/storage-local directory.
+
+[student@workstation ~]$  cd ~/DO380/labs/storage-local
+[student@workstation storage-local]$
+Review the resources/operator-group.yml file.
+
+[student@workstation storage-local]$ cat resources/operator-group.yml
+---
+apiVersion: operators.coreos.com/v1alpha2
+kind: OperatorGroup
+metadata:
+  name: local-operator-group
+  namespace: storage-local
+spec:
+  targetNamespaces:
+    - storage-local
+The file defines a operator group resource that targets the storage-local namespace. This operator group configures RBAC access for member operators in the storage-local namespace.
+
+Create the operator group resource.
+
+[student@workstation storage-local]$ oc create \
+>  -f resources/operator-group.yml
+operatorgroup.operators.coreos.com/local-operator-group created
+Create the subscription resource for the local storage operator.
+
+You must add missing information to the resources/subscription.yml template before you create the subscription resources.
+
+Review the resources/subscription.yml subscription template file.
+
+[student@workstation storage-local]$ cat resources/subscription.yml
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: local-storage-operator  1
+  namespace: storage-local  2
+spec:
+  channel: <CHANNEL_VALUE>  3
+  installPlanApproval: Automatic
+  name: <PACKAGE_MANIFEST_NAME>  4
+  source: <SOURCE>  5
+  sourceNamespace: <SOURCE_NAMESPACE>  6
+1 2
+
+After you create the resource, the subscription name is local-storage-operator and it exists in the storage-local namespace.
+
+3
+
+Before you create the resource, you must replace <CHANNEL_VALUE> with the channel value for the local storage operator.
+
+4
+
+Before you create the resource, you must replace <PACKAGE_MANIFEST_NAME> with the name of the package manifest for the local storage operator.
+
+5 6
+
+Before you create the resource, you must replace <SOURCE> and <SOURCE_NAMESPACE> with the correct values, which are provided in a later step.
+
+Display all storage-related package manifests.
+
+[student@workstation storage-local]$ oc get packagemanifest | grep storage
+...output omitted...
+local-storage-operator                       Red Hat Operators     31h
+...output omitted...
+The package manifest name for the local storage operator is local-storage-operator. In a later step, you replace <PACKAGE_MANIFEST_NAME> in the subscription template with local-storage-operator.
+
+Find the source values that you need for the subscription resource template.
+
+Search for Source in the output of the oc describe packagemanifest command.
+
+[student@workstation storage-local]$ oc describe packagemanifests \
+> local-storage-operator | grep Source
+  Catalog Source:               redhat-operators  1
+  Catalog Source Display Name:  Red Hat Operators
+  Catalog Source Namespace:     openshift-marketplace  2
+  Catalog Source Publisher:     Red Hat
+1
+
+In a later step, you replace <SOURCE> in the subscription template with redhat-operators.
+
+2
+
+In a later step, you replace <SOURCE_NAMESPACE> in the subscription template with openshift-marketplace.
+
+Find the channel value that you need for the subscription resource template.
+
+Search for Channel in the output of the oc describe packagemanifest command.
+
+[student@workstation storage-local]$ oc describe packagemanifests \
+>  local-storage-operator | grep Channel
+    Channels:
+    Default Channel:  4.5  1
+1
+
+In a later step, you replace <CHANNEL> in the subscription template with 4.5.
+
+Modify the resources/subscription.yml template file to match the correct values for the local storage operator. Then save the file.
+
+Ensure the content of the resources/subscription.yml file matches the following:
+
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: local-storage-operator
+  namespace: storage-local
+spec:
+  channel: "4.5"  1
+  installPlanApproval: Automatic
+  name: local-storage-operator  2
+  source: redhat-operators  3
+  sourceNamespace: openshift-marketplace  4
+1
+
+You must enclose the 4.5 channel value in quotes. Otherwise, the channel value is interpreted as a floating point number.
+
+2
+
+The package manifest name, which is local-storage-operator.
+
+3 4
+
+The source values for the subscription.
+
+NOTE
+A solution file is available at ~/DO380/solutions/storage-local/resources/subscription.yml.
+
+Use the resources/subscription.yml file to create a subscription resource for the local storage operator.
+
+[student@workstation storage-local]$ oc apply -f resources/subscription.yml
+subscription.operators.coreos.com/local-storage-operator created
+Verify that local storage operator resources are deployed.
+
+List all the pods.
+
+[student@workstation storage-local]$ oc get pods
+NAME                                      READY   STATUS    RESTARTS   AGE
+local-storage-operator-75d7454577-s475q   1/1     Running   0          32s
+List the operator group resources.
+
+[student@workstation storage-local]$ oc get operatorgroup
+NAME                   AGE
+local-operator-group   10m
+List the subscription resources.
+
+[student@workstation storage-local]$ oc get subs
+NAME                     PACKAGE                  SOURCE             CHANNEL
+local-storage-operator   local-storage-operator   redhat-operators   4.5
+List the cluster service version resource for the local storage operator.
+
+[student@workstation storage-local]$ oc get csv
+NAME                                        DISPLAY         ...  PHASE
+local-storage-operator.4.5.0-2020...        Local Storage   ...  Succeeded
+NOTE
+The CSV resource name in your output may differ from the preceding output.
+
+The CSV resource name matches the pattern: local-storage-operator-4.5.z-<DATE STRING>.
+
+For easy access to the CSV name in later steps, create a CSV_NAME variable with the value of the local storage operator CSV resource name.
+
+[student@workstation storage-local]$ oc get csv -o name
+clusterserviceversion.operators.coreos.com/local-storage-operator.4.5.0-2020...
+[student@workstation storage-local]$ CSV_NAME=$(oc get csv -o name)
+[student@workstation storage-local]$ echo ${CSV_NAME}
+clusterserviceversion.operators.coreos.com/local-storage-operator.4.5.0-2020...
+Display the list of custom resource definition types that the operator owns. Verify that no operator-owned custom resources exist in the project.
+
+A CSV resource specification defines a customresourcedefinitions.owned attribute. This attribute defines a list of custom resource types that the operator owns.
+
+Use a jsonpath expression to display the kind attribute for all operator-owned resource types.
+
+[student@workstation storage-local]$ oc get $CSV_NAME -o \
+> jsonpath='{.spec.customresourcedefinitions.owned[*].kind}{"\n"}'
+LocalVolume
+[student@workstation storage-local]$
+Verify that no LocalVolume custom resources exist.
+
+[student@workstation storage-local]$ oc get localvolume
+No resources found in storage-local namespace.
+Create a LocalVolume custom resource for the operator.
+
+Ensure the operator creates a persistent volume for the /dev/vdb block device on each node. Ensure that each persistent volume uses a local-blk storage class name.
+
+Retrieve an example LocalVolume custom resource definition from the operator CSV resource.
+
+The alm-examples annotation contains a JSON-encoded string that defines a list of example custom resource definitions.
+
+[student@workstation storage-local]$ oc get $CSV_NAME \
+>  -o jsonpath='{.metadata.annotations.alm-examples}{"\n"}'
+[
+  {
+    "apiVersion": "local.storage.openshift.io/v1",
+    "kind": "LocalVolume",
+    "metadata": {
+      "name": "example"
+    },
+    "spec": {
+      "storageClassDevices": [
+        {
+          "devicePaths": [
+              "/dev/vde",
+              "/dev/vdf"
+          ],
+          "fsType": "ext4",
+          "storageClassName": "foobar",
+          "volumeMode": "Filesystem"
+        }
+      ]
+    }
+  }
+]
+[student@workstation storage-local]$
+NOTE
+The alm-examples string does not end with a new line character.
+
+The end of the preceding jsonpath expression contains {"\n"} to ensure the prompt displays on a separate line.
+
+Use the provided get_localvolume_template.sh script to create a LocalVolume resource definition in YAML format. The script converts the previous example from JSON to YAML and stores the example in the resources/localvolume.yml file.
+
+[student@workstation storage-local]$ ./get_localvolume_template.sh
+Created /home/student/DO380/labs/storage-local/resources/localvolume.yml
+[student@workstation storage-local]$
+Review the resources/localvolume.yml template file.
+
+[student@workstation storage-local]$ cat resources/localvolume.yml
+apiVersion: local.storage.openshift.io/v1
+kind: LocalVolume
+metadata:
+  name: example  1
+spec:
+  storageClassDevices:
+  - devicePaths:
+    - /dev/vde  2
+    - /dev/vdf  3
+    fsType: ext4
+    storageClassName: foobar  4
+    volumeMode: Filesystem
+1
+
+In the next step, change the name to local-storage.
+
+2 3
+
+In the next step, change the devicePaths list to only contain the /dev/vdb device.
+
+4
+
+In the next step, change the storage class name to local-blk.
+
+Use your preferred editor to update values in the resources/localvolume.yml file. Ensure the file matches the following content, and then save the file.
+
+apiVersion: local.storage.openshift.io/v1
+kind: LocalVolume
+metadata:
+  name: local-storage
+spec:
+  storageClassDevices:
+  - devicePaths:
+    - /dev/vdb
+    fsType: ext4
+    storageClassName: local-blk
+    volumeMode: Filesystem
+Use the localvolume.yml file to create the LocalVolume resource.
+
+[student@workstation storage-local]$ oc create -f resources/localvolume.yml
+localvolume.local.storage.openshift.io/local-storage created
+Verify that the local-storage resource exists.
+
+[student@workstation storage-local]$ oc get localvolume
+NAME            AGE
+local-storage   71s
+Verify that the operator uses the custom resource to create persistent volumes.
+
+After you create the LocalVolume resource, verify that the operator deploys pods to each worker node to control local storage provisioning:
+
+[student@workstation storage-local]$ oc get pods
+NAME                                      READY   STATUS    RESTARTS  AGE
+local-storage-local-diskmaker-6rqbv       1/1     Running   0         29s
+...output omitted...
+local-storage-local-diskmaker-zsnqg       1/1     Running   0         30s
+local-storage-local-provisioner-4cqnr     1/1     Running   0         30s
+...output omitted...
+local-storage-local-provisioner-zkfn8     1/1     Running   0         29s
+local-storage-operator-75d7454577-kzr9b   1/1     Running   0         11m
+There are six local-diskmaker pods, and six local-provisioner pods. Each of the six nodes contains a local-diskmaker and local-provisioner pod.
+
+Verify that the local storage operator creates three persistent volumes.
+
+[student@workstation storage-local]$ oc get pv
+NAME                CAPACITY   ...   STORAGECLASS    REASON   AGE
+local-pv-21231ed8    20Gi      ...   local-blk                27s
+local-pv-6013b152    20Gi      ...   local-blk                27s
+local-pv-80eb4d7f    20Gi      ...   local-blk                28s
+...output omitted...
+Because the additional /dev/vdb block device exists only on the worker04, worker05, and worker06 nodes, only three persistent volumes exist.
+
+NOTE
+If the command output is difficult to read, try a different command to filter specific columns.
+
+To only display the NAME, CAPACITY, and STORAGECLASS columns, use the following command:
+
+[student@workstation local]$ NAME="NAME:.metadata.name"
+[student@workstation local]$ CAPACITY="CAPACITY:.spec.capacity.storage"
+[student@workstation local]$ CLASS="STORAGECLASS:.spec.storageClassName"
+[student@workstation local]$ oc get pv \
+>  -o custom-columns="$NAME,$CAPACITY,$CLASS"
+See oc get --help for more information about custom columns.
+
+Display the list of storage classes.
+
+[student@workstation storage-local]$ oc get storageclass
+NAME                     PROVISIONER                   ...
+...output omitted...
+local-blk                kubernetes.io/no-provisioner  ...
+...output omitted...
+The operator uses information in the LocalVolume custom resource to create the local-blk storage class.
+
+Change to the /home/student/ directory.
+
+[student@workstation storage-local]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab storage-local finish
+This concludes the section.

@@ -1,0 +1,314 @@
+Guided Exercise: Troubleshooting OpenShift Software-defined Networking
+In this exercise, you will diagnose and fix connectivity issues with a Kubernetes-style application deployment.
+
+Outcomes
+
+You should be able to:
+
+Deploy the To Do Node.js application.
+
+Create a route to expose an application service.
+
+Troubleshoot communication between pods in your application using oc debug.
+
+Update an OpenShift service.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+The command ensures that the cluster API is reachable.
+
+[student@workstation ~]$ lab network-sdn start
+As an OpenShift developer, you just completed the migration of a To Do Node.js application to OpenShift. The application is comprised of two deployments, one for the database, and one for the front end. It also contains two services for communication between pods.
+
+Although the application seems to initialize, you cannot access it via a web browser. In this activity, you will troubleshoot your application and correct the issue.
+
+Log in to the OpenShift cluster and create the network-sdn project.
+
+Log in to the cluster as the developer user.
+
+[student@workstation ~]$ oc login -u developer -p developer \
+>    https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Create the network-sdn project.
+
+[student@workstation ~]$ oc new-project network-sdn
+Now using project "network-sdn" on server "https://api.ocp4.example.com:6443".
+...output omitted...
+Deploy the database and restore its data.
+
+The /home/student/DO280/labs/network-sdn/todo-db.yaml file defines the following resources:
+
+A deployment that creates a container based on a MySQL image.
+
+A service that points to the mysql application.
+
+Go to the network-sdn directory and list the files. In a later step, you will use db-data.sql to initialize the database for the application.
+
+[student@workstation ~]$ cd ~/DO280/labs/network-sdn
+[student@workstation network-sdn]$ ls
+db-data.sql  todo-db.yaml  todo-frontend.yaml
+Use oc create with the -f option against todo-db.yml to deploy the database server pod.
+
+[student@workstation network-sdn]$ oc create -f todo-db.yaml
+deployment.apps/mysql created
+service/mysql created
+Run the oc status command to review the resources that are present in the project. The mysql service points to the database pod.
+
+[student@workstation network-sdn]$ oc status
+In project network-sdn on server https://api.ocp4.example.com:6443
+
+svc/mysql - 172.30.223.41:3306
+  deployment/mysql deploys registry.access.redhat.com/rhscl/mysql-57-rhel7:5.7-47
+    deployment #1 running for 4 seconds - 0/1 pods
+...output omitted...
+Wait a few moments to ensure that the database pod is running. Retrieve the name of the database pod to restore the tables of the items database.
+
+[student@workstation network-sdn]$ oc get pods
+NAME                    READY   STATUS    RESTARTS   AGE
+mysql-94dc6645b-hjjqb   1/1     Running   0          33m
+Use the oc cp command to transfer the database dump to the pod. Make sure to replace the pod name with the one you obtained in the previous step.
+
+[student@workstation network-sdn]$ oc cp db-data.sql mysql-94dc6645b-hjjqb:/tmp/
+NOTE
+The command does not produce any output.
+
+Use the oc rsh command to connect to the pod and restore the database.
+
+[student@workstation network-sdn]$ oc rsh mysql-94dc6645b-hjjqb bash
+bash-4.2$ mysql -u root items < /tmp/db-data.sql
+Ensure that the Item table is present in the database.
+
+bash-4.2$ mysql -u root items -e "show tables;"
++-----------------+
+| Tables_in_items |
++-----------------+
+| Item            |
++-----------------+
+Exit the container.
+
+bash-4.2$ exit
+exit
+Deploy the front end application. The /home/student/DO280/labs/network-sdn/todo-frontend.yaml file defines the following resources:
+
+A deployment that creates the Todo Node.js application.
+
+A service that points to the frontend application.
+
+Use the oc create command to create the front-end application.
+
+[student@workstation network-sdn]$ oc create -f todo-frontend.yaml
+deployment.apps/frontend created
+service/frontend created
+Wait a few moments for the front end container to start, and then run the oc get pods command.
+
+[student@workstation network-sdn]$ oc get pods
+NAME                        READY   STATUS    RESTARTS   AGE
+frontend-57b8b445df-f56qh   1/1     Running   0          34s
+...output omitted...
+Create a route to access the frontend service and access the application.
+
+You must create a route to access the application from an external network. To create this route, use the oc expose command against the frontend service. Use the --hostname option to override the default FQDN that OpenShift creates.
+
+[student@workstation network-sdn]$ oc expose service frontend \
+>    --hostname todo.apps.ocp4.example.com
+route.route.openshift.io/frontend exposed
+List the routes in the project.
+
+[student@workstation network-sdn]$ oc get routes
+NAME       HOST/PORT                    PATH   SERVICES   PORT   ...
+frontend   todo.apps.ocp4.example.com          frontend   8080   ...
+As you can see in the example, OpenShift detects the port on which the application listens and creates a forwarding rule from port 80 to port 8080, which is the target port.
+
+From workstation, open Firefox and access http://todo.apps.ocp4.example.com/todo/. Make sure to add the trailing slash at the end of the URL.
+
+The application is not reachable, as shown in the following screen capture.
+
+
+Inspect the pod logs for errors. The output does not indicate any errors.
+
+[student@workstation network-sdn]$ oc logs frontend-57b8b445df-f56qh
+App is ready at : 8080
+Run oc debug to create a carbon copy of an existing pod in the frontend deployment. You use this pod to check connectivity to the database.
+
+Before creating a debug pod, retrieve the database service IP. In a later step, you use the curl command to access the database endpoint.
+
+The JSONPath expression allows you to retrieve the service IP.
+
+[student@workstation network-sdn]$ oc get service/mysql \
+>    -o jsonpath="{.spec.clusterIP}{'\n'}"
+172.30.103.29
+Run the oc debug command against the frontend deployment, which runs the web application pod.
+
+[student@workstation network-sdn]$ oc debug -t deployment/frontend
+Starting pod/frontend-debug ...
+Pod IP: 10.131.0.144
+If you don't see a command prompt, try pressing enter.
+sh-4.2$ 
+One way to test the connectivity between the frontend deployment and the database is using curl, which supports a variety of protocols.
+
+Use curl to connect to the database over port 3306, which is the MySQL default port. Make sure to replace the IP address with the one that you obtained previously for the mysql service. When finished, type Ctrl+C to exit the session, and then type exit to exit the debug pod.
+
+sh-4.2$ curl -v telnet://172.30.103.29:3306
+* About to connect() to 172.30.103.29 port 3306 (#0)
+*   Trying 172.30.103.29
+* Connected to 172.30.103.29 (172.30.103.29) port 3306 (#0)
+J
+8.0.21
+* RCVD IAC 2
+* RCVD IAC 199
+Ctrl+C
+sh-4.2$ exit
+exit
+
+Removing debug pod ...
+The output indicates that the database is up and running, and that it is accessible from the frontend deployment.
+
+In the following steps, you ensure that the network connectivity inside the cluster is operational by connecting to the front end container from the database container.
+
+Obtain some information about the frontend pod, and then use the oc debug command to diagnose the issue from the mysql deployment.
+
+Before creating a debug pod, retrieve IP address of the frontend service.
+
+[student@workstation network-sdn]$ oc get service/frontend \
+>    -o jsonpath="{.spec.clusterIP}{'\n'}"
+172.30.23.147
+Run the oc debug command to create a container for troubleshooting based on the mysql deployment. You must override the container image because the MySQL Server image does not provide the curl command.
+
+[student@workstation network-sdn]$ oc debug -t deployment/mysql \
+>    --image registry.access.redhat.com/ubi8/ubi:8.0
+Starting pod/mysql-debug ...
+Pod IP: 10.131.0.146
+If you don't see a command prompt, try pressing enter.
+sh-4.4$ 
+Use the curl command to connect to the frontend application over port 8080. Make sure to replace the IP address with the one that you obtained previously for the frontend service.
+
+The following output indicates that the curl command times out. This could indicate either that the application is not running or that the service is not able to access the application.
+
+sh-4.4$ curl -m 10 -v http://172.30.23.147:8080
+* Rebuilt URL to: http://172.30.23.147:8080/
+*   Trying 172.30.23.147...
+* TCP_NODELAY set
+* Connection timed out after 10000 milliseconds
+* Closing connection 0
+curl: (28) Connection timed out after 10000 milliseconds
+Exit the debug pod.
+
+sh-4.4$ exit
+exit
+
+Removing debug pod ...
+In the following steps, you connect to the frontend pod through its private IP. This allows testing, whether or not the issue is related to the service.
+
+Retrieve the IP of the frontend pod.
+
+[student@workstation network-sdn]$ oc get pods -o wide -l name=frontend
+NAME                        READY   STATUS    RESTARTS   AGE   IP             ...
+frontend-57b8b445df-f56qh   1/1     Running   0          39m   10.128.2.61   ...
+Create a debug pod from the mysql deployment.
+
+[student@workstation network-sdn]$ oc debug -t deployment/mysql \
+>    --image registry.access.redhat.com/ubi8/ubi:8.0
+Starting pod/mysql-debug ...
+Pod IP: 10.131.1.27
+If you don't see a command prompt, try pressing enter.
+sh-4.4$ 
+Run the curl command in verbose mode against the frontend pod on port 8080. Replace the IP address with the one that you obtained previously for the frontend pod.
+
+sh-4.2$ curl -v http://10.128.2.61:8080/todo/
+*   Trying 10.128.2.61...
+* TCP_NODELAY set
+* Connected to 10.128.2.61 (10.128.2.61) port 8080 (#0)
+> GET /todo/ HTTP/1.1
+> Host: 10.128.2.61:8080
+> User-Agent: curl/7.61.1
+> Accept: */*
+>
+< HTTP/1.1 200 OK
+...output omitted...
+The curl command can access the application through the pod's private IP.
+
+Exit the debug pod.
+
+sh-4.2$ exit
+exit
+
+Removing debug pod ...
+Review the configuration of the frontend service.
+
+List the services in the project and ensure that the frontend service exists.
+
+[student@workstation network-sdn]$ oc get svc
+NAME       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)     AGE
+frontend   ClusterIP   172.30.23.147   <none>        8080/TCP    93m
+mysql      ClusterIP   172.30.103.29   <none>        3306/TCP    93m
+Review the configuration and status of the frontend service. Notice the value of the service selector that indicates to which pod the service should forward packets.
+
+[student@workstation network-sdn]$ oc describe svc/frontend
+Name:              frontend
+Namespace:         network-sdn
+Labels:            app=todonodejs
+                   name=frontend
+Annotations:      <none>
+Selector:          name=api
+Type:              ClusterIP
+IP:                172.30.23.147
+Port:              <unset>  8080/TCP
+TargetPort:        8080/TCP
+Endpoints:         <none>
+Session Affinity:  None
+Events:            <none>
+This output also indicates that the service has no endpoint, so it is not able to forward incoming traffic to the application.
+
+Retrieve the labels of the frontend deployment. The output shows that pods are created with a name label that has a value of frontend, whereas the service in the previous step uses api as the value.
+
+[student@workstation network-sdn]$ oc describe deployment/frontend | \
+>    grep Labels -A1
+Labels:                 app=todonodejs
+                        name=frontend
+--
+  Labels:  app=todonodejs
+           name=frontend
+Update the frontend service and access the application.
+
+Run the oc edit command to edit the frontend service. Update the selector to match the correct label.
+
+[student@workstation network-sdn]$ oc edit svc/frontend
+Locate the section that defines the selector, and then update the name: frontend label inside the selector. After making the changes, exit the editor.
+
+...output omitted...
+  selector:
+    name: frontend
+...output omitted...
+Save your changes and verify that the oc edit command applied them.
+
+service/frontend edited
+Review the service configuration to ensure that the service has an endpoint.
+
+[student@workstation network-sdn]$ oc describe svc/frontend
+Name:              frontend
+Namespace:         network-sdn
+Labels:            app=todonodejs
+                   name=frontend
+Annotations:       <none>
+Selector:          name=frontend
+Type:              ClusterIP
+IP:                172.30.169.113
+Port:              <unset>  8080/TCP
+TargetPort:        8080/TCP
+Endpoints:         10.128.2.61:8080
+Session Affinity:  None
+Events:            <none>
+From the workstation machine, open Firefox and access the To Do application at http://todo.apps.ocp4.example.com/todo/.
+
+You should see the To Do application.
+Go to the user home directory and delete the network-sdn project.
+
+[student@workstation network-sdn]$ cd
+[student@workstation ~]$ oc delete project network-sdn
+project.project.openshift.io "network-sdn" deleted
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab network-sdn finish

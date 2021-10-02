@@ -1,0 +1,211 @@
+
+Guided Exercise: Querying OpenShift Resources
+In this exercise you will query OpenShift resources using the oc get command and JSONPath.
+
+Outcomes
+
+You should be able to:
+
+Extract attributes from OpenShift resources using JSONPath expressions and filters.
+
+Write shell scripts that extract and modify data from OpenShift resources reliably.
+
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+
+[student@workstation ~]$ lab automation-resources start
+Procedure 2.1. Instructions
+
+Get the expiry date for the web console certificate.
+
+From the workstation machine, log in to OpenShift as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+Login successful.
+...output omitted...
+Store the host name of the web console in a variable.
+
+[student@workstation ~]$ console=$(oc get route -n openshift-console console \
+> -o jsonpath='{.spec.host}')
+[student@workstation ~]$ echo $console
+console-openshift-console.apps.ocp4.example.com
+Use the curl command to display the expiry date of the OpenShift Router TLS certificate.
+
+[student@workstation ~]$ curl https://$console -k -v 2>&1 | grep 'expire date'
+*  expire date: Jun 22 16:43:53 2022 GMT
+Check that all routes respond.
+
+Get the host names for all routes and store them in a variable.
+
+[student@workstation ~]$ hosts=$(oc get route -A \
+> -o jsonpath='{.items[*].spec.host}')
+Use curl to get the HTTP status for each route.
+
+[student@workstation ~]$ for host in $hosts ; do \
+> curl https://$host -k -w "%{url_effective} %{http_code}\n" -o /dev/null -s ; \
+> done
+https://oauth-openshift.apps.ocp4.example.com/ 403
+https://console-openshift-console.apps.ocp4.example.com/ 200
+https://downloads-openshift-console.apps.ocp4.example.com/ 200
+https://alertmanager-main-openshift-monitoring.apps.ocp4.example.com/ 403
+https://grafana-openshift-monitoring.apps.ocp4.example.com/ 403
+https://prometheus-k8s-openshift-monitoring.apps.ocp4.example.com/ 403
+https://thanos-querier-openshift-monitoring.apps.ocp4.example.com/ 403
+Create a script to list the users configured in the HTPasswd identity provider.
+
+Show the OAuth configuration in JSON format to locate the name of the secret that contains the users.
+
+[student@workstation ~]$ oc get oauth cluster -o json
+{
+    ...output omitted...
+    },
+    "spec": {
+        "identityProviders": [
+            {
+                "htpasswd": {
+                    "fileData": {
+                        "name": "htpasswd-secret"
+                    }
+                },
+                "mappingMethod": "claim",
+                "name": "htpasswd_provider",
+                "type": "HTPasswd"
+            }
+        ]
+    }
+}
+Use JSONPath with a filter to extract the secret name from the identity provider named htpasswd_provider.
+
+[student@workstation ~]$ filter='?(.name=="htpasswd_provider")'
+[student@workstation ~]$ oc get oauth cluster \
+> -o jsonpath="{.spec.identityProviders[$filter].htpasswd.fileData.name}{'\n'}"
+htpasswd-secret
+Create the get-users.sh script with contents from the following listing.
+
+You can compare your script with the solution file in the ~/DO380/solutions/automation-resources/ folder.
+
+#!/bin/sh
+
+filter='?(.name=="htpasswd_provider")'
+
+secret_name=$(oc get oauth cluster \
+  -o jsonpath="{.spec.identityProviders[$filter].htpasswd.fileData.name}")
+
+secret_file=$(oc extract secret/$secret_name -n openshift-config --confirm)
+
+cut -d : -f 1 <$secret_file
+rm $secret_file
+Execute the script.
+
+[student@workstation ~]$ chmod +x get-users.sh
+[student@workstation ~]$ ./get-users.sh
+admin
+developer
+Fix a script that adds a user to the HTPasswd identity provider .
+
+Change to the ~/DO380/labs/automation-resources/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/automation-resources/
+Examine the incomplete add-user.sh script. You will make changes at a later step, after you test the incomplete script.
+
+The script finds the HTPasswd secret and adds a new user to the secret. Then, the script tests if the new user can log in on OpenShift without affecting the Kubernetes context of the current Linux user.
+
+The following partial listing shows important commands inside the incomplete add-user.sh script.
+
+...output omitted...
+
+secret=$(oc get oauth/cluster \
+    -o jsonpath='{.spec.identityProviders[0].htpasswd.fileData.name}')
+tmpdir=$(mktemp -d)
+oc extract -n openshift-config secret/$secret \
+    --keys htpasswd --to $tmpdir
+htpasswd -b $tmpdir/htpasswd $user $pass
+oc set data secret/$secret --from-file htpasswd=$tmpdir/htpasswd \
+    -n openshift-config
+
+...output omitted...
+
+oc login -u $user -p $pass --kubeconfig /dev/null \
+    --insecure-skip-tls-verify \
+    https://api.ocp4.example.com:6443
+Try to add a user using the script. Expect the script to fail. If it does not fail, then try again, changing the user name until you see an error message similar to the following:
+
+[student@workstation automation-resources]$ ./add-user.sh user1 user1
+/tmp/tmp.cbAMhwTRob/htpasswd
+Adding password for user user1
+secret/htpasswd-secret data updated
+Login failed (401 Unauthorized)
+Verify you have provided correct credentials.
+The script might fail because the OpenShift Authentication cluster operator takes time to react to the change in the HTPasswd secret and restart the OAuth pods.
+
+If there is a log in attempt before the OAuth pods restart, then the new user is not recognized.
+
+Log in as the new user. If you cannot log in, then wait a few seconds and try again. Repeat until you can log in successfully.
+
+[student@workstation automation-resources]$ oc login -u user1 -p user1
+Login successful.
+...output omitted...
+Log in as the admin user.
+
+[student@workstation automation-resources]$ oc login -u admin -p redhat
+Edit the add-user.sh script to wait until:
+
+The Authentication Operator notices the change in the secret.
+
+New OAuth pods are deployed.
+
+Old OAuth pods are removed.
+
+The script must wait until old OAuth pods are removed because both old and new pods get requests from the OAuth service. If an authentication request reaches one of the old pods, then it does not accept the new user.
+
+Replace the FIXME comments with the commands highlighted in the following partial listing. You can compare your edits with the solution located in the ~/DO380/solutions/automation-resources/ folder.
+
+...output omitted...
+
+pass=$2
+
+oldpods="$(oc get pod -n openshift-authentication -o name)"
+
+secret=$(oc get oauth/cluster \
+    -o jsonpath='{.spec.identityProviders[0].htpasswd.fileData.name}')
+
+...output omitted...
+
+rm -rf $tmpdir
+
+oc wait co/authentication --for condition=Progressing \
+    --timeout 90s
+
+oc rollout status -n openshift-authentication deployment/oauth-openshift \
+    --timeout 90s
+
+oc wait $oldpods -n openshift-authentication --for delete \
+    --timeout 90s
+
+oc login -u $user -p $pass --kubeconfig /dev/null \
+    --insecure-skip-tls-verify \
+    https://api.ocp4.example.com:6443
+Add another user, and then note if log in succeeds.
+
+If you see a "pod not found" error message, similar to the following sample output, then you can safely ignore it. The error occurs if OpenShift has finished deleting the pod before the oc wait command executes.
+
+[student@workstation automation-resources]$ ./add-user.sh user2 user2
+...output omitted...
+Adding password for user user2
+secret/htpasswd-secret data updated
+clusteroperator.config.openshift.io/authentication condition met
+...output omitted...
+deployment "oauth-openshift" successfully rolled out
+pod/oauth-openshift-7c9bd95b5d-klq5w condition met
+Error from server (NotFound): pods "oauth-openshift-7c9bd95b5d-qvrwg" not found
+Login successful.
+...output omitted...
+Change to the /home/student/ directory.
+
+[student@workstation automation-resources]$ cd
+Finish
+
+On the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab automation-resources finish
+This concludes the section.

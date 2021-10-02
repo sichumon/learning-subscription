@@ -1,0 +1,92 @@
+Chapter 9. Comprehensive Review
+Comprehensive Review
+Lab: Troubleshoot an OpenShift Cluster and Applications
+Lab: Configure a Project Template with Resource and Network Restrictions
+Abstract
+
+Goal	Review tasks from Red Hat OpenShift Administration II: Operating a Production Kubernetes Cluster
+Objectives	
+Allow developers to access a cluster's and troubleshoot application deployments.
+
+Configure the cluster default project template to ensure that new projects enforce default quotas, resource limits, and network policies.
+
+Sections	
+Comprehensive Review
+
+Lab	
+Troubleshoot an OpenShift Cluster and Applications
+
+Configure a Project Template with Resource and Network Restrictions
+
+Comprehensive Review
+Objectives
+After completing this section, you should have reviewed and refreshed the knowledge and skills learned in Red Hat OpenShift Administration II: Operating a Production Kubernetes Cluster.
+
+Reviewing Red Hat OpenShift Administration II: Operating a Production Kubernetes Cluster
+Before beginning the comprehensive review for this course, you should be comfortable with the topics covered in each chapter.
+
+You can refer to earlier sections in the textbook for extra study.
+
+Chapter 1, Describing the Red Hat OpenShift Container Platform
+Describe the architecture of OpenShift Container Platform.
+
+Describe the typical usage of the product and its features.
+
+Describe the architecture of Red Hat OpenShift Container Platform.
+
+Describe what a cluster operator is, how it works, and name the major cluster operators.
+
+Chapter 2, Verifying the Health of a Cluster
+Describe OpenShift installation methods and verify the health of a newly installed cluster.
+
+Describe the OpenShift installation process, full-stack automation, and pre-existing infastructure installation methods.
+
+Execute commands that assist in troubleshooting common problems.
+
+Identify the components and resources of persistent storage and deploy an application that uses a persistent volume claim.
+
+Chapter 3, Configuring Authentication and Authorization
+Configure authentication with the HTPasswd identity provider and assign roles to users and groups.
+
+Configure the HTPasswd identity provider for OpenShift authentication.
+
+Define role-based access controls and apply permissions to users and groups.
+
+Chapter 4, Configuring Application Security
+Restrict permissions of applications using security context constraints and protect access credentials using secrets.
+
+Create and apply secrets to manage sensitive information.
+
+Create service accounts and apply permissions.
+
+Chapter 5, Configuring OpenShift Networking for Applications
+Troubleshoot OpenShift software-defined networking (SDN) and configure network policies.
+
+Troubleshoot OpenShift software-defined networking using the command-line interface.
+
+Allow and protect network connections to applications inside an OpenShift cluster.
+
+Restrict network traffic between projects and pods.
+
+Chapter 6, Controlling Pod Scheduling
+Control the nodes on which a pod runs.
+
+Describe pod scheduling algorithms, the methods used to influence scheduling, and apply these methods.
+
+Limit the resources consumed by containers, pods, and projects.
+
+Control the number of replicas of a pod.
+
+Chapter 7, Describing Cluster Updates
+Describe how to perform a cluster update.
+
+Describe the cluster update process.
+
+Chapter 8, Managing a Cluster with the Web Console
+Manage a Red Hat OpenShift cluster using the web console.
+
+Perform cluster administration with the web console.
+
+Manage applications and Kubernetes Operators with the web console.
+
+Examine performance and health metrics for cluster nodes and applications.

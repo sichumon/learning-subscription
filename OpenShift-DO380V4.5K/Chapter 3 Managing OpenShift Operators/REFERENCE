@@ -1,0 +1,11 @@
+ 
+REFERENCES
+For more information about the OLM, refer to the Understanding Operators chapter in the Red Hat OpenShift Container Platform 4.5 Operators documentation at https://access.redhat.com/documentation/en-us/openshift_container_platform/4.5/html-single/operators/index#olm-what-operators-are
+
+For more information about adding operators to an OpenShift Cluster, refer to the Adding Operators to a cluster chapter in the Red Hat OpenShift Container Platform 4.5 Operators documentation at https://access.redhat.com/documentation/en-us/openshift_container_platform/4.5/html-single/operators/index#olm-adding-operators-to-a-cluster
+
+REFERENCES
+For more information on the architecture of cluster operators, refer to the Operators in OpenShift Container Platform section in the The OpenShift Container Platform control plane chapter in the Red Hat OpenShift Container Platform 4.5 Architecture documentation at https://access.redhat.com/documentation/en-us/openshift_container_platform/4.5/html-single/architecture/index#operators-overview_control-plane
+
+For more information on the cluster operators in an OpenShift cluster, refer to the Red Hat Operators chapter in the Red Hat OpenShift Container Platform 4.5 Operators documentation at https://access.redhat.com/documentation/en-us/openshift_container_platform/4.5/html-single/operators/red-hat-operators#red-hat-operators
+

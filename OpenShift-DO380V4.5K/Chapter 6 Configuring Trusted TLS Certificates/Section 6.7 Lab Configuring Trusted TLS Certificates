@@ -1,0 +1,202 @@
+
+Lab: Configuring Trusted TLS Certificates
+In this lab, you will configure OpenShift to use certificates signed by an enterprise certificate authority.
+
+Outcomes
+
+You should be able to:
+
+Update the ingress controller operator and the master API to use certificates signed by the classroom certificate authority.
+
+Confirm that https://console-openshift-console.apps.ocp4.example.com and https://api.ocp4.example.com:6443 use the updated certificates.
+
+To perform this exercise, ensure you have access to:
+
+A running OpenShift cluster.
+
+On the workstation machine, use the lab command to prepare your system for this exercise.
+
+This command:
+
+Configures the OpenShift cluster to use default certificates.
+
+Creates a classroom CA certificate at /etc/pki/tls/certs/classroom-ca.pem.
+
+Downloads sample YAML files to /home/student/DO380/labs/certificates-review/.
+
+Creates a combined wildcard and master API certificate signed by /etc/pki/tls/certs/classroom-ca.pem.
+
+[student@workstation ~]$ lab certificates-review start
+IMPORTANT
+If the lab command returns the message, "Cannot login to OpenShift as the 'kubeadmin' user with the password of '<PASSWORD>'", then the kube-apiserver pods in the openshift-kube-apiserver namespace have not finished redeploying. Monitor the progress of the kube-apiserver cluster operator with the watch oc get co/kube-apiserver command until the only message displayed is "Unable to connect to the server: x509: certificate signed by unknown authority". Then, press Ctrl+C to exit the watch command, and then run the lab command again.
+
+NOTE
+Consider using the Configuring certificates chapter of the Red Hat OpenShift Container Platform Authentication guide as a reference.
+
+Procedure 6.4. Instructions
+
+As the OpenShift admin user, update the cluster-wide proxy to use the /home/student/DO380/labs/certificates-review/review-combined.pem certificate.
+
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+> https://api.ocp4.example.com:6443
+The server uses a certificate signed by an unknown authority.
+You can bypass the certificate check, but any data you send to the server could be intercepted by others.
+Use insecure connections? (y/n): y
+
+Login successful.
+
+...output omitted...
+NOTE
+You might get an error x509: certificate signed by unknown authority while attempting to log in. This happens because the APIserver pods are being restarted. Please wait a few seconds and attempt to log in again.
+
+Change to the ~/DO380/labs/certificates-review/ directory.
+
+[student@workstation ~]$ cd ~/DO380/labs/certificates-review/
+Create the review-bundle configuration map in the openshift-config namespace using the review-combined.pem certificate.
+
+[student@workstation certificates-review]$ oc create configmap review-bundle \
+>   --from-file ca-bundle.crt=review-combined.pem -n openshift-config
+configmap/review-bundle created
+Modify the proxy-cluster.yml file.
+
+[student@workstation certificates-review]$ vim proxy-cluster.yml
+Replace <CONFIGMAP-NAME> with the name of the configuration map that you created (review-bundle).
+
+apiVersion: config.openshift.io/v1
+kind: Proxy
+metadata:
+  name: cluster
+spec:
+  trustedCA:
+    name: review-bundle
+Update the proxy/cluster resource to use the review-bundle configuration map.
+
+[student@workstation certificates-review]$ oc apply -f proxy-cluster.yml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+proxy.config.openshift.io/cluster configured
+NOTE
+The following oc patch command is an alternative to editing proxy-cluster.yml and using the oc apply command.
+
+$ oc patch proxy/cluster --type=merge \
+   -p '{"spec":{"trustedCA":{"name":"review-bundle"}}}'
+Update the ingress controller operator to use the /home/student/DO380/labs/certificates-review/review-combined.pem certificate and /home/student/DO380/labs/certificates-review/review-key.pem key.
+
+Create the review-tls secret in the openshift-ingress namespace using the review-combined.pem certificate and review-key.pem key.
+
+[student@workstation certificates-review]$ oc create secret tls review-tls \
+>   --cert review-combined.pem --key review-key.pem -n openshift-ingress
+secret/review-tls created
+Modify the ingresscontrollers.yml file.
+
+[student@workstation certificates-review]$ vim ingresscontrollers.yml
+Replace <SECRET-NAME> with the name of the secret that you created (review-tls).
+
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  finalizers:
+  - ingresscontroller.operator.openshift.io/finalizer-ingresscontroller
+  name: default
+  namespace: openshift-ingress-operator
+spec:
+  defaultCertificate:
+    name: review-tls
+  replicas: 2
+Update the ingresscontrollers/default resource to use the review-tls secret.
+
+[student@workstation certificates-review]$ oc apply -f ingresscontrollers.yml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+ingresscontroller.operator.openshift.io/default configured
+NOTE
+The following oc patch command is an alternative to editing ingresscontrollers.yml and using the oc apply command.
+
+$ oc patch ingresscontroller.operator default \
+   --type=merge -p '{"spec":{"defaultCertificate": \
+   {"name": "review-tls"}}}' -n openshift-ingress-operator
+Update the API server to use the /home/student/DO380/labs/certificates-review/review-combined.pem certificate and /home/student/DO380/labs/certificates-review/review-key.pem key.
+
+Create the review-tls secret in the openshift-config namespace using the review-combined.pem certificate and review-key.pem key.
+
+[student@workstation certificates-review]$ oc create secret tls review-tls \
+>   --cert review-combined.pem --key review-key.pem -n openshift-config
+secret/review-tls created
+Modify the apiserver-cluster.yml file.
+
+[student@workstation certificates-review]$ vim apiserver-cluster.yml
+Replace <MASTER-API> with api.ocp4.example.com. Replace <SECRET-NAME> with the name of the secret that you created (review-tls).
+
+apiVersion: config.openshift.io/v1
+kind: APIServer
+metadata:
+  name: cluster
+spec:
+  servingCerts:
+    namedCertificates:
+    - names:
+      - api.ocp4.example.com
+      servingCertificate:
+        name: review-tls
+Update the apiserver/cluster resource to use the review-tls secret.
+
+[student@workstation certificates-review]$ oc apply -f apiserver-cluster.yml
+Warning: oc apply should be used on resource created by either oc create --save-config or oc apply
+apiserver.config.openshift.io/cluster configured
+NOTE
+The following oc patch command is an alternative to editing apiserver-cluster.yml and using the oc apply command.
+
+$ oc patch apiserver cluster --type=merge \
+   -p '{"spec":{"servingCerts": {"namedCertificates": \
+   [{"names": ["api.ocp4.example.com"], "servingCertificate": \
+   {"name": "review-tls"}}]}}}'
+Verify that https://console-openshift-console.apps.ocp4.example.com uses the updated certificate.
+
+A successful update to the ingresscontrollers/default resource redeploys the router pods in the openshift-ingress namespace. Verify the redeployment of the router pods. Press Ctrl+C to exit the watch command.
+
+[student@workstation certificates-review]$ watch oc get pods \
+>   -n openshift-ingress
+NAME                              READY   STATUS    RESTARTS   AGE
+router-default-567c74bcdd-6pvzz   1/1     Running   0          4m3s
+router-default-567c74bcdd-prv7m   1/1     Running   0          3m45s
+Access the web console URL at https://console-openshift-console.apps.ocp4.example.com using either the curl command or the Firefox web browser.
+
+[student@workstation certificates-review]$ curl -v $(oc whoami --show-console) \
+>   2>&1 | grep 'SSL certificate verify ok.'
+*  SSL certificate verify ok.
+If you access the URL using Firefox, then the URL field displays a green lock icon.
+
+Verify that https://api.ocp4.example.com:6443 uses the updated certificate.
+
+A successful update to the apiserver/cluster resource redeploys the apiserver pods in the openshift-kube-apiserver namespace. Verify the redeployment of the API server pods. The kube-apiserver cluster operator should no longer be progressing. Press Ctrl+C to exit the watch command.
+
+[student@workstation certificates-review]$ watch oc get co/kube-apiserver
+NAME             VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+kube-apiserver   4.5.4     True        False         False      28d
+NOTE
+It can take five to ten minutes before the kube-apiserver pods finish deploying.
+
+Change to the /home/student/ directory.
+
+[student@workstation certificates-review]$ cd
+Remove the ~/.kube/ directory.
+
+[student@workstation ~]$ rm -rf ~/.kube/
+Log in to your OpenShift cluster as the admin user.
+
+[student@workstation ~]$ oc login -u admin -p redhat \
+>   https://api.ocp4.example.com:6443
+Login successful.
+
+...output omitted...
+Evaluation
+
+As the student user on the workstation machine, use the lab command to grade your work. Correct any reported failures and rerun the command until successful.
+
+[student@workstation ~]$ lab certificates-review grade
+Finish
+
+As the student user on the workstation machine, use the lab command to complete this exercise. This is important to ensure that resources from previous exercises do not impact upcoming exercises.
+
+[student@workstation ~]$ lab certificates-review finish
+This concludes the section.

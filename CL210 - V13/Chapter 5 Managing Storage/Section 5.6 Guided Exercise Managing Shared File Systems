@@ -1,0 +1,277 @@
+Guided Exercise: Managing Shared File Systems
+In this exercise, you will create a shared file system and access it from an instance.
+
+Outcomes
+
+You should be able to create and use a shared file system with Red Hat Ceph Storage as its storage provider.
+
+Log in to workstation as student using student as the password.
+
+On workstation, run lab storage-manila setup to ensure that the environment is ready for the exercise. This command creates additional items that you are going to use at different steps of the exercise.
+
+[student@workstation ~]$ lab storage-manila setup
+From workstation, open an SSH session to controller0 as root.
+
+[student@workstation ~]$ ssh root@controller0
+[root@controller0 ~]# 
+Verify the state and the configuration settings of the OpenStack Shared File Systems service.
+
+On controller0, verify that the containers relevant to the Shared File Systems service are active.
+
+[root@controller0 ~]# docker ps --format="{{.Names}}\t{{.Status}}" | grep manila
+openstack-manila-share-docker-0 Up 25 minutes
+manila_api  Up 28 minutes
+manila_scheduler  Up 28 minutes (healthy)
+On controller0, verify the configuration settings of the Shared File Systems service that intends to use the Red Hat Ceph Storage in the classroom environment as the storage provider.
+
+[root@controller0 ~]# crudini --get \
+/var/lib/config-data/puppet-generated/manila/etc/manila/manila.conf \
+DEFAULT enabled_share_backends
+cephfs
+[root@controller0 ~]# crudini --get \
+/var/lib/config-data/puppet-generated/manila/etc/manila/manila.conf \
+DEFAULT enabled_share_protocols
+CEPHFS
+[root@controller0 ~]# tail \
+/var/lib/config-data/puppet-generated/manila/etc/manila/manila.conf
+[cephfs]
+driver_handles_share_servers=False
+share_backend_name=cephfs
+share_driver=manila.share.drivers.cephfs.driver.CephFSDriver
+cephfs_conf_path=/etc/ceph/ceph.conf
+cephfs_auth_id=manila
+cephfs_cluster_name=ceph
+cephfs_enable_snapshots=False
+cephfs_protocol_helper_type=CEPHFS
+NOTE
+In general, the configuration file of the Shared File Systems service is /etc/manila/manila.conf. However, in the containerized overcloud, service configuration files are located under the /var/lib/config-data/puppet-generated/<service>/etc/<service>/ directory. Make the configuration changes in files under this directory to adjust settings for containerized services. To implement the changes, restart or reload the containers.
+
+Log off from controller0.
+
+[root@controller0 ~]# logout
+Connection to controller0 closed.
+[student@workstation ~]$ 
+As the overcloud user architect1, verify the status of the Shared File Systems service instances. Viewing the status of the Shared File Systems service instances requires administrative privileges.
+
+[student@workstation ~]$ source ~/architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ manila service-list \ 
+--columns Binary,Status,State
++------------------+---------+-------+
+| Binary           | Status  | State |
++------------------+---------+-------+
+| manila-scheduler | enabled | up    |
+| manila-share     | enabled | up    |
++------------------+---------+-------+
+Create the share finance-share1 of 1 GB capacity in the finance project. Create the cephfstype share type and use it for finance-share1.
+
+As architect1, create the share type cephfstype. Set the value of driver_handles_share_servers to false.
+
+[student@workstation ~(architect1-finance)]$ manila type-create cephfstype false
++----------------------+--------------------------------------+
+| Property             | Value                                |
++----------------------+--------------------------------------+
+| required_extra_specs | driver_handles_share_servers : False |
+| Name                 | cephfstype                           |
+| Visibility           | public                               |
+| is_default           | -                                    |
+| ID                   | bd3ae330-2170-4e57-a54f-865faacde5f1 |
+| optional_extra_specs |                                      |
+| Description          | None                                 |
++----------------------+--------------------------------------+
+IMPORTANT
+To dynamically scale the share nodes, set driver_handles_share_servers to true.
+
+Managing share types requires administrative rights. Load the architect1 user's credentials using the source /home/student/architect1-finance-rc command.
+
+As developer1, create the new share finance-share1.
+
+[student@workstation ~(architect1-finance)]$ source developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ manila create \
+--name finance-share1 --share-type cephfstype cephfs 1
+...output omitted...
+Verify that the new share is available.
+
+[student@workstation ~(developer1-finance)]$ manila list \
+--columns Name,'Share Proto',Status,'Share Type Name'
++----------------+-------------+-----------+-----------------+
+| Name           | Share Proto | Status    | Share Type Name |
++----------------+-------------+-----------+-----------------+
+| finance-share1 | CEPHFS      | available | cephfstype      |
++----------------+-------------+-----------+-----------------+
+Launch the finance-server1 instance using two network interfaces. The first interface is connected to the tenant network finance-network1. The second interface is connected to the storage provider network provider-storage, allowing the instance to directly reach the shared file system data network.
+
+As developer1, launch the instance with the following parameters.
+
+Name: finance-server1
+
+Flavor: default
+
+Image: rhel7
+
+SSH Keypair: example-keypair
+
+Network for first NIC: finance-network1
+
+Network for second NIC: provider-storage
+
+User data file: /home/student/manila/user-data.file
+
+[student@workstation ~(developer1-finance)]$ openstack server create \
+--flavor default \
+--image rhel7 \
+--key-name example-keypair \
+--nic net-id=finance-network1 \
+--nic net-id=provider-storage \
+--user-data /home/student/manila/user-data.file \
+finance-server1 --wait
+...output omitted...
+Add the available floating IP address to the instance.
+
+[student@workstation ~(developer1-finance)]$ openstack floating \
+ip list -c 'Floating IP Address'
++---------------------+
+| Floating IP Address |
++---------------------+
+| 172.25.250.107      |
++---------------------+
+[student@workstation ~(developer1-finance)]$ openstack server \
+add floating ip finance-server1 172.25.250.107
+Verify that the instance is reachable from workstation.
+
+[student@workstation ~(developer1-finance)]$ ping -c 3 172.25.250.107
+PING 172.25.250.107 (172.25.250.107) 56(84) bytes of data.
+64 bytes from 172.25.250.107: icmp_seq=1 ttl=63 time=1.76 ms
+64 bytes from 172.25.250.107: icmp_seq=2 ttl=63 time=1.04 ms
+64 bytes from 172.25.250.107: icmp_seq=3 ttl=63 time=0.587 ms
+
+--- 172.25.250.107 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2005ms
+rtt min/avg/max/mdev = 0.587/1.132/1.763/0.483 ms
+Create the exclusive cephx user client.cloud-user to access the Ceph-backed share finance-share1. Allow the client.cloud-user cephx user to read from and write to the share. The OpenStack Shared File Systems service uses the client.manila cephx user to authenticate as while communicating with the Ceph cluster, although it has more privileges than what an end user actually requires to access the share. You are going to use the cephx authentication mechanism for enabling access to the Ceph-backed share finance-share1.
+
+Open an SSH session to controller0 as root.
+
+[student@workstation ~(developer1-finance)]$ ssh root@controller0
+[root@controller0 ~]# 
+Create the cephx user client.cloud-user. Save the key ring to /root/cloud-user.keyring.
+
+[root@controller0 ~]# ceph --name=client.manila \
+--keyring=/etc/ceph/ceph.client.manila.keyring \
+auth get-or-create client.cloud-user > /root/cloud-user.keyring
+Log off from controller0.
+
+[root@controller0 ~]# logout
+Connection to controller0 closed.
+[student@workstation ~(developer1-finance)]$ 
+Copy the ceph.conf and cloud-user.keyring files to the finance-server1 instance launched in one of the preceding steps.
+
+[student@workstation ~(developer1-finance)]$ cd manila
+[student@workstation manila(developer1-finance)]$ scp \
+root@controller0:{cloud-user.keyring,/etc/ceph/ceph.conf} .
+cloud-user.keyring                            100%   68    36.3KB/s   00:00
+ceph.conf                                     100%  797   805.3KB/s   00:00
+[student@workstation manila(developer1-finance)]$ scp \
+{cloud-user.keyring,ceph.conf} cloud-user@172.25.250.107:
+Add and verify the access rights to finance-share1 for client.cloud-user.
+
+[student@workstation ~(developer1-finance)]$ manila access-allow \
+finance-share1 cephx cloud-user
++--------------+--------------------------------------+
+| Property     | Value                                |
++--------------+--------------------------------------+
+| access_key   | None                                 |
+| share_id     | c28b9123-ae9a-4951-a6d1-5b856c83a600 |
+| created_at   | 2018-10-11T10:15:22.000000           |
+| updated_at   | None                                 |
+| access_type  | cephx                                |
+| access_to    | cloud-user                           |
+| access_level | rw                                   |
+| state        | queued_to_apply                      |
+| id           | c4665a6b-7570-4221-b3cb-623d0bbef87d |
++--------------+--------------------------------------+
+[student@workstation ~(developer1-finance)]$ manila access-list \
+finance-share1 --columns access_to,access_level,state
++------------+--------------+--------+
+| Access_To  | Access_Level | State  |
++------------+--------------+--------+
+| cloud-user | rw           | active |
++------------+--------------+--------+
+If you omit the --access-level option, rw is used as the default access level.
+
+Access the finance-share1 share from the finance-server1 instance.
+
+Open an SSH session to finance-server1 as cloud-user.
+
+[student@workstation ~(developer1-finance)]$ ssh cloud-user@172.25.250.107
+[cloud-user@finance-server1 ~]$ 
+Create the mount point /mnt/ceph for the share.
+
+[cloud-user@finance-server1 ~]$ su -
+Password: redhat
+[root@finance-server1 ~]# mkdir /mnt/ceph
+Open another terminal as student on workstation. As the developer1 tenant user, determine the export location of finance-share1.
+
+[student@workstation ~]$ source developer1-finance-rc
+[student@workstation ~(developer1-finance)]$ manila share-export-location-list \
+finance-share1 --columns Path
++------------------------------------------------------------------------+
+| Path                                                                   |
++------------------------------------------------------------------------+
+| 172.24.3.1:6789:/volumes/_nogroup/cea022a9-c00c-4003-b6f3-8fea2a49bd5f |
++------------------------------------------------------------------------+
+Make a note of the export path. You need to use the export path while mounting the share.
+
+Enable the Ceph repositories on finance-server1 and install the ceph-fuse package.
+
+[root@finance-server1 ~]# curl -s -f \
+-o /etc/yum.repos.d/ceph.repo http://materials.example.com/ceph.repo
+[root@finance-server1 ~]# yum install ceph-fuse
+...output omitted...
+Is this ok [y/d/N]: y
+...output omitted...
+Complete!
+Mount the share on /mnt/ceph from finance-server1. Use the export path noted from the earlier step. Verify that the share is successfully mounted.
+
+[root@finance-server1 ~]# ceph-fuse /mnt/ceph/ \
+--id=cloud-user --conf=/home/cloud-user/ceph.conf \
+--keyring=/home/cloud-user/cloud-user.keyring \
+--client-mountpoint=/volumes/_nogroup/cea022a9-c00c-4003-b6f3-8fea2a49bd5f
+2018-10-26 00:20:28.786368 7fa70ae140c0 -1 init, newargv = 0x55e83fad2d80 newargc=9
+ceph-fuse[1487]: starting ceph client
+ceph-fuse[1487]: starting fuse
+[root@finance-server1 ~]# df -Th
+Filesystem     Type            Size  Used Avail Use% Mounted on
+...output omitted...
+ceph-fuse      fuse.ceph-fuse  1.0G     0  1.0G   0% /mnt/ceph
+Create a text file in the /mnt/ceph directory.
+
+[root@finance-server1 ~]# cd /mnt/ceph
+[root@finance-server1 ceph]# echo hello > hello.txt
+[root@finance-server1 ceph]# cat hello.txt
+hello
+This preceding commands confirm that the finance-share1 share is readable and writable based on the access rights set in one of the earlier steps.
+
+Log off from finance-server1.
+
+[root@finance-server1 ceph]# logout
+[cloud-user@finance-server1 ~]$ logout
+[student@workstation ~(developer1-finance)]$ 
+Terminate the finance-server1 instance and delete the finance-share1 share.
+
+Terminate finance-server1.
+
+[student@workstation ~(developer1-finance)]$ openstack server \
+delete finance-server1
+Delete finance-share1.
+
+[student@workstation ~(developer1-finance)]$ manila delete finance-share1
+Delete the share type cephfstype.
+
+[student@workstation ~(developer1-finance)]$ source architect1-finance-rc
+[student@workstation ~(architect1-finance)]$ manila type-delete cephfstype
+Cleanup
+
+On workstation, run the lab storage-manila cleanup script to clean up this exercise.
+
+[student@workstation ~]$ lab storage-manila cleanup
+This concludes the guided exercise.

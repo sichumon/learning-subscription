@@ -1,0 +1,113 @@
+Troubleshooting Using the Cluster Monitoring Stack
+Objectives
+After completing this section, you should be able to use Prometheus and Grafana to assist in diagnosing cluster problems.
+
+Introducing Prometheus
+Prometheus is an open source project for system monitoring and alerting.
+
+Both Red Hat OpenShift Container Platform and Kubernetes integrate Prometheus to enable cluster metrics, monitoring, and alerting capabilities.
+
+Prometheus gathers and stores streams of data from the cluster as time series data. Time series data consists of a sequence of samples, with each sample containing:
+
+A time stamp
+
+A numeric value (such as an integer, float, or Boolean)
+
+A set of labels in the form of key/value pairs
+
+The key/value pairs are used to isolate groups of related values for filtering.
+
+For example, the machine_cpu_cores metric in Prometheus contains a sequence of measurement samples of the number of CPU cores for each machine.
+
+OpenShift integrates Prometheus metrics at Monitoring → Metrics. A separate Prometheus user interface is accessible using the URL of the prometheus-k8s route in the openshift-monitoring namespace.
+
+From the Metrics page, enter an expression, such as a metric name, and then click Run Queries to retrieve the most recent sample for the metric.
+
+The following example displays the instance:node_cpu_utilisation:rate1m metric over time.
+
+
+Figure 9.5: Prometheus Metrics
+The metric contains data for each node instance in the cluster.
+
+Describing Prometheus Query Language
+Prometheus provides a query language, PromQL that allows you to select and aggregate time-series data.
+
+You can filter a metric to include only certain key/value pairs. For example, modify the previous query to show only metrics for the worker02 node using the expression instance:node_cpu_utilisation:rate1m{instance="worker02"}.
+
+Prometheus Query Language provides several operators to compute new time-series metrics. PromQL contains arithmetic operators, including addition, subtraction, multiplication, and division operators. PromQL contains comparison operators, including equality, greater than, and less than operators.
+
+PromQL contains a number of built-in functions that you can include in PromQL expressions including:
+
+sum() - which totals the value of all sample entries at a given time.
+
+rate() - computes the per-second average of a time series for a given time range.
+
+count() - counts the number of sample entries at a given time.
+
+Every Prometheus alert contains a Prometheus Query Language expression. Consider the KubeCPUOvercommit alert, available in Monitoring → Alerting → Alerting Rules.
+
+
+Figure 9.6: KubeCPUOvercommit Alert Rule
+The KubeCPUOvercommit alert expression compares two ratios using the sum function, the division operator, and the greater-than operator:
+
+The left ratio is the total number of CPU requests divided by the total number of CPU cores.
+
+The right ratio is a count of entries minus 1 for the CPU cores metric, divided by a count of entries for the CPU metric.
+
+Each entry in the CPU cores metric corresponds to a node. Therefore, the right side ratio corresponds to a percentage of cluster CPU capacity if a single node fails. If the expression evaluates as true for five minutes, then the alert starts firing with a warning severity.
+
+Firing alerts can notify administrators of potential cluster problems that might require further investigation.
+
+Introducing Grafana
+Grafana is an open source analytics and visualization project intended to improve the observability of system metrics. OpenShift integrates Grafana dashboards at Monitoring → Dashboards. A separate Grafana user interface is accessible using the URL of the grafana route in the openshift-monitoring namespace.
+
+With Grafana, you can create customized dashboards to visualize key cluster metrics. Grafana dashboards frequently refresh to display current summary metrics and graphs.
+
+Grafana graphs are interactive. With Grafana, you can further explore interesting data features and characteristics you observe in a graph.
+
+OpenShift Container Platform provides several dashboards in Grafana. These dashboards serve as a good starting point for near real-time observability of cluster metrics and health.
+
+After receiving an alert, an administrator might use Grafana dashboards to investigate the problem. This investigation could include checking if a specific node or project has a problem. Additionally, Grafana dashboards can help identify if a problem was temporary or if it appears to be persistent.
+
+Grafana includes the following default dashboards:
+
+etcd
+This dashboard provides information on etcd instances running in the cluster.
+
+Kubernetes/Compute Resources/Cluster
+This dashboard provides a high level view of cluster resources.
+
+Kubernetes/Compute Resources/Namespace (Pods)
+This dashboard displays resource usage for pods within a namespace.
+
+Kubernetes/Compute Resources/Namespace (Workloads)
+This dashboard filters resource usage first by namespace and then by workload type, such as deployment, daemonset, and statefulset. Grafana displays all workloads of the specified type within the namespace.
+
+Kubernetes/Compute Resources/Node (Pods)
+This dashboard shows pod resource usage filtered by node.
+
+Kubernetes/Compute Resources/Pod
+This dashboard displays the resource usage for individual pods. Select a namespace and a pod within the namespace.
+
+Kubernetes/Compute Resources/Workload
+This dashboard provides resources usage filtered by namespace, workload, and workload type.
+
+Kubernetes/Networking/Cluster
+This dashboard displays network usage for the cluster. Grafana sorts many items to show namespaces with the highest usage.
+
+Prometheus
+This dashboard provides detailed information about the prometheus-k8s pods running in the openshift-monitoring namespace.
+
+USE Method/Cluster
+USE is an acronym for Utilization Saturation and Errors. This dashboard displays several graphics that can identify if the cluster is over utilized, over saturated, or experiencing a high number of errors. Because Grafana displays all nodes in the cluster, you might be able to identity a node that is not behaving the same as the other nodes in the cluster.
+
+The graphic that follows indicates that worker03 is experiencing a higher level of memory saturation compared to the other nodes in the cluster.
+
+
+Figure 9.7: USE Method/Cluster - Memory Saturation
+Additionally, worker03 is experiencing higher disk IO saturation.
+
+
+Figure 9.8: USE Method/Cluster - Disk IO Saturation
+USE Method/Node
+This dashboard filters by node to display potential problems using the USE (Utilization Saturation and Errors) method.
